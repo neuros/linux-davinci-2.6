@@ -5,7 +5,7 @@
 
 
 # Common objects
-obj-y 				:= time.o irq.o dma.o clock.o serial.o 
+obj-y 				:= time.o irq.o dma.o clock.o serial.o io.o
 
 # Board specific
 obj-$(CONFIG_MACH_DAVINCI_EVM)  += board-evm.o i2c-emac.o

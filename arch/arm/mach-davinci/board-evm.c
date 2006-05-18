@@ -52,11 +52,6 @@
 #include <asm/arch/hardware.h>
 #include "clock.h"
 
-static void davinci_nop_release(struct device *dev)
-{
-        /* Nothing */
-}
-
 /*
  * USB
  */
@@ -64,19 +59,19 @@ static void davinci_nop_release(struct device *dev)
 
 static struct musb_hdrc_platform_data usb_data = {
 #if     defined(CONFIG_USB_MUSB_OTG)
-        /* OTG requires a Mini-AB connector */
-        .mode           = MUSB_OTG,
+	/* OTG requires a Mini-AB connector */
+	.mode           = MUSB_OTG,
 #elif   defined(CONFIG_USB_MUSB_PERIPHERAL)
-        .mode           = MUSB_PERIPHERAL,
+	.mode           = MUSB_PERIPHERAL,
 #elif   defined(CONFIG_USB_MUSB_HOST)
-        .mode           = MUSB_HOST,
+	.mode           = MUSB_HOST,
 #endif
-        /* irlml6401 switches 5V */
-        .power          = 255,          /* sustains 3.0+ Amps (!) */
-        .potpgt         = 4,            /* ~8 msec */
+	/* irlml6401 switches 5V */
+	.power          = 255,          /* sustains 3.0+ Amps (!) */
+	.potpgt         = 4,            /* ~8 msec */
 
-        /* REVISIT multipoint is a _chip_ capability; not board specific */
-        .multipoint     = 1,
+	/* REVISIT multipoint is a _chip_ capability; not board specific */
+	.multipoint     = 1,
 };
 
 static struct resource usb_resources [] = {
@@ -95,36 +90,33 @@ static struct resource usb_resources [] = {
 static u64 usb_dmamask = DMA_32BIT_MASK;
 
 static struct platform_device usb_dev = {
-        .name           = "musb_hdrc",
-        .id             = -1,
-        .dev = {
-                .platform_data  = &usb_data,
-                .dma_mask               = &usb_dmamask,
-                .coherent_dma_mask      = DMA_32BIT_MASK,
+	.name           = "musb_hdrc",
+	.id             = -1,
+	.dev = {
+		.platform_data  	= &usb_data,
+		.dma_mask		= &usb_dmamask,
+		.coherent_dma_mask      = DMA_32BIT_MASK,
         },
-        .resource       = usb_resources,
-        .num_resources  = ARRAY_SIZE(usb_resources),
+	.resource       = usb_resources,
+	.num_resources  = ARRAY_SIZE(usb_resources),
 };
 
 static inline void setup_usb(void)
 {
-        /* REVISIT:  everything except platform_data setup should be
-         * shared between all DaVinci boards using the same core.
-         */
-        int status;
+	/* REVISIT:  everything except platform_data setup should be
+	* shared between all DaVinci boards using the same core.
+	*/
+	int status;
 
-        status = platform_device_register(&usb_dev);
-        if (status != 0)
-                pr_debug("setup_usb --> %d\n", status);
-        else
-                board_setup_psc(DAVINCI_GPSC_ARMDOMAIN, DAVINCI_LPSC_USB, 1);
+	status = platform_device_register(&usb_dev);
+	if (status != 0)
+		pr_debug("setup_usb --> %d\n", status);
+	else
+		board_setup_psc(DAVINCI_GPSC_ARMDOMAIN, DAVINCI_LPSC_USB, 1);
 }
 
 #else
-static inline void setup_usb(void)
-{
-        /* NOP */
-}
+#define setup_usb(void)	do {} while(0)
 #endif  /* CONFIG_USB_MUSB_HDRC */
 
 #ifdef CONFIG_I2C_DAVINCI
@@ -141,23 +133,18 @@ static struct resource i2c_resources[] = {
 };
 
 static struct platform_device davinci_i2c_device = {
-        .name           = "i2c_davinci",
-        .id             = 1,
-        .dev = {
-                .release        = davinci_nop_release,
-        },
+	.name           = "i2c_davinci",
+	.id             = 1,
 	.num_resources	= ARRAY_SIZE(i2c_resources),
 	.resource	= i2c_resources,
 };
+
 static inline void setup_i2c(void)
 {
 	(void) platform_device_register(&davinci_i2c_device);
 }
 #else
-static inline void setup_i2c(void)
-{
-	/* NOP */
-}
+#define setup_i2c(void)	do {} while(0)
 #endif
 
 static void board_init(void)
@@ -172,39 +159,20 @@ static void board_init(void)
 	board_setup_psc(DAVINCI_GPSC_ARMDOMAIN, DAVINCI_LPSC_TIMER2, 1);
 }
 
-/*
- * DaVinci IO Mapping
- */
-static struct map_desc davinci_io_desc[] __initdata = {
-	{
-		.virtual	= IO_VIRT,
-		.pfn		= __phys_to_pfn(IO_PHYS),
-		.length		= IO_SIZE,
-		.type		= MT_DEVICE
-	},
-	{
-		.virtual	= DAVINCI_IRAM_VIRT,
-		.pfn		= __phys_to_pfn(DAVINCI_IRAM_BASE),
-		.length		= SZ_16K,
-		.type		= MT_DEVICE
-	}
-};
-
 static void __init
-davinci_map_io(void)
+davinci_evm_map_io(void)
 {
-	iotable_init(davinci_io_desc, ARRAY_SIZE(davinci_io_desc));
-
+	davinci_map_common_io();
+	    
 	/* Initialize the DaVinci EVM board settigs */
 	board_init ();
 }
 
-static __init void evm_init(void)
+static __init void davinci_evm_init(void)
 {
-        setup_usb();
+	setup_usb();
 	setup_i2c();
 }
-
 
 extern void davinci_irq_init(void);
 extern struct sys_timer davinci_timer;
@@ -214,8 +182,8 @@ MACHINE_START(DAVINCI_EVM, "DaVinci EVM")
 	.phys_io      = IO_PHYS,
 	.io_pg_offst  = (io_p2v(IO_PHYS) >> 18) & 0xfffc,
 	.boot_params  = (DAVINCI_DDR_BASE + 0x100),
-	.map_io	      = davinci_map_io,
+	.map_io	      = davinci_evm_map_io,
 	.init_irq     = davinci_irq_init,
 	.timer	      = &davinci_timer,
-	.init_machine = evm_init,
+	.init_machine = davinci_evm_init,
 MACHINE_END

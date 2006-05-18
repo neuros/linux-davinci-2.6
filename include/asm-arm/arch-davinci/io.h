@@ -52,6 +52,10 @@
 #define __mem_pci(a)		(a)
 #define __mem_isa(a)		(a)
 
+#ifndef __ASSEMBLER__
+extern void davinci_map_common_io(void);
+#endif
+
 #endif /* __ASM_ARCH_IO_H */
 
 
