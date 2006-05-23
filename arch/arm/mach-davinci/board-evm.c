@@ -119,34 +119,6 @@ static inline void setup_usb(void)
 #define setup_usb(void)	do {} while(0)
 #endif  /* CONFIG_USB_MUSB_HDRC */
 
-#ifdef CONFIG_I2C_DAVINCI
-static struct resource i2c_resources[] = {
-	{
-		.start		= IO_ADDRESS(DAVINCI_I2C_BASE),
-		.end		= IO_ADDRESS(DAVINCI_I2C_BASE) + 0x40,
-		.flags		= IORESOURCE_MEM,
-	},
-	{
-		.start		= IRQ_I2C,
-		.flags		= IORESOURCE_IRQ,
-	},
-};
-
-static struct platform_device davinci_i2c_device = {
-	.name           = "i2c_davinci",
-	.id             = 1,
-	.num_resources	= ARRAY_SIZE(i2c_resources),
-	.resource	= i2c_resources,
-};
-
-static inline void setup_i2c(void)
-{
-	(void) platform_device_register(&davinci_i2c_device);
-}
-#else
-#define setup_i2c(void)	do {} while(0)
-#endif
-
 static void board_init(void)
 {
 	board_setup_psc(DAVINCI_GPSC_ARMDOMAIN, DAVINCI_LPSC_VPSSMSTR, 1);
@@ -171,7 +143,6 @@ davinci_evm_map_io(void)
 static __init void davinci_evm_init(void)
 {
 	setup_usb();
-	setup_i2c();
 }
 
 extern void davinci_irq_init(void);

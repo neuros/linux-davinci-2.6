@@ -21,8 +21,7 @@ config MACH_DAVINCI_EVM
 config DAVINCI_I2C_EXPANDER
 	bool "TI DaVinci I2C Expander"
 	default y
-	depends on ARCH_DAVINCI644x
-	select I2C_DAVINCI
+	depends on I2C && ARCH_DAVINCI644x
 	help
 	  Configure this option to specify whether the board used
 	  has I2C exapnder with ATA, USB, CF.
