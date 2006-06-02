@@ -524,4 +524,9 @@ config I2C_OMAP
 	help
 	  Support for TI OMAP I2C driver. Say yes if you want to use the OMAP
 	  I2C interface.
+
+config I2C_DAVINCI
+        tristate "Davinci i2c driver"
+        depends on I2C && ARCH_DAVINCI
+
 endmenu

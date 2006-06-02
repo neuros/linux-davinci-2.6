@@ -819,6 +819,15 @@ config ULTRA32
 	  <file:Documentation/networking/net-modules.txt>. The module
 	  will be called smc-ultra32.
 
+config TI_DAVINCI_EMAC
+	tristate "TI DaVinci EMAC Support"
+	depends on NETDEVICES && MACH_DAVINCI_EVM
+	help
+	  This driver supports TI's DaVinci Ethernet .
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called ti_davinci_emac.  This is recommended.
+
 config SMC91X
 	tristate "SMC 91C9x/91C1xxx support"
 	select CRC32

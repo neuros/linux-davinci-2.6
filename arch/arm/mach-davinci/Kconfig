@@ -1,0 +1,47 @@
+if ARCH_DAVINCI
+
+menu "TI DaVinci Implementations"
+
+comment "DaVinci Core Type"
+
+config ARCH_DAVINCI644x
+	default y
+	bool "DaVinci 644x based system"
+
+comment "DaVinci Board Type"
+
+config MACH_DAVINCI_EVM
+	bool "TI DaVinci EVM"
+	default y
+	depends on ARCH_DAVINCI644x
+	help
+	  Configure this option to specify the whether the board used
+	  for development is a DaVinci EVM
+
+config DAVINCI_I2C_EXPANDER
+	bool "TI DaVinci I2C Expander"
+	default y
+	depends on ARCH_DAVINCI644x
+	select I2C_DAVINCI
+	help
+	  Configure this option to specify whether the board used
+	  has I2C exapnder with ATA, USB, CF.
+
+config DAVINCI_MCBSP
+	bool "DaVinci McBSP Driver"
+	depends on ARCH_DAVINCI
+	---help---
+	DaVinci McBSP driver.  Auto-enabled by DaVinci sound driver.
+
+comment "DaVinci Options"
+
+config DAVINCI_BLK_DEV_CF
+	bool "TI DaVinci CF Card Support"
+	default Y
+	depends on BLK_DEV_DAVINCI
+	help
+	  Configure this option to enable CF Card support.
+
+endmenu
+
+endif
