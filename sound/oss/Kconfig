@@ -872,3 +872,36 @@ config SOUND_SH_DAC_AUDIO_CHANNEL
 	int "    DAC channel"
 	default "1"
 	depends on SOUND_SH_DAC_AUDIO
+
+config SOUND_DAVINCI
+	tristate "DaVinci Sound Driver"
+	depends on ARCH_DAVINCI && SOUND_PRIME!=n && SOUND
+	select DAVINCI_MCBSP
+	---help---
+	DaVinci Sound driver
+
+config SOUND_DAVINCI_AIC33
+       tristate "AIC33 Stereo Codec"
+       depends on SOUND_DAVINCI
+       select SENSORS_TLV320AIC33
+       ---help---
+         If you say yes here you get support for the I2C control
+         interface for Texas Instruments TLV320AIC33 audio codec.
+
+menu "DaVinci Audio Options"
+	depends on SOUND_DAVINCI
+
+choice
+	prompt "Mono/Stereo Jack Support"
+	default MONOSTEREO_SAMEJACK
+
+config MONOSTEREO_DIFFJACK
+	bool "Mono and Stereo on different jacks"
+
+config MONOSTEREO_SAMEJACK
+	bool "Mono and Stereo on same jacks"
+
+endchoice
+
+endmenu
+

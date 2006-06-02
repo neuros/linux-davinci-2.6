@@ -96,6 +96,18 @@ int aic23_write_value(u8 reg, u16 value)
 	return 0;
 }
 
+#ifdef CONFIG_SENSORS_TLV320AIC33
+int tlv320aic33_write_value(u8 reg, u16 value)
+{
+	static struct i2c_client *client;
+	u8 val = value & 0xff;
+
+	client = new_client;
+
+	return i2c_smbus_write_byte_data(client, reg, val);
+}
+#endif /* CONFIG_SENSORS_TLV320AIC33 */
+
 static int aic23_detect_client(struct i2c_adapter *adapter, int address,
 				     int kind)
 {
@@ -163,6 +175,7 @@ static struct i2c_driver aic23_driver = {
 	.detach_client	= aic23_detach_client,
 };
 
+#ifdef CONFIG_ARCH_OMAP
 /*
  * Configures the McBSP3 which is used to send clock to the AIC23 codec.
  * The input clock rate from DSP is 12MHz.
@@ -194,6 +207,7 @@ static int omap_mcbsp3_aic23_clock_init(void)
 
 	return 0;
 }
+#endif
 
 static void update_volume_left(int volume)
 {
@@ -640,10 +654,12 @@ static int __init aic23_init(void)
 		selftest = -ENODEV;
 		return selftest;
 	}
+#ifdef CONFIG_ARCH_OMAP
 	/* FIXME: Do in board-specific file */
 	omap_mcbsp3_aic23_clock_init();
 	if (!aic23_info_l.power_down)
 		aic23_power_up();
+#endif
 	aic23_info_l.initialized = 1;
 	printk("TLV320AIC23 I2C version %s (%s)\n", 
 	       TLV320AIC23_VERSION, TLV320AIC23_DATE);
