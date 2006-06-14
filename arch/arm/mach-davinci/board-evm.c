@@ -49,6 +49,7 @@
 #include <asm/mach/map.h>
 #include <asm/mach/flash.h>
 
+#include <asm/arch/common.h>
 #include <asm/arch/hardware.h>
 #include "clock.h"
 
@@ -142,11 +143,11 @@ davinci_evm_map_io(void)
 
 static __init void davinci_evm_init(void)
 {
+	davinci_serial_init();
 	setup_usb();
 }
 
 extern void davinci_irq_init(void);
-extern struct sys_timer davinci_timer;
 
 MACHINE_START(DAVINCI_EVM, "DaVinci EVM")
 	/* Maintainer: MontaVista Software <source@mvista.com> */

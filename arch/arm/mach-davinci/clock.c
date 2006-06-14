@@ -242,7 +242,6 @@ static struct clk davinci_clks[DAVINCI_MAX_CLK] = {
 		.name = "UART",
 		.rate = &fixedrate,
 		.lpsc = DAVINCI_LPSC_UART0,
-		.usecount = 1,
 	},
 	{
 		.name = "EMACCLK",

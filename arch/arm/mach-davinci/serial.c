@@ -24,14 +24,8 @@
  *
  */
 
-#include <linux/config.h>
-#include <linux/module.h>
-#include <linux/tty.h>
-#include <linux/ioport.h>
+#include <linux/kernel.h>
 #include <linux/init.h>
-#include <linux/console.h>
-#include <linux/serial_core.h>
-#include <linux/serial.h>
 #include <linux/serial_8250.h>
 #include <linux/serial_reg.h>
 #include <linux/platform_device.h>
@@ -63,17 +57,19 @@ static inline void davinci_serial_outp(struct plat_serial8250_port *p,
 
 static struct plat_serial8250_port serial_platform_data[] = {
 	{
-		.membase  = (unsigned char __iomem *)IO_ADDRESS(DAVINCI_UART0_BASE),
-		.mapbase  = (unsigned long)DAVINCI_UART0_BASE,
-		.irq	  = IRQ_UARTINT0,
-		.flags	  = UPF_BOOT_AUTOCONF | UPF_SKIP_TEST,
-		.iotype	  = UPIO_MEM,
-		.regshift = 2,
-		.uartclk  = 27000000,
+		.membase	= (char *)IO_ADDRESS(DAVINCI_UART0_BASE),
+		.mapbase	= (unsigned long)DAVINCI_UART0_BASE,
+		.irq		= IRQ_UARTINT0,
+		.flags		= UPF_BOOT_AUTOCONF | UPF_SKIP_TEST,
+		.iotype		= UPIO_MEM,
+		.regshift	= 2,
+		.uartclk	= 27000000,
 	},
-	{ },
+	{
+		.flags		= 0
+	},
 };
-  
+
 static struct platform_device serial_device = {
 	.name			= "serial8250",
 	.id			= PLAT8250_DEV_PLATFORM,
@@ -97,21 +93,23 @@ static void __init davinci_serial_reset(struct plat_serial8250_port *p)
 	davinci_serial_outp(p, UART_DAVINCI_PWREMU, pwremu);
 }
 
-static int __init davinci_serial_init(void)
+void __init davinci_serial_init(void)
 {
-	struct clk *clk; 
+	struct clk *uart_clk;
 	struct device *dev = &serial_device.dev;
 
-	davinci_serial_reset(&serial_platform_data[0]);
-
-	clk = clk_get(dev, "UART");
-	if (!clk) {
+	uart_clk = clk_get(dev, "UART");
+	if (IS_ERR(uart_clk))
 		printk(KERN_ERR "%s:%d: failed to get UART clock\n",
 		       __FUNCTION__, __LINE__);
-		return -ENODEV;
-	}
-	clk_enable(clk);
+	else
+		clk_enable(uart_clk);
 
+	davinci_serial_reset(&serial_platform_data[0]);
+}
+
+static int __init davinci_init(void)
+{
 	return platform_device_register(&serial_device);
 }
-arch_initcall(davinci_serial_init);
+arch_initcall(davinci_init);
