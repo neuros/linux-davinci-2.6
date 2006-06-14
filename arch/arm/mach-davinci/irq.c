@@ -105,7 +105,7 @@ static struct irqchip irqchip_0 = {
 	.unmask = davinci_xenable_int,
 };
 
-void davinci_irq_init(void)
+void __init davinci_irq_init(void)
 {
 	int i;
 	unsigned int *ptr = (unsigned int *)INTC_IDT_BASE;

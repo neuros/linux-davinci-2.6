@@ -46,5 +46,5 @@ void __init davinci_map_common_io(void)
 
 void __init davinci_init_common_hw(void)
 {
-	/* Nothing yet */
+	davinci_clk_init();
 }

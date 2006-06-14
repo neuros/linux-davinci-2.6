@@ -281,7 +281,7 @@ static struct clk davinci_clks[DAVINCI_MAX_CLK] = {
 	}
 };
 
-static int davinci_clk_init(void)
+int __init davinci_clk_init(void)
 {
 	struct clk *clkp;
 	int count = 0;
@@ -301,5 +301,3 @@ static int davinci_clk_init(void)
 
 	return 0;
 }
-
-arch_initcall(davinci_clk_init);

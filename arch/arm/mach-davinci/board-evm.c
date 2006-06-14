@@ -147,7 +147,11 @@ static __init void davinci_evm_init(void)
 	setup_usb();
 }
 
-extern void davinci_irq_init(void);
+static __init void davinci_evm_irq_init(void)
+{
+	davinci_init_common_hw();
+	davinci_irq_init();
+}
 
 MACHINE_START(DAVINCI_EVM, "DaVinci EVM")
 	/* Maintainer: MontaVista Software <source@mvista.com> */
@@ -155,7 +159,7 @@ MACHINE_START(DAVINCI_EVM, "DaVinci EVM")
 	.io_pg_offst  = (io_p2v(IO_PHYS) >> 18) & 0xfffc,
 	.boot_params  = (DAVINCI_DDR_BASE + 0x100),
 	.map_io	      = davinci_evm_map_io,
-	.init_irq     = davinci_irq_init,
+	.init_irq     = davinci_evm_irq_init,
 	.timer	      = &davinci_timer,
 	.init_machine = davinci_evm_init,
 MACHINE_END
