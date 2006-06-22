@@ -39,6 +39,7 @@ struct clk {
 	struct module		*owner;
 	const char		*name;
 	unsigned int		*rate;
+	int			id;
 	__s8			usecount;
 	__u8			flags;
 	__u8			lpsc;

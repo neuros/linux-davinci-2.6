@@ -33,17 +33,12 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/fs.h>
-#include <linux/major.h>
-#include <linux/root_dev.h>
 #include <linux/clk.h>
 #include <linux/mutex.h>
+#include <linux/platform_device.h>
 
 #include <asm/setup.h>
 #include <asm/io.h>
-#include <asm/mach-types.h>
-
-#include <asm/mach/arch.h>
-#include <asm/mach/map.h>
 
 #include <asm/arch/hardware.h>
 #include "clock.h"
@@ -82,29 +77,27 @@ void board_setup_psc(unsigned int domain, unsigned int id, char enable)
 	volatile unsigned int *mdstat = (unsigned int *)((int)MDSTAT + 4 * id);
 	volatile unsigned int *mdctl = (unsigned int *)((int)MDCTL + 4 * id);
 
-	if (enable) {
+	if (enable)
 		*mdctl |= 0x00000003;	/* Enable Module */
-	} else {
+	else
 		*mdctl &= 0xFFFFFFF2;	/* Disable Module */
-	}
 
 	if ((PDSTAT & 0x00000001) == 0) {
 		PDCTL1 |= 0x1;
 		PTCMD = (1 << domain);
-		while ((((EPCPR >> domain) & 1) == 0)) ;
+		while ((((EPCPR >> domain) & 1) == 0));
 
 		PDCTL1 |= 0x100;
-		while (!(((PTSTAT >> domain) & 1) == 0)) ;
+		while (!(((PTSTAT >> domain) & 1) == 0));
 	} else {
 		PTCMD = (1 << domain);
-		while (!(((PTSTAT >> domain) & 1) == 0)) ;
+		while (!(((PTSTAT >> domain) & 1) == 0));
 	}
 
-	if (enable) {
-		while (!((*mdstat & 0x0000001F) == 0x3)) ;
-	} else {
-		while (!((*mdstat & 0x0000001F) == 0x2)) ;
-	}
+	if (enable)
+		while (!((*mdstat & 0x0000001F) == 0x3));
+	else
+		while (!((*mdstat & 0x0000001F) == 0x2));
 }
 
 static int board_setup_peripheral(unsigned int id)
@@ -131,11 +124,31 @@ static int board_setup_peripheral(unsigned int id)
 		break;
 	}
 }
+
+/*
+ * Returns a clock. Note that we first try to use device id on the bus
+ * and clock name. If this fails, we try to use clock name only.
+ */
 struct clk *clk_get(struct device *dev, const char *id)
 {
 	struct clk *p, *clk = ERR_PTR(-ENOENT);
+	int idno;
+
+	if (dev == NULL || dev->bus != &platform_bus_type)
+		idno = -1;
+	else
+		idno = to_platform_device(dev)->id;
 
 	mutex_lock(&clocks_mutex);
+
+	list_for_each_entry(p, &clocks, node) {
+		if (p->id == idno &&
+		    strcmp(id, p->name) == 0 && try_module_get(p->owner)) {
+			clk = p;
+			goto found;
+		}
+	}
+	
 	list_for_each_entry(p, &clocks, node) {
 		if (strcmp(id, p->name) == 0 && try_module_get(p->owner)) {
 			clk = p;
@@ -143,6 +156,7 @@ struct clk *clk_get(struct device *dev, const char *id)
 		}
 	}
 
+found:
 	mutex_unlock(&clocks_mutex);
 
 	return clk;
@@ -179,6 +193,9 @@ int clk_enable(struct clk *clk)
 {
 	unsigned long flags;
 	int ret = 0;
+	
+	if (clk == NULL || IS_ERR(clk))
+		return -EINVAL;
 
 	if (clk->usecount++ == 0) {
 		spin_lock_irqsave(&clockfw_lock, flags);
@@ -196,6 +213,9 @@ void clk_disable(struct clk *clk)
 {
 	unsigned long flags;
 
+	if (clk == NULL || IS_ERR(clk))
+		return;
+
 	if (clk->usecount > 0 && !(--clk->usecount)) {
 		spin_lock_irqsave(&clockfw_lock, flags);
 		__clk_disable(clk);
@@ -207,6 +227,9 @@ EXPORT_SYMBOL(clk_disable);
 
 unsigned long clk_get_rate(struct clk *clk)
 {
+	if (clk == NULL || IS_ERR(clk))
+		return 0;
+
 	return *(clk->rate);
 }
 
@@ -214,9 +237,13 @@ EXPORT_SYMBOL(clk_get_rate);
 
 int clk_register(struct clk *clk)
 {
+	if (clk == NULL || IS_ERR(clk))
+		return -EINVAL;
+
 	mutex_lock(&clocks_mutex);
 	list_add(&clk->node, &clocks);
 	mutex_unlock(&clocks_mutex);
+
 	return 0;
 }
 
@@ -224,6 +251,9 @@ EXPORT_SYMBOL(clk_register);
 
 void clk_unregister(struct clk *clk)
 {
+	if (clk == NULL || IS_ERR(clk))
+		return;
+
 	mutex_lock(&clocks_mutex);
 	list_del(&clk->node);
 	mutex_unlock(&clocks_mutex);
@@ -294,10 +324,70 @@ int __init davinci_clk_init(void)
 
 		/* Turn on clocks that have been enabled in the
 		 * table above */
-		if (clkp->usecount) {
+		if (clkp->usecount)
 			clk_enable(clkp);
-		}
 	}
 
 	return 0;
 }
+
+#ifdef CONFIG_PROC_FS
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
+
+static void *davinci_ck_start(struct seq_file *m, loff_t *pos)
+{
+	return *pos < 1 ? (void *)1 : NULL;
+}
+
+static void *davinci_ck_next(struct seq_file *m, void *v, loff_t *pos)
+{
+	++*pos;
+	return NULL;
+}
+
+static void davinci_ck_stop(struct seq_file *m, void *v)
+{
+}
+
+int davinci_ck_show(struct seq_file *m, void *v)
+{
+	struct clk *cp;
+
+	list_for_each_entry(cp, &clocks, node)
+		seq_printf(m,"%s %d %d\n", cp->name, *(cp->rate), cp->usecount);
+
+	return 0;
+}
+
+static struct seq_operations davinci_ck_op = {
+	.start =	davinci_ck_start,
+	.next =		davinci_ck_next,
+	.stop =		davinci_ck_stop,
+	.show =		davinci_ck_show
+};
+
+static int davinci_ck_open(struct inode *inode, struct file *file)
+{
+	return seq_open(file, &davinci_ck_op);
+}
+
+static struct file_operations proc_davinci_ck_operations = {
+	.open		= davinci_ck_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= seq_release,
+};
+
+int __init davinci_ck_proc_init(void)
+{
+	struct proc_dir_entry *entry;
+
+	entry = create_proc_entry("davinci_clocks", 0, NULL);
+	if (entry)
+		entry->proc_fops = &proc_davinci_ck_operations;
+	return 0;
+
+}
+__initcall(davinci_ck_proc_init);
+#endif /* CONFIG_DEBUG_PROC_FS */
