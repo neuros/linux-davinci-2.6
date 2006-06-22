@@ -59,11 +59,7 @@ static DEFINE_SPINLOCK(lock);
 
 #define	EVM_I2C_ADDR	0x38
 
-#ifdef CONFIG_PREEMPT_RT
-static void pcf_work(unsigned long unused)
-#else
 static void pcf_work(void *unused)
-#endif
 {
 	struct i2c_adapter	*adap;
 	int			err;
@@ -96,18 +92,7 @@ static void pcf_work(void *unused)
 
 }
 
-/* Under PREEMPT_RT, this code may be called from the timer interrupt
- * with is a real hard IRQ.  Therefore, workqueues cannot be used
- * because 'schedule_work()' can sleep.  OTOH, for non-RT, tasklets
- * cannot be used to call sleeping functions (such as i2c stack) */
-
-#ifdef CONFIG_PREEMPT_RT
-static DECLARE_TASKLET(work, pcf_work, 0);
-#define doit() tasklet_schedule(&work)
-#else
 static DECLARE_WORK(work, pcf_work, NULL);
-#define doit() schedule_work(&work)
-#endif
 
 static void evm_leds_event(led_event_t evt)
 {
@@ -193,7 +178,7 @@ static void evm_leds_event(led_event_t evt)
 	leds ^= hw_led_state;
 	if (leds & 0xff) {
 		leds_change = (u8) leds;
-		doit();
+		schedule_work(&work);
 	}
 
 done:
