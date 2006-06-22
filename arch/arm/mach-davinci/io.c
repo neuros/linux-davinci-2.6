@@ -20,6 +20,7 @@
 #include <asm/mach/map.h>
 #include <asm/arch/memory.h>
 
+extern int davinci_clk_init(void);
 /*
  * The machine specific code may provide the extra mapping besides the
  * default mapping provided here.

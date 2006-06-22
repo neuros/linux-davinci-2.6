@@ -49,6 +49,7 @@
 #include <asm/mach/map.h>
 #include <asm/mach/flash.h>
 
+#include <asm/arch/irqs.h>
 #include <asm/arch/common.h>
 #include <asm/arch/hardware.h>
 #include "clock.h"

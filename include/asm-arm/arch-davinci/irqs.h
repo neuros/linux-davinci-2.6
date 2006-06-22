@@ -109,5 +109,9 @@
 
 #define ARCH_TIMER_IRQ IRQ_TINT1_TINT34
 
+#ifndef __ASSEMBLY__
+extern void davinci_irq_init(void);
+#endif
+
 #endif /* __ASM_ARCH_IRQS_H */
 

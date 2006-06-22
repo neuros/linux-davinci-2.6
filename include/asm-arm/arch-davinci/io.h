@@ -89,6 +89,7 @@ typedef struct { volatile u32 offset[4096]; } __regbase32;
 #define __REG(paddr)		__REGV32(io_p2v(paddr))
 
 extern void davinci_map_common_io(void);
+extern void davinci_init_common_hw(void);
 #else
 
 #define __REG(x)	(*((volatile unsigned long *)io_p2v(x)))
