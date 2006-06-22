@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
-# Linux kernel version: 2.6.17-rc4
-# Tue May 16 16:59:57 2006
+# Linux kernel version: 2.6.17-omap1
+# Thu Jun 22 22:14:55 2006
 #
 CONFIG_ARM=y
 CONFIG_MMU=y
@@ -15,7 +15,6 @@ CONFIG_VECTORS_BASE=0xffff0000
 #
 CONFIG_EXPERIMENTAL=y
 CONFIG_BROKEN_ON_SMP=y
-CONFIG_LOCK_KERNEL=y
 CONFIG_INIT_ENV_ARG_LIMIT=32
 
 #
@@ -161,7 +160,7 @@ CONFIG_ARM_THUMB=y
 #
 # Kernel Features
 #
-CONFIG_PREEMPT=y
+# CONFIG_PREEMPT is not set
 # CONFIG_NO_IDLE_HZ is not set
 CONFIG_HZ=100
 # CONFIG_AEABI is not set
@@ -709,6 +708,7 @@ CONFIG_I2C_DAVINCI=y
 # CONFIG_SENSORS_PCA9539 is not set
 # CONFIG_SENSORS_PCF8591 is not set
 # CONFIG_SENSORS_MAX6875 is not set
+# CONFIG_SENSORS_TLV320AIC33 is not set
 # CONFIG_I2C_DEBUG_CORE is not set
 # CONFIG_I2C_DEBUG_ALGO is not set
 # CONFIG_I2C_DEBUG_BUS is not set
@@ -786,15 +786,19 @@ CONFIG_HWMON=y
 # Multimedia devices
 #
 CONFIG_VIDEO_DEV=y
+CONFIG_VIDEO_V4L1=y
+CONFIG_VIDEO_V4L1_COMPAT=y
+CONFIG_VIDEO_V4L2=y
 
 #
-# Video For Linux
+# Video Capture Adapters
 #
 
 #
-# Video Adapters
+# Video Capture Adapters
 #
 # CONFIG_VIDEO_ADV_DEBUG is not set
+# CONFIG_VIDEO_VIVI is not set
 # CONFIG_VIDEO_CPIA is not set
 # CONFIG_VIDEO_CPIA2 is not set
 # CONFIG_VIDEO_SAA5246A is not set
@@ -855,6 +859,7 @@ CONFIG_FB_FIRMWARE_EDID=y
 # CONFIG_FB_MODE_HELPERS is not set
 # CONFIG_FB_TILEBLITTING is not set
 # CONFIG_FB_S1D13XXX is not set
+# CONFIG_FB_OMAP is not set
 # CONFIG_FB_VIRTUAL is not set
 
 #
@@ -894,6 +899,7 @@ CONFIG_SOUND_PRIME=y
 # CONFIG_SOUND_MSNDCLAS is not set
 # CONFIG_SOUND_MSNDPIN is not set
 # CONFIG_SOUND_TVMIXER is not set
+# CONFIG_SOUND_DAVINCI is not set
 
 #
 # USB support
@@ -1035,6 +1041,10 @@ CONFIG_MMC_BLOCK=y
 #
 CONFIG_RTC_LIB=y
 # CONFIG_RTC_CLASS is not set
+
+#
+# Synchronous Serial Interfaces (SSI)
+#
 
 #
 # File systems
