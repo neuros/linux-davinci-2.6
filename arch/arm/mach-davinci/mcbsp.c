@@ -110,7 +110,7 @@ void DAVINCI_MCBSP_WRITE(int base, int reg, unsigned short val)
 		outl(data, p);
 	}
 }
-#if 0
+
 static void davinci_mcbsp_dump_reg(u8 id)
 {
 	DBG("**** MCBSP%d regs ****\n", mcbsp[id].id);
@@ -125,9 +125,7 @@ static void davinci_mcbsp_dump_reg(u8 id)
 	DBG("SRGR1: 0x%04x\n",	DAVINCI_MCBSP_READ(mcbsp[id].io_base, SRGR1));
 	DBG("PCR0:  0x%04x\n",	DAVINCI_MCBSP_READ(mcbsp[id].io_base, PCR0));
 	DBG("***********************\n");
-
 }
-#endif
 
 static void davinci_mcbsp_tx_dma_callback(int lch, u16 ch_status, void *data)
 {
@@ -187,8 +185,6 @@ void davinci_mcbsp_config(unsigned int id,
 	/* We write the given config */
 	DAVINCI_MCBSP_WRITE(io_base, SPCR2, config->spcr2);
 	DAVINCI_MCBSP_WRITE(io_base, SPCR1, config->spcr1);
-
-	return;
 }
 
 static int davinci_mcbsp_check(unsigned int id)
@@ -216,7 +212,6 @@ int davinci_mcbsp_request(unsigned int id)
 	spin_unlock(&mcbsp[id].lock);
 
 	return 0;
-
 }
 
 void davinci_mcbsp_free(unsigned int id)
@@ -274,7 +269,8 @@ void davinci_mcbsp_start(unsigned int id)
 	w = DAVINCI_MCBSP_READ(io_base, SPCR2);
 	DAVINCI_MCBSP_WRITE(io_base, SPCR2, w | (1 << 7));
 
-	return;
+	/* Dump mcbsp reg */
+	davinci_mcbsp_dump_reg(id);
 }
 
 void davinci_mcbsp_stop(unsigned int id)
@@ -302,8 +298,6 @@ void davinci_mcbsp_stop(unsigned int id)
 	/* Reset the frame sync generator */
 	w = DAVINCI_MCBSP_READ(io_base, SPCR2);
 	DAVINCI_MCBSP_WRITE(io_base, SPCR2, w & ~(1 << 7));
-
-	return;
 }
 
 /*
@@ -320,14 +314,9 @@ void davinci_mcbsp_xmit_word(unsigned int id, u32 word)
 
 	io_base = mcbsp[id].io_base;
 
-	DBG(" io_base = 0x%x\n", io_base);
-	if (word_length > DAVINCI_MCBSP_WORD_16) {
-		DBG(" writing DXR2 register \n");
+	if (word_length > DAVINCI_MCBSP_WORD_16)
 		DAVINCI_MCBSP_WRITE(io_base, DXR2, word >> 16);
-	}
-	DBG(" writing DXR1 register \n");
 	DAVINCI_MCBSP_WRITE(io_base, DXR1, word & 0xffff);
-
 }
 
 u32 davinci_mcbsp_recv_word(unsigned int id)
@@ -348,7 +337,6 @@ u32 davinci_mcbsp_recv_word(unsigned int id)
 	word_lsb = DAVINCI_MCBSP_READ(io_base, DRR1);
 
 	return (word_lsb | (word_msb << 16));
-
 }
 
 /*
@@ -370,8 +358,8 @@ int davinci_mcbsp_xmit_buffer(unsigned int id, dma_addr_t buffer,
 	if (davinci_request_dma
 	    (mcbsp[id].dma_tx_sync, "McBSP TX", davinci_mcbsp_tx_dma_callback,
 	     &mcbsp[id], &dma_tx_ch, &tcc, EVENTQ_0)) {
-		DBG("DAVINCI-McBSP: Unable to request DMA channel for McBSP%d TX. Trying IRQ based TX\n",
-		     id + 1);
+		DBG("DAVINCI-McBSP: Unable to request DMA channel for McBSP%d TX."
+		    "Trying IRQ based TX\n", id + 1);
 		return -EAGAIN;
 	}
 
@@ -408,8 +396,8 @@ int davinci_mcbsp_recv_buffer(unsigned int id, dma_addr_t buffer,
 	if (davinci_request_dma
 	    (mcbsp[id].dma_rx_sync, "McBSP RX", davinci_mcbsp_rx_dma_callback,
 	     &mcbsp[id], &dma_rx_ch, &tcc, EVENTQ_0)) {
-		DBG("Unable to request DMA channel for McBSP%d RX. Trying IRQ based RX\n",
-		     id + 1);
+		DBG("Unable to request DMA channel for McBSP%d RX."
+		    "Trying IRQ based RX\n",  id + 1);
 		return -EAGAIN;
 	}
 	mcbsp[id].dma_rx_lch = dma_rx_ch;
@@ -433,7 +421,6 @@ int davinci_mcbsp_recv_buffer(unsigned int id, dma_addr_t buffer,
 	davinci_start_dma(mcbsp[id].dma_rx_lch);
 
 	wait_for_completion(&(mcbsp[id].rx_dma_completion));
-	DBG(" davinci_mcbsp_recv_buffer: after wait_for_completion\n");
 	return 0;
 }
 
@@ -449,11 +436,11 @@ struct davinci_mcbsp_info {
 };
 
 static const struct davinci_mcbsp_info mcbsp_davinci[] = {
-	[0] = {.virt_base = IO_ADDRESS(DAVINCI_MCBSP1_BASE),
-	       .dma_rx_sync = DAVINCI_DMA_MCBSP1_RX,
-	       .dma_tx_sync = DAVINCI_DMA_MCBSP1_TX,
-	       .rx_irq = DAVINCI_McBSP1RX,
-	       .tx_irq = DAVINCI_McBSP1TX},
+	[0] = { .virt_base = IO_ADDRESS(DAVINCI_MCBSP1_BASE),
+		.dma_rx_sync = DAVINCI_DMA_MCBSP1_RX,
+		.dma_tx_sync = DAVINCI_DMA_MCBSP1_TX,
+		.rx_irq = DAVINCI_McBSP1RX,
+		.tx_irq = DAVINCI_McBSP1TX},
 };
 
 static int __init davinci_mcbsp_init(void)
@@ -462,14 +449,16 @@ static int __init davinci_mcbsp_init(void)
 	static const struct davinci_mcbsp_info *mcbsp_info;
 	struct clk *clkp;
 
+	printk(KERN_INFO "Initializing DaVinci McBSP system\n");
+
 	clkp = clk_get (NULL, "McBSPCLK");
 	if (IS_ERR(clkp)) {
-		return -1;
+		printk(KERN_ERR "mcbsp: could not acquire McBSP clk\n");
+		return PTR_ERR(clkp);
 	}
-	else
-	{
+	else {
 		mbspclk = clkp;
-		clk_enable (mbspclk);
+		clk_enable(mbspclk);
 
 		mcbsp_info = mcbsp_davinci;
 		mcbsp_count = ARRAY_SIZE(mcbsp_davinci);
@@ -500,13 +489,13 @@ static void __exit davinci_mcbsp_exit(void)
 {
 	int i;
 
-    for( i = 0; i < DAVINCI_MAX_MCBSP_COUNT; i++) {
-	    mcbsp[i].free = 0;
+	for (i = 0; i < DAVINCI_MAX_MCBSP_COUNT; i++) {
+		mcbsp[i].free = 0;
 		mcbsp[i].dma_tx_lch = -1;
 		mcbsp[i].dma_rx_lch = -1;
-    }
+	}
 
-    clk_disable (mbspclk);
+	clk_disable (mbspclk);
 
 	return;
 }
