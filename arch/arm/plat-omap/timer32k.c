@@ -51,6 +51,7 @@
 #include <asm/irq.h>
 #include <asm/mach/irq.h>
 #include <asm/mach/time.h>
+#include <asm/arch/dmtimer.h>
 
 struct sys_timer omap_timer;
 
@@ -105,6 +106,8 @@ static inline unsigned long omap_32k_timer_read(int reg)
 
 static inline void omap_32k_timer_start(unsigned long load_val)
 {
+	if (!load_val)
+		load_val = 1;
 	omap_32k_timer_write(load_val, OMAP1_32K_TIMER_TVR);
 	omap_32k_timer_write(0x0f, OMAP1_32K_TIMER_CR);
 }
@@ -117,8 +120,6 @@ static inline void omap_32k_timer_stop(void)
 #define omap_32k_timer_ack_irq()
 
 #elif defined(CONFIG_ARCH_OMAP2)
-
-#include <asm/arch/dmtimer.h>
 
 static struct omap_dm_timer *gptimer;
 
@@ -231,7 +232,15 @@ static irqreturn_t omap_32k_timer_interrupt(int irq, void *dev_id,
  */
 void omap_32k_timer_reprogram(unsigned long next_tick)
 {
-	omap_32k_timer_start(JIFFIES_TO_HW_TICKS(next_tick, 32768) + 1);
+	unsigned long ticks = JIFFIES_TO_HW_TICKS(next_tick, 32768) + 1;
+	unsigned long now = omap_32k_sync_timer_read();
+	unsigned long idled = now - omap_32k_last_tick;
+
+	if (idled + 1 < ticks)
+		ticks -= idled;
+	else
+		ticks = 1;
+	omap_32k_timer_start(ticks);
 }
 
 static struct irqaction omap_32k_timer_irq;
@@ -274,6 +283,7 @@ static __init void omap_init_32k_timer(void)
 	omap_timer.offset  = omap_32k_timer_gettimeoffset;
 	omap_32k_last_tick = omap_32k_sync_timer_read();
 
+#ifdef CONFIG_ARCH_OMAP2
 	/* REVISIT: Check 24xx TIOCP_CFG settings after idle works */
 	if (cpu_is_omap24xx()) {
 		gptimer = omap_dm_timer_request_specific(1);
@@ -285,6 +295,7 @@ static __init void omap_init_32k_timer(void)
 			OMAP_TIMER_INT_CAPTURE | OMAP_TIMER_INT_OVERFLOW |
 			OMAP_TIMER_INT_MATCH);
 	}
+#endif
 
 	omap_32k_timer_start(OMAP_32K_TIMER_TICK_PERIOD);
 }

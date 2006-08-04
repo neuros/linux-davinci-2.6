@@ -100,24 +100,36 @@ struct omap_usb_config {
 struct omap_lcd_config {
 	char panel_name[16];
 	char ctrl_name[16];
+	s16  nreset_gpio;
+	u8   data_lines;
 };
 
 struct omap_fbmem_config {
-	u32 fb_sram_start;
-	u32 fb_sram_size;
-	u32 fb_sdram_start;
-	u32 fb_sdram_size;
+	u32 start;
+	u32 size;
+};
+
+struct omap_pwm_led_platform_data {
+	const char *name;
+	int intensity_timer;
+	int blink_timer;
+	void (*set_power)(struct omap_pwm_led_platform_data *self, int on_off);
 };
 
 /* Cover:
- *      high -> closed
- *      low  -> open
+ *	high -> closed
+ *	low  -> open
  * Connection:
- *      high -> connected
- *      low  -> disconnected
+ *	high -> connected
+ *	low  -> disconnected
+ * Activity:
+ *	high -> active
+ *	low  -> inactive
+ *
  */
 #define OMAP_GPIO_SWITCH_TYPE_COVER		0x0000
 #define OMAP_GPIO_SWITCH_TYPE_CONNECTION	0x0001
+#define OMAP_GPIO_SWITCH_TYPE_ACTIVITY		0x0002
 #define OMAP_GPIO_SWITCH_FLAG_INVERTED		0x0001
 #define OMAP_GPIO_SWITCH_FLAG_OUTPUT		0x0002
 struct omap_gpio_switch_config {

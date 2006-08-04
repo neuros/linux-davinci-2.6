@@ -55,7 +55,8 @@
  * files.
  */
 
-#define	TS_POLL_PERIOD	msecs_to_jiffies(10)
+#define TS_POLL_DELAY	(1 * 1000000)	/* ns delay before the first sample */
+#define	TS_POLL_PERIOD	(5 * 1000000)	/* ns delay between samples */
 
 /* this driver doesn't aim at the peak continuous sample rate */
 #define	SAMPLE_BITS	(8 /*cmd*/ + 16 /*sample*/ + 2 /* before, after */)
@@ -100,13 +101,16 @@ struct ads7846 {
 	u16			debounce_rep;
 
 	spinlock_t		lock;
-	struct timer_list	timer;		/* P: lock */
+	struct hrtimer		timer;
 	unsigned		pendown:1;	/* P: lock */
 	unsigned		pending:1;	/* P: lock */
 // FIXME remove "irq_disabled"
 	unsigned		irq_disabled:1;	/* P: lock */
 	unsigned		disabled:1;
 
+	int			(*filter)(void *data, int data_idx, int *val);
+	void			*filter_data;
+	void			(*filter_cleanup)(void *data);
 	int			(*get_pendown_state)(void);
 };
 
@@ -143,15 +147,16 @@ struct ads7846 {
 #define	MAX_12BIT	((1<<12)-1)
 
 /* leave ADC powered up (disables penirq) between differential samples */
-#define	READ_12BIT_DFR(x) (ADS_START | ADS_A2A1A0_d_ ## x \
-	| ADS_12_BIT | ADS_DFR)
+#define	READ_12BIT_DFR(x, adc, vref) (ADS_START | ADS_A2A1A0_d_ ## x \
+	| ADS_12_BIT | ADS_DFR | \
+	(adc ? ADS_PD10_ADC_ON : 0) | (vref ? ADS_PD10_REF_ON : 0))
 
-#define	READ_Y	(READ_12BIT_DFR(y)  | ADS_PD10_ADC_ON)
-#define	READ_Z1	(READ_12BIT_DFR(z1) | ADS_PD10_ADC_ON)
-#define	READ_Z2	(READ_12BIT_DFR(z2) | ADS_PD10_ADC_ON)
+#define	READ_Y(vref)	(READ_12BIT_DFR(y,  1, vref))
+#define	READ_Z1(vref)	(READ_12BIT_DFR(z1, 1, vref))
+#define	READ_Z2(vref)	(READ_12BIT_DFR(z2, 1, vref))
 
-#define	READ_X	(READ_12BIT_DFR(x)  | ADS_PD10_ADC_ON)
-#define	PWRDOWN	(READ_12BIT_DFR(y)  | ADS_PD10_PDOWN)	/* LAST */
+#define	READ_X(vref)	(READ_12BIT_DFR(x,  1, vref))
+#define	PWRDOWN		(READ_12BIT_DFR(y,  0, 0))	/* LAST */
 
 /* single-ended samples need to first power up reference voltage;
  * we leave both ADC and VREF powered
@@ -159,8 +164,8 @@ struct ads7846 {
 #define	READ_12BIT_SER(x) (ADS_START | ADS_A2A1A0_ ## x \
 	| ADS_12_BIT | ADS_SER)
 
-#define	REF_ON	(READ_12BIT_DFR(x) | ADS_PD10_ALL_ON)
-#define	REF_OFF	(READ_12BIT_DFR(y) | ADS_PD10_PDOWN)
+#define	REF_ON	(READ_12BIT_DFR(x, 1, 1))
+#define	REF_OFF	(READ_12BIT_DFR(y, 0, 0))
 
 /*--------------------------------------------------------------------------*/
 
@@ -370,6 +375,39 @@ static DEVICE_ATTR(disable, 0664, ads7846_disable_show, ads7846_disable_store);
 
 /*--------------------------------------------------------------------------*/
 
+static void ads7846_report_pen_state(struct ads7846 *ts, int down)
+{
+	struct input_dev	*input_dev = ts->input;
+
+	input_report_key(input_dev, BTN_TOUCH, down);
+	if (!down)
+		input_report_abs(input_dev, ABS_PRESSURE, 0);
+#ifdef VERBOSE
+	pr_debug("%s: %s\n", ts->spi->dev.bus_id, down ? "DOWN" : "UP");
+#endif
+}
+
+static void ads7846_report_pen_position(struct ads7846 *ts, int x, int y,
+					int pressure)
+{
+	struct input_dev	*input_dev = ts->input;
+
+	input_report_abs(input_dev, ABS_X, x);
+	input_report_abs(input_dev, ABS_Y, y);
+	input_report_abs(input_dev, ABS_PRESSURE, pressure);
+
+#ifdef VERBOSE
+	pr_debug("%s: %d/%d/%d\n", ts->spi->dev.bus_id, x, y, pressure);
+#endif
+}
+
+static void ads7846_sync_events(struct ads7846 *ts)
+{
+	struct input_dev	*input_dev = ts->input;
+
+	input_sync(input_dev);
+}
+
 /*
  * PENIRQ only kicks the timer.  The timer only reissues the SPI transfer,
  * to retrieve touchscreen status.
@@ -381,25 +419,22 @@ static DEVICE_ATTR(disable, 0664, ads7846_disable_show, ads7846_disable_store);
 static void ads7846_rx(void *ads)
 {
 	struct ads7846		*ts = ads;
-	struct input_dev	*input_dev = ts->input;
 	unsigned		Rt;
-	unsigned		sync = 0;
 	u16			x, y, z1, z2;
-	unsigned long		flags;
 
 	/* adjust:  on-wire is a must-ignore bit, a BE12 value, then padding;
 	 * built from two 8 bit values written msb-first.
 	 */
-	x = (be16_to_cpu(ts->tc.x) >> 3) & 0x0fff;
-	y = (be16_to_cpu(ts->tc.y) >> 3) & 0x0fff;
-	z1 = (be16_to_cpu(ts->tc.z1) >> 3) & 0x0fff;
-	z2 = (be16_to_cpu(ts->tc.z2) >> 3) & 0x0fff;
+	x = ts->tc.x;
+	y = ts->tc.y;
+	z1 = ts->tc.z1;
+	z2 = ts->tc.z2;
 
 	/* range filtering */
 	if (x == MAX_12BIT)
 		x = 0;
 
-	if (likely(x && z1 && !device_suspended(&ts->spi->dev))) {
+	if (likely(x && z1)) {
 		/* compute touch pressure resistance using equation #2 */
 		Rt = z2;
 		Rt -= z1;
@@ -414,97 +449,108 @@ static void ads7846_rx(void *ads)
 	* the maximum. Don't report it to user space, repeat at least
 	* once more the measurement */
 	if (ts->tc.ignore || Rt > ts->pressure_max) {
-		mod_timer(&ts->timer, jiffies + TS_POLL_PERIOD);
+#ifdef VERBOSE
+		pr_debug("%s: ignored %d pressure %d\n",
+			ts->spi->dev.bus_id, ts->tc.ignore, Rt);
+#endif
+		hrtimer_start(&ts->timer, ktime_set(0, TS_POLL_PERIOD),
+			      HRTIMER_REL);
 		return;
 	}
 
-	/* NOTE:  "pendown" is inferred from pressure; we don't rely on
-	 * being able to check nPENIRQ status, or "friendly" trigger modes
-	 * (both-edges is much better than just-falling or low-level).
-	 *
-	 * REVISIT:  some boards may require reading nPENIRQ; it's
-	 * needed on 7843.  and 7845 reads pressure differently...
-	 *
-	 * REVISIT:  the touchscreen might not be connected; this code
-	 * won't notice that, even if nPENIRQ never fires ...
+	/* NOTE: We can't rely on the pressure to determine the pen down
+	 * state. The pressure value can fluctuate for quite a while
+	 * after lifting the pen and in some cases may not even settle at
+	 * the expected value. The only safe way to check for the pen up
+	 * condition is in the timer by reading the pen IRQ state.
 	 */
-	if (!ts->pendown && Rt != 0) {
-		input_report_key(input_dev, BTN_TOUCH, 1);
-		sync = 1;
-	} else if (ts->pendown && Rt == 0) {
-		input_report_key(input_dev, BTN_TOUCH, 0);
-		sync = 1;
-	}
-
 	if (Rt) {
-		input_report_abs(input_dev, ABS_X, x);
-		input_report_abs(input_dev, ABS_Y, y);
-		sync = 1;
+		if (!ts->pendown) {
+			ads7846_report_pen_state(ts, 1);
+			ts->pendown = 1;
+		}
+		ads7846_report_pen_position(ts, x, y, Rt);
+		ads7846_sync_events(ts);
 	}
 
-	if (sync) {
-		input_report_abs(input_dev, ABS_PRESSURE, Rt);
-		input_sync(input_dev);
-	}
-
-#ifdef	VERBOSE
-	if (Rt || ts->pendown)
-		pr_debug("%s: %d/%d/%d%s\n", ts->spi->dev.bus_id,
-			x, y, Rt, Rt ? "" : " UP");
-#endif
-
-	spin_lock_irqsave(&ts->lock, flags);
-
-	ts->pendown = (Rt != 0);
-	mod_timer(&ts->timer, jiffies + TS_POLL_PERIOD);
-
-	spin_unlock_irqrestore(&ts->lock, flags);
+	hrtimer_start(&ts->timer, ktime_set(0, TS_POLL_PERIOD), HRTIMER_REL);
 }
 
-static void ads7846_debounce(void *ads)
+static int ads7846_debounce(void *ads, int data_idx, int *val)
 {
 	struct ads7846		*ts = ads;
-	struct spi_message	*m;
-	struct spi_transfer	*t;
-	int			val;
-	int			status;
 
-	m = &ts->msg[ts->msg_idx];
-	t = list_entry(m->transfers.prev, struct spi_transfer, transfer_list);
-	val = (be16_to_cpu(*(__be16 *)t->rx_buf) >> 3) & 0x0fff;
-	if (!ts->read_cnt || (abs(ts->last_read - val) > ts->debounce_tol)) {
+	if (!ts->read_cnt || (abs(ts->last_read - *val) > ts->debounce_tol)) {
+		/* Start over collecting consistent readings. */
+		ts->read_rep = 0;
 		/* Repeat it, if this was the first read or the read
 		 * wasn't consistent enough. */
 		if (ts->read_cnt < ts->debounce_max) {
-			ts->last_read = val;
+			ts->last_read = *val;
 			ts->read_cnt++;
+			return ADS7846_FILTER_REPEAT;
 		} else {
 			/* Maximum number of debouncing reached and still
 			 * not enough number of consistent readings. Abort
 			 * the whole sample, repeat it in the next sampling
 			 * period.
 			 */
-			ts->tc.ignore = 1;
 			ts->read_cnt = 0;
-			/* Last message will contain ads7846_rx() as the
-			 * completion function.
-			 */
-			m = ts->last_msg;
+			return ADS7846_FILTER_IGNORE;
 		}
-		/* Start over collecting consistent readings. */
-		ts->read_rep = 0;
 	} else {
 		if (++ts->read_rep > ts->debounce_rep) {
 			/* Got a good reading for this coordinate,
 			 * go for the next one. */
-			ts->tc.ignore = 0;
-			ts->msg_idx++;
 			ts->read_cnt = 0;
 			ts->read_rep = 0;
-			m++;
-		} else
+			return ADS7846_FILTER_OK;
+		} else {
 			/* Read more values that are consistent. */
 			ts->read_cnt++;
+			return ADS7846_FILTER_REPEAT;
+		}
+	}
+}
+
+static int ads7846_no_filter(void *ads, int data_idx, int *val)
+{
+	return ADS7846_FILTER_OK;
+}
+
+static void ads7846_rx_val(void *ads)
+{
+	struct ads7846 *ts = ads;
+	struct spi_message *m;
+	struct spi_transfer *t;
+	u16 *rx_val;
+	int val;
+	int action;
+	int status;
+
+	m = &ts->msg[ts->msg_idx];
+	t = list_entry(m->transfers.prev, struct spi_transfer, transfer_list);
+	rx_val = (u16 *)t->rx_buf;
+	val = be16_to_cpu(*rx_val) >> 3;
+
+	action = ts->filter(ts->filter_data, ts->msg_idx, &val);
+	switch (action) {
+	case ADS7846_FILTER_REPEAT:
+		break;
+	case ADS7846_FILTER_IGNORE:
+		ts->tc.ignore = 1;
+		/* Last message will contain ads7846_rx() as the
+		 * completion function.
+		 */
+		m = ts->last_msg;
+		break;
+	case ADS7846_FILTER_OK:
+		*rx_val = val;
+		ts->tc.ignore = 0;
+		m = &ts->msg[++ts->msg_idx];
+		break;
+	default:
+		BUG();
 	}
 	status = spi_async(ts->spi, m);
 	if (status)
@@ -512,21 +558,27 @@ static void ads7846_debounce(void *ads)
 				status);
 }
 
-static void ads7846_timer(unsigned long handle)
+static int ads7846_timer(struct hrtimer *handle)
 {
-	struct ads7846	*ts = (void *)handle;
+	struct ads7846	*ts = container_of(handle, struct ads7846, timer);
 	int		status = 0;
 
 	spin_lock_irq(&ts->lock);
 
-	if (unlikely(ts->msg_idx && !ts->pendown)) {
+	if (unlikely(!ts->get_pendown_state() ||
+		     device_suspended(&ts->spi->dev))) {
+		if (ts->pendown) {
+			ads7846_report_pen_state(ts, 0);
+			ads7846_sync_events(ts);
+			ts->pendown = 0;
+		}
+
 		/* measurment cycle ended */
 		if (!device_suspended(&ts->spi->dev)) {
 			ts->irq_disabled = 0;
 			enable_irq(ts->spi->irq);
 		}
 		ts->pending = 0;
-		ts->msg_idx = 0;
 	} else {
 		/* pen is still down, continue with the measurement */
 		ts->msg_idx = 0;
@@ -536,6 +588,7 @@ static void ads7846_timer(unsigned long handle)
 	}
 
 	spin_unlock_irq(&ts->lock);
+	return HRTIMER_NORESTART;
 }
 
 static irqreturn_t ads7846_irq(int irq, void *handle, struct pt_regs *regs)
@@ -555,7 +608,8 @@ static irqreturn_t ads7846_irq(int irq, void *handle, struct pt_regs *regs)
 			ts->irq_disabled = 1;
 			disable_irq(ts->spi->irq);
 			ts->pending = 1;
-			mod_timer(&ts->timer, jiffies);
+			hrtimer_start(&ts->timer, ktime_set(0, TS_POLL_DELAY),
+					HRTIMER_REL);
 		}
 	}
 	spin_unlock_irqrestore(&ts->lock, flags);
@@ -642,6 +696,7 @@ static int __devinit ads7846_probe(struct spi_device *spi)
 	struct ads7846_platform_data	*pdata = spi->dev.platform_data;
 	struct spi_message		*m;
 	struct spi_transfer		*x;
+	int				vref;
 	int				err;
 
 	if (!spi->irq) {
@@ -692,8 +747,7 @@ static int __devinit ads7846_probe(struct spi_device *spi)
 	ts->input = input_dev;
 	ts->hwmon = hwmon;
 
-	init_timer(&ts->timer);
-	ts->timer.data = (unsigned long) ts;
+	hrtimer_init(&ts->timer, CLOCK_MONOTONIC, HRTIMER_REL);
 	ts->timer.function = ads7846_timer;
 
 	spin_lock_init(&ts->lock);
@@ -702,14 +756,25 @@ static int __devinit ads7846_probe(struct spi_device *spi)
 	ts->vref_delay_usecs = pdata->vref_delay_usecs ? : 100;
 	ts->x_plate_ohms = pdata->x_plate_ohms ? : 400;
 	ts->pressure_max = pdata->pressure_max ? : ~0;
-	if (pdata->debounce_max) {
+
+	if (pdata->filter != NULL) {
+		if (pdata->filter_init != NULL) {
+			err = pdata->filter_init(pdata, &ts->filter_data);
+			if (err < 0)
+				goto err_free_mem;
+		}
+		ts->filter = pdata->filter;
+		ts->filter_cleanup = pdata->filter_cleanup;
+	} else if (pdata->debounce_max) {
 		ts->debounce_max = pdata->debounce_max;
+		if (ts->debounce_max < 2)
+			ts->debounce_max = 2;
 		ts->debounce_tol = pdata->debounce_tol;
 		ts->debounce_rep = pdata->debounce_rep;
-		if (ts->debounce_rep > ts->debounce_max + 1)
-			ts->debounce_rep = ts->debounce_max - 1;
+		ts->filter = ads7846_debounce;
+		ts->filter_data = ts;
 	} else
-		ts->debounce_tol = ~0;
+		ts->filter = ads7846_no_filter;
 	ts->get_pendown_state = pdata->get_pendown_state;
 
 	snprintf(ts->phys, sizeof(ts->phys), "%s/input0", spi->dev.bus_id);
@@ -731,6 +796,8 @@ static int __devinit ads7846_probe(struct spi_device *spi)
 	input_set_abs_params(input_dev, ABS_PRESSURE,
 			pdata->pressure_min, pdata->pressure_max, 0, 0);
 
+	vref = pdata->keep_vref_on;
+
 	/* set up the transfers to read touchscreen state; this assumes we
 	 * use formula #2 for pressure, not #3.
 	 */
@@ -740,7 +807,7 @@ static int __devinit ads7846_probe(struct spi_device *spi)
 	spi_message_init(m);
 
 	/* y- still on; turn on only y+ (and ADC) */
-	ts->read_y = READ_Y;
+	ts->read_y = READ_Y(vref);
 	x->tx_buf = &ts->read_y;
 	x->len = 1;
 	spi_message_add_tail(x, m);
@@ -750,7 +817,7 @@ static int __devinit ads7846_probe(struct spi_device *spi)
 	x->len = 2;
 	spi_message_add_tail(x, m);
 
-	m->complete = ads7846_debounce;
+	m->complete = ads7846_rx_val;
 	m->context = ts;
 
 	m++;
@@ -758,7 +825,7 @@ static int __devinit ads7846_probe(struct spi_device *spi)
 
 	/* turn y- off, x+ on, then leave in lowpower */
 	x++;
-	ts->read_x = READ_X;
+	ts->read_x = READ_X(vref);
 	x->tx_buf = &ts->read_x;
 	x->len = 1;
 	spi_message_add_tail(x, m);
@@ -768,7 +835,7 @@ static int __devinit ads7846_probe(struct spi_device *spi)
 	x->len = 2;
 	spi_message_add_tail(x, m);
 
-	m->complete = ads7846_debounce;
+	m->complete = ads7846_rx_val;
 	m->context = ts;
 
 	/* turn y+ off, x- on; we'll use formula #2 */
@@ -777,7 +844,7 @@ static int __devinit ads7846_probe(struct spi_device *spi)
 		spi_message_init(m);
 
 		x++;
-		ts->read_z1 = READ_Z1;
+		ts->read_z1 = READ_Z1(vref);
 		x->tx_buf = &ts->read_z1;
 		x->len = 1;
 		spi_message_add_tail(x, m);
@@ -787,14 +854,14 @@ static int __devinit ads7846_probe(struct spi_device *spi)
 		x->len = 2;
 		spi_message_add_tail(x, m);
 
-		m->complete = ads7846_debounce;
+		m->complete = ads7846_rx_val;
 		m->context = ts;
 
 		m++;
 		spi_message_init(m);
 
 		x++;
-		ts->read_z2 = READ_Z2;
+		ts->read_z2 = READ_Z2(vref);
 		x->tx_buf = &ts->read_z2;
 		x->len = 1;
 		spi_message_add_tail(x, m);
@@ -804,7 +871,7 @@ static int __devinit ads7846_probe(struct spi_device *spi)
 		x->len = 2;
 		spi_message_add_tail(x, m);
 
-		m->complete = ads7846_debounce;
+		m->complete = ads7846_rx_val;
 		m->context = ts;
 	}
 
@@ -834,7 +901,7 @@ static int __devinit ads7846_probe(struct spi_device *spi)
 			spi->dev.bus_id, ts)) {
 		dev_dbg(&spi->dev, "irq %d busy?\n", spi->irq);
 		err = -EBUSY;
-		goto err_free_mem;
+		goto err_cleanup_filter;
 	}
 
 	dev_info(&spi->dev, "touchscreen + hwmon, irq %d\n", spi->irq);
@@ -880,6 +947,9 @@ static int __devinit ads7846_probe(struct spi_device *spi)
 	device_remove_file(&spi->dev, &dev_attr_in0_input);
 
 	free_irq(spi->irq, ts);
+ err_cleanup_filter:
+	if (ts->filter_cleanup)
+		ts->filter_cleanup(ts->filter_data);
  err_free_mem:
 	if (!IS_ERR(hwmon))
 		hwmon_device_unregister(hwmon);
@@ -910,6 +980,9 @@ static int __devexit ads7846_remove(struct spi_device *spi)
 	free_irq(ts->spi->irq, ts);
 	/* suspend left the IRQ disabled */
 	enable_irq(ts->spi->irq);
+
+	if (ts->filter_cleanup != NULL)
+		ts->filter_cleanup(ts->filter_data);
 
 	kfree(ts);
 

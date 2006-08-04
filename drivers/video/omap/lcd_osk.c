@@ -29,35 +29,25 @@
 #include <asm/arch/mux.h>
 #include <asm/arch/omapfb.h>
 
-/* #define OMAPFB_DBG 1 */
-
-#include "debug.h"
-
-static int osk_panel_init(struct omapfb_device *fbdev)
+static int osk_panel_init(struct lcd_panel *panel, struct omapfb_device *fbdev)
 {
-	DBGENTER(1);
-	DBGLEAVE(1);
 	return 0;
 }
 
-static void osk_panel_cleanup(void)
+static void osk_panel_cleanup(struct lcd_panel *panel)
 {
-	DBGENTER(1);
-	DBGLEAVE(1);
 }
 
-static int osk_panel_enable(void)
+static int osk_panel_enable(struct lcd_panel *panel)
 {
-	DBGENTER(1);
-
 	/* configure PWL pin */
 	omap_cfg_reg(PWL);
 
 	/* Enable PWL unit */
-	omap_writeb(0x01, OMAP16XX_PWL_CLK_ENABLE);
+	omap_writeb(0x01, OMAP_PWL_CLK_ENABLE);
 
 	/* Set PWL level */
-	omap_writeb(0xFF, OMAP16XX_PWL_ENABLE);
+	omap_writeb(0xFF, OMAP_PWL_ENABLE);
 
 	/* configure GPIO2 as output */
 	omap_set_gpio_direction(2, 0);
@@ -65,27 +55,22 @@ static int osk_panel_enable(void)
 	/* set GPIO2 high */
 	omap_set_gpio_dataout(2, 1);
 
-	DBGLEAVE(1);
 	return 0;
 }
 
-static void osk_panel_disable(void)
+static void osk_panel_disable(struct lcd_panel *panel)
 {
-	DBGENTER(1);
-
 	/* Set PWL level to zero */
-	omap_writeb(0x00, OMAP16XX_PWL_ENABLE);
+	omap_writeb(0x00, OMAP_PWL_ENABLE);
 
 	/* Disable PWL unit */
-	omap_writeb(0x00, OMAP16XX_PWL_CLK_ENABLE);
+	omap_writeb(0x00, OMAP_PWL_CLK_ENABLE);
 
 	/* set GPIO2 low */
 	omap_set_gpio_dataout(2, 0);
-
-	DBGLEAVE(1);
 }
 
-static unsigned long osk_panel_get_caps(void)
+static unsigned long osk_panel_get_caps(struct lcd_panel *panel)
 {
 	return 0;
 }
@@ -116,26 +101,22 @@ struct lcd_panel osk_panel = {
 
 static int osk_panel_probe(struct platform_device *pdev)
 {
-	DBGENTER(1);
 	omapfb_register_panel(&osk_panel);
 	return 0;
 }
 
 static int osk_panel_remove(struct platform_device *pdev)
 {
-	DBGENTER(1);
 	return 0;
 }
 
 static int osk_panel_suspend(struct platform_device *pdev, pm_message_t mesg)
 {
-	DBGENTER(1);
 	return 0;
 }
 
 static int osk_panel_resume(struct platform_device *pdev)
 {
-	DBGENTER(1);
 	return 0;
 }
 

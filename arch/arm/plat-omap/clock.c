@@ -28,9 +28,9 @@
 
 #include <asm/arch/clock.h>
 
-static LIST_HEAD(clocks);
+LIST_HEAD(clocks);
+DEFINE_SPINLOCK(clockfw_lock);
 static DEFINE_MUTEX(clocks_mutex);
-static DEFINE_SPINLOCK(clockfw_lock);
 
 static struct clk_functions *arch_clock;
 
@@ -322,6 +322,31 @@ void clk_allow_idle(struct clk *clk)
 EXPORT_SYMBOL(clk_allow_idle);
 
 /*-------------------------------------------------------------------------*/
+
+#ifdef CONFIG_OMAP_RESET_CLOCKS
+/*
+ * Disable any unused clocks left on by the bootloader
+ */
+static int __init clk_disable_unused(void)
+{
+	struct clk *ck;
+	unsigned long flags;
+
+	list_for_each_entry(ck, &clocks, node) {
+		if (ck->usecount > 0 || (ck->flags & ALWAYS_ENABLED) ||
+			ck->enable_reg == 0)
+			continue;
+
+		spin_lock_irqsave(&clockfw_lock, flags);
+		if (arch_clock->clk_disable_unused)
+			arch_clock->clk_disable_unused(ck);
+		spin_unlock_irqrestore(&clockfw_lock, flags);
+	}
+
+	return 0;
+}
+late_initcall(clk_disable_unused);
+#endif
 
 int __init clk_init(struct clk_functions * custom_clocks)
 {
