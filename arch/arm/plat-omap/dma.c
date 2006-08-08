@@ -24,9 +24,9 @@
 #include <linux/spinlock.h>
 #include <linux/errno.h>
 #include <linux/interrupt.h>
+#include <linux/irq.h>
 
 #include <asm/system.h>
-#include <asm/irq.h>
 #include <asm/hardware.h>
 #include <asm/dma.h>
 #include <asm/io.h>
@@ -978,7 +978,7 @@ static irqreturn_t omap2_dma_irq_handler(int irq, void *dev_id,
 static struct irqaction omap24xx_dma_irq = {
 	.name = "DMA",
 	.handler = omap2_dma_irq_handler,
-	.flags = SA_INTERRUPT
+	.flags = IRQF_DISABLED
 };
 
 #else
@@ -1378,6 +1378,14 @@ static int __init omap_init_dma(void)
 			dma_chan_count = 16;
 		} else
 			dma_chan_count = 9;
+		if (cpu_is_omap16xx()) {
+			u16 w;
+
+			/* this would prevent OMAP sleep */
+			w = omap_readw(OMAP1610_DMA_LCD_CTRL);
+			w &= ~(1 << 8);
+			omap_writew(w, OMAP1610_DMA_LCD_CTRL);
+		}
 	} else if (cpu_is_omap24xx()) {
 		u8 revision = omap_readb(OMAP_DMA4_REVISION);
 		printk(KERN_INFO "OMAP DMA hardware revision %d.%d\n",
