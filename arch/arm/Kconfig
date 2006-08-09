@@ -298,45 +298,6 @@ config ARCH_OMAP
 	help
 	  Support for TI's OMAP platform (OMAP1 and OMAP2).
 
-config ARCH_VERSATILE
-	bool "Versatile"
-	select ARM_AMBA
-	select ARM_VIC
-	select ICST307
-	help
-	  This enables support for ARM Ltd Versatile board.
-
-config ARCH_REALVIEW
-	bool "RealView"
-	select ARM_AMBA
-	select ICST307
-	help
-	  This enables support for ARM Ltd RealView boards.
-
-config ARCH_IMX
-	bool "IMX"
-	help
-	  Support for Motorola's i.MX family of processors (MX1, MXL).
-
-config ARCH_H720X
-	bool "Hynix-HMS720x-based"
-	select ISA_DMA_API
-	help
-	  This enables support for systems based on the Hynix HMS720x
-
-config ARCH_AAEC2000
-	bool "Agilent AAEC-2000 based"
-	select ARM_AMBA
-	help
-	  This enables support for systems based on the Agilent AAEC-2000
-
-config ARCH_AT91RM9200
-	bool "AT91RM9200"
-	help
-	  Say Y here if you intend to run this kernel on an Atmel
-	  AT91RM9200-based board.
-
-
 config ARCH_DAVINCI
 	bool "TI DaVinci"
 
