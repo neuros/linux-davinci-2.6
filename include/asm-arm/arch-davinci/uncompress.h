@@ -11,61 +11,25 @@
  * kind, whether express or implied.
  */
 
+#include <linux/serial_reg.h>
 #include <asm/arch/hardware.h>
 
-typedef struct uart_registers_t {
-	unsigned int rbr_thr;
-	unsigned int ier;
-	unsigned int iir_fcr;
-	unsigned int lcr;
-	unsigned int mcr;
-	unsigned int lsr;
-	unsigned int msr;
-	unsigned int scr;
-	unsigned int dll;
-	unsigned int dlh;
-	unsigned int pid1;
-	unsigned int pid2;
-	unsigned int pwremu;
-} uart_registers;
-
-/* Initialize Serial port - This code is written to initialize UART0 only */
-static void do_nothing(void)
-{
-	unsigned int counter;
-	for (counter = 0; counter < 0x200; counter++) {
-		/* Do nothing */
-	}
-}
-
-/* Wait (busy loop) untill TX FIFO is empty and a character
- * can be transmitted */
-static void serial_waitfortxcharcomplete(void)
-{
-	volatile uart_registers *uartregs;
-
-	uartregs = (volatile uart_registers *) DAVINCI_UART0_BASE;
-	do_nothing();
-
-	while (!uartregs->lsr & 0x20) {
-		/* Do Nothing */
-	}
-}
+/* PORT_16C550A, in polled non-fifo mode */
 
 static void putc(const char c)
 {
-	volatile uart_registers *uartregs;
+	volatile u32	*uart = (volatile void *) DAVINCI_UART0_BASE;
 
-	uartregs = (volatile uart_registers *) DAVINCI_UART0_BASE;
-	if (c == '\n')
-		putc('\r');
-	uartregs->rbr_thr = c;
-
-	serial_waitfortxcharcomplete();
+	while (!(uart[UART_LSR] & UART_LSR_THRE))
+		barrier();
+	uart[UART_TX] = c;
 }
 
 static inline void flush(void)
 {
+	volatile u32	*uart = (volatile void *) DAVINCI_UART0_BASE;
+	while (!(uart[UART_LSR] & UART_LSR_THRE))
+		barrier();
 }
 
 #define arch_decomp_setup()
