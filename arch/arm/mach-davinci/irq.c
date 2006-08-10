@@ -125,12 +125,12 @@ void __init davinci_irq_init(void)
 	/* Proggam the irqchip structures for ARM INTC */
 
 	for (i = 0; i < NR_IRQS; i++) {
+		set_irq_chip(i, &irqchip_0);
+		set_irq_flags(i, IRQF_VALID | IRQF_PROBE);
                 if (i != IRQ_TINT1_TINT34)
                         set_irq_handler(i, do_edge_IRQ);
                 else
                         set_irq_handler(i, do_level_IRQ);
-		set_irq_chip(i, &irqchip_0);
-		set_irq_flags(i, IRQF_VALID | IRQF_PROBE);
 	}
 }
 
