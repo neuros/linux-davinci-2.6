@@ -32,8 +32,7 @@
 #include <asm/semaphore.h>
 #include <asm/arch/i2c-client.h>
 
-static unsigned long initialized;
-static struct semaphore expander_sema;
+static DEFINE_MUTEX(expander_lock);
 static struct i2c_client *client_handle;
 
 /* This function is used for internal initialization */
@@ -97,7 +96,7 @@ int davinci_i2c_expander_op(u16 client_addr, u35_expander_ops pin, u8 val)
 	if (val > 1)
 		return -1;
 
-	down(&expander_sema);
+	mutex_lock(&expander_lock);
 
 	err = davinci_i2c_read(1, &data_to_u35, 0x3A);
 
@@ -158,13 +157,13 @@ int davinci_i2c_expander_op(u16 client_addr, u35_expander_ops pin, u8 val)
 		}
 	} else {
 		printk("Only IO Expander at address 0x3A is suuported\n");
-		up(&expander_sema);
-		return -1;
+		mutex_unlock(&expander_lock);
+		return -EINVAL;
 	}
 
 	err = davinci_i2c_write(1, &data_to_u35, 0x3A);
 
-	up(&expander_sema);
+	mutex_unlock(&expander_lock);
 
 	return err;
 }
@@ -192,7 +191,7 @@ static int davinci_i2c_attach_client(struct i2c_adapter *adap, int addr)
 	client->flags = 0;
 	client->driver = &davinci_i2c_client_driver;
 	client->adapter = adap;
-	strlcpy(client->name, "i2c_davinci_client", I2C_NAME_SIZE);
+	strlcpy(client->name, client->driver->driver.name, I2C_NAME_SIZE);
 
 	err = i2c_attach_client(client);
 	if (err) {
@@ -230,21 +229,22 @@ static int davinci_i2c_probe_adapter(struct i2c_adapter *adap)
 /* This is the driver that will be inserted */
 static struct i2c_driver davinci_i2c_client_driver = {
 	.driver = {
-		.name	= "davinci_i2c_client",
+		/* there are 3 expanders, one is leds-only ... */
+		.name	= "davinci_evm_expander1",
 	},
 	.attach_adapter	= davinci_i2c_probe_adapter,
 	.detach_client	= davinci_i2c_detach_client,
 };
-  
+
 static int __init davinci_i2c_client_init(void)
 {
 	return i2c_add_driver(&davinci_i2c_client_driver);
 }
-  
+
 static void __exit davinci_i2c_client_exit(void)
 {
 	i2c_del_driver(&davinci_i2c_client_driver);
 }
-  
+
 module_init(davinci_i2c_client_init);
 module_exit(davinci_i2c_client_exit);
