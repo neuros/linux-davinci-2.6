@@ -95,7 +95,7 @@ static struct platform_device usb_dev = {
 	.name           = "musb_hdrc",
 	.id             = -1,
 	.dev = {
-		.platform_data  	= &usb_data,
+		.platform_data		= &usb_data,
 		.dma_mask		= &usb_dmamask,
 		.coherent_dma_mask      = DMA_32BIT_MASK,
         },
@@ -137,7 +137,7 @@ static void __init
 davinci_evm_map_io(void)
 {
 	davinci_map_common_io();
-	    
+
 	/* Initialize the DaVinci EVM board settigs */
 	board_init ();
 }
