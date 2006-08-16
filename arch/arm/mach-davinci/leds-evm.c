@@ -9,7 +9,6 @@
  * or implied.
  */
 
-#include <linux/config.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
 #include <linux/types.h>
