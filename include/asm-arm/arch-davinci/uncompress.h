@@ -12,7 +12,7 @@
  */
 
 #include <linux/serial_reg.h>
-#include <asm/arch/hardware.h>
+#include <asm/hardware.h>
 
 /* PORT_16C550A, in polled non-fifo mode */
 

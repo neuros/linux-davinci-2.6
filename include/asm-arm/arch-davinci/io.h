@@ -54,7 +54,7 @@
 #ifndef __ASSEMBLER__
 
 /*
- * Functions to access the OMAP IO region
+ * Functions to access the DaVinci IO region
  *
  * NOTE: - Use davinci_read/write[bwl] for physical register addresses
  *	 - Use __raw_read/write[bwl]() for virtual register addresses

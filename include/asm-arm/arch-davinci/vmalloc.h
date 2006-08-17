@@ -28,6 +28,7 @@
  *
  */
 #include <asm/arch/memory.h>
+#include <asm/hardware.h>
 
 /*
  * Just any arbitrary offset to the start of the vmalloc VM area: the

@@ -31,7 +31,6 @@
  * Included Files
  **************************************************************************/
 
-#include <linux/config.h>
 #include <asm/sizes.h>
 #include <asm/memory.h>
 #include <asm/arch/io.h>

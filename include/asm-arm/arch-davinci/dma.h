@@ -31,7 +31,7 @@
 #ifndef __ASM_ARCH_DMA_H
 #define __ASM_ARCH_DMA_H
 
-#include <asm/arch/hardware.h>
+#include <asm/hardware.h>
 #include <asm/arch/edma.h>
 
 #define MAX_DMA_ADDRESS                 0xffffffff

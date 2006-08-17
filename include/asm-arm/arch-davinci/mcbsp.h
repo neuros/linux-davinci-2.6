@@ -1,5 +1,5 @@
 /*
- * linux/include/asm/arch/mcbsp.h
+ *  include/asm-arm/arch-davinci/mcbsp.h
  *
  *  BRIEF MODULE DESCRIPTION
  *      DAVINCI McBSP driver Info
@@ -30,7 +30,7 @@
 #ifndef __ASM_ARCH_DAVINCI_MCBSP_H
 #define __ASM_ARCH_DAVINCI_MCBSP_H
 
-#include <asm/arch/hardware.h>
+#include <asm/hardware.h>
 #include <asm/arch/irqs.h>
 
 #define DAVINCI_MCBSP1_BASE	 DAVINCI_MCBSP_BASE
