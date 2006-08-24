@@ -41,10 +41,8 @@
 #include <asm/arch/memory.h>
 #include <asm/arch/hardware.h>
 
-void intcInit(void);
 
-#define INTNUM                      DAVINCI_MAXIRQNUM
-#define EXCNUM                      ( 8 - 1 )
+
 #define INTC_NUM_INTS_ONE_REGISTER  32
 
 #define INTC_CLEAR_INTERRUPTS       0xFFFFFFFF
@@ -54,10 +52,11 @@ void intcInit(void);
 #define INTC_FIQ_ENTRY_RAW				0x1
 #define INTC_VECT_OFFSET				0x100
 
-volatile intc_registers *pintc = (intc_registers *) IO_ADDRESS(DAVINCI_ARM_INTC_BASE);
+static volatile intc_registers *pintc
+		= (intc_registers *) IO_ADDRESS(DAVINCI_ARM_INTC_BASE);
 
 
-void davinci_intcinit(void);
+static void __init davinci_intcinit(void);
 
 /* Disable interrupt */
 static void davinci_xdisable_int(unsigned int intno)
@@ -67,7 +66,7 @@ static void davinci_xdisable_int(unsigned int intno)
 	if (intno < INTC_NUM_INTS_ONE_REGISTER) {
 		mask = 1 << intno;
 		pintc->eint0 &= ~mask;
-	} else if (intno <= INTNUM) {
+	} else if (intno < DAVINCI_N_AINTC_IRQ) {
 		mask = 1 << (intno - INTC_NUM_INTS_ONE_REGISTER);
 		pintc->eint1 &= ~mask;
 	}
@@ -80,26 +79,27 @@ static void davinci_xenable_int(unsigned int intno)
 	if (intno < INTC_NUM_INTS_ONE_REGISTER) {
 		mask = 1 << intno;
 		pintc->eint0 |= mask;
-	} else if (intno <= INTNUM) {
+	} else if (intno < DAVINCI_N_AINTC_IRQ) {
 		mask = 1 << (intno - INTC_NUM_INTS_ONE_REGISTER);
 		pintc->eint1 |= mask;
 	}
 }
 
 /* EOI interrupt */
-void davinci_xeoi_pic(unsigned int intno)
+static void davinci_xeoi_pic(unsigned int intno)
 {
 	unsigned int mask;
 	if (intno < INTC_NUM_INTS_ONE_REGISTER) {
 		mask = 1 << intno;
 		pintc->irq0 = mask;
-	} else if (intno < INTNUM) {
+	} else if (intno < DAVINCI_N_AINTC_IRQ) {
 		mask = 1 << (intno - INTC_NUM_INTS_ONE_REGISTER);
 		pintc->irq1 = mask;
 	}
 }
 
-static struct irqchip irqchip_0 = {
+static struct irq_chip irqchip_0 = {
+	.name = "AINTC",
 	.ack = davinci_xeoi_pic,
 	.mask = davinci_xdisable_int,
 	.unmask = davinci_xenable_int,
@@ -112,9 +112,9 @@ void __init davinci_irq_init(void)
 
 	davinci_intcinit();
 
+	/* set up irq vectors */
 	ptr += INTC_VECT_OFFSET / (sizeof(*ptr));
-
-	for (i = 0; i < INTNUM; i++) {
+	for (i = 0; i < DAVINCI_N_AINTC_IRQ; i++) {
 		if (i == 0) {
 			*ptr = 0xFFFFFFFF;
 		} else {
@@ -122,9 +122,9 @@ void __init davinci_irq_init(void)
 		}
 		ptr++;
 	}
-	/* Proggam the irqchip structures for ARM INTC */
 
-	for (i = 0; i < NR_IRQS; i++) {
+	/* Program the irqchip structures for ARM INTC */
+	for (i = 0; i < DAVINCI_N_AINTC_IRQ; i++) {
 		set_irq_chip(i, &irqchip_0);
 		set_irq_flags(i, IRQF_VALID | IRQF_PROBE);
                 if (i != IRQ_TINT1_TINT34)
@@ -134,8 +134,8 @@ void __init davinci_irq_init(void)
 	}
 }
 
-/* Interrupt Controller Initialize */
-void davinci_intcinit(void)
+/* ARM Interrupt Controller Initialize */
+static void __init davinci_intcinit(void)
 {
 	/* Clear all interrupt requests - write 1 to clear the interrupt */
 	pintc->fiq0 = pintc->irq0 = INTC_CLEAR_INTERRUPTS;

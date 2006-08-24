@@ -43,7 +43,6 @@
 #include <asm/arch/hardware.h>
 #include "clock.h"
 
-#define DAVINCI_MAX_CLK 9
 
 #define PLL1_PLLM   __REG(0x01c40910)
 #define PLL2_PLLM   __REG(0x01c40D10)
@@ -261,7 +260,7 @@ void clk_unregister(struct clk *clk)
 
 EXPORT_SYMBOL(clk_unregister);
 
-static struct clk davinci_clks[DAVINCI_MAX_CLK] = {
+static struct clk davinci_clks[] = {
 	{
 		.name = "ARMCLK",
 		.rate = &armrate,
@@ -304,6 +303,11 @@ static struct clk davinci_clks[DAVINCI_MAX_CLK] = {
 		.lpsc = DAVINCI_LPSC_SPI,
 	},
 	{
+		.name = "gpio",
+		.rate = &commonrate,
+		.lpsc = DAVINCI_LPSC_GPIO,
+	},
+	{
 		.name = "AEMIFCLK",
 		.rate = &commonrate,
 		.lpsc = DAVINCI_LPSC_AEMIF,
@@ -319,7 +323,9 @@ int __init davinci_clk_init(void)
 	commonrate = ((PLL1_PLLM + 1) * 27000000) / 6;
 	armrate = ((PLL1_PLLM + 1) * 27000000) / 2;
 
-	for (clkp = davinci_clks; count < DAVINCI_MAX_CLK; count++, clkp++) {
+	for (clkp = davinci_clks;
+			count < ARRAY_SIZE(davinci_clks);
+			count++, clkp++) {
 		clk_register(clkp);
 
 		/* Turn on clocks that have been enabled in the
