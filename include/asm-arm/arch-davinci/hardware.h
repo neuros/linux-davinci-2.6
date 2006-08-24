@@ -127,4 +127,7 @@
 #define DAVINCI_LPSC_GEM            39      // GEM LPSC
 #define DAVINCI_LPSC_IMCOP          40      // IMCOP LPSC
 
+/* NOR Flash base address set to CS0 by default */
+#define DAVINCI_CS0_PHYS	0x02000000
+
 #endif /* __ASM_ARCH_HARDWARE_H */
