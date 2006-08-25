@@ -51,3 +51,4 @@ obj-$(CONFIG_BLK_DEV_IDEFLOPPY)		+= ide-floppy.o
 obj-$(CONFIG_BLK_DEV_IDE)		+= legacy/ arm/ mips/
 obj-$(CONFIG_BLK_DEV_HD)		+= legacy/
 obj-$(CONFIG_ETRAX_IDE)		+= cris/
+obj-$(CONFIG_BLK_DEV_DAVINCI)		+= davinci/
