@@ -824,6 +824,12 @@ config S3C2410_RTC
 	  Samsung S3C2410. This can provide periodic interrupt rates
 	  from 1Hz to 64Hz for user programs, and wakeup from Alarm.
 
+config DAVINCI_RTC
+	bool "TI DaVinci Real Time Clock"
+	depends on ARCH_DAVINCI && MACH_DAVINCI_EVM && I2C_DAVINCI
+	help
+	  Support for TI DaVinci RTC
+
 config COBALT_LCD
 	bool "Support for Cobalt LCD"
 	depends on MIPS_COBALT
