@@ -33,6 +33,7 @@
 #include <asm/uaccess.h>
 
 #include <video/davincifb.h>
+#include <asm/system.h>
 
 #define MODULE_NAME "davincifb"
 
@@ -92,7 +93,7 @@ struct dm_win_info {
 
 	/* flag to identify if framebuffer area is fixed already or not */
 	int alloc_fb_mem;
-
+	unsigned long sdram_address;
 	struct dm_info *dm;
 };
 
@@ -287,15 +288,51 @@ static int davincifb_venc_check_mode(const struct dm_win_info *w,
 	return 0;
 }
 
+static void set_sdram_params(char *id, u32 addr, u32 line_length);
 static irqreturn_t davincifb_isr(int irq, void *arg, struct pt_regs *regs)
 {
 	struct dm_info *dm = (struct dm_info *)arg;
+	unsigned long addr=0;
 
-	if ((dispc_reg_in(VENC_VSTAT) & 0x00000010)) {
-	        ++dm->vsync_cnt;
-        	wake_up_interruptible(&dm->vsync_wait);
-       		return IRQ_HANDLED;
-	}
+	if ((dispc_reg_in(VENC_VSTAT) & 0x00000010) == 0x10) {
+		xchg(&addr, dm->osd0->sdram_address);
+		if (addr) {
+			set_sdram_params(dm->osd0->info.fix.id,
+					 dm->osd0->sdram_address,
+					 dm->osd0->info.fix.line_length);
+			dm->osd0->sdram_address = 0;
+		}
+		addr = 0;
+		xchg(&addr, dm->osd1->sdram_address);
+		if (addr) {
+			set_sdram_params(dm->osd1->info.fix.id,
+					 dm->osd1->sdram_address,
+					 dm->osd1->info.fix.line_length);
+			dm->osd1->sdram_address = 0;
+		}
+		addr = 0;
+		xchg(&addr, dm->vid0->sdram_address);
+		if (addr) {
+			set_sdram_params(dm->vid0->info.fix.id,
+					 dm->vid0->sdram_address,
+					 dm->vid0->info.fix.line_length);
+			dm->vid0->sdram_address = 0;
+		}
+		addr = 0;
+		xchg(&addr, dm->vid1->sdram_address);
+		if (addr) {
+			set_sdram_params(dm->vid1->info.fix.id,
+					 dm->vid1->sdram_address,
+					 dm->vid1->info.fix.line_length);
+			dm->vid1->sdram_address = 0;
+		}
+		return IRQ_HANDLED;
+	} else {
+		++dm->vsync_cnt;
+		wake_up_interruptible(&dm->vsync_wait);
+		return IRQ_HANDLED;
+  	}
+
 	return IRQ_HANDLED;
 }
 
@@ -879,7 +916,11 @@ static int davincifb_pan_display(struct fb_var_screeninfo *var,
 	offset = var->yoffset * info->fix.line_length +
 	    var->xoffset * var->bits_per_pixel / 8;
 	start = (u32) w->fb_base_phys + offset;
-	set_sdram_params(info->fix.id, start, info->fix.line_length);
+
+	if ((dispc_reg_in(VENC_VSTAT) & 0x00000010)==0x10)
+		set_sdram_params(info->fix.id, start, info->fix.line_length);
+	else
+		w->sdram_address = start;
 
 	return (0);
 }
@@ -1197,6 +1238,7 @@ static struct fb_info *init_fb_info(struct dm_win_info *w,
 	info->fix.mmio_start = dm->mmio_base_phys;
 	info->fix.mmio_len = dm->mmio_size;
 	info->fix.accel = FB_ACCEL_NONE;
+	w->sdram_address = 0;
 
 	return info;
 }
