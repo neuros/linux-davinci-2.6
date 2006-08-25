@@ -42,11 +42,8 @@
         COMPLETE VIA ITS CALLBACK IN THE SAME FUNCTION FOR SINGLE
         PACKET COMPLETE NOTIFY.
 
-    (3) EMAC_MULTIPACKET_RX_COMPLETE_NOTIFY - to support multiple Rx
-        packets to be given to DDA layer. If this is defined, DDA
-        should provide the callback function for multiple packets too.
 
-    (4) CONFIG_EMAC_INIT_BUF_MALLOC - Not required for DaVinci driver
+    (3) CONFIG_EMAC_INIT_BUF_MALLOC - Not required for DaVinci driver
         - feature was added for another TI platform
 
  */
@@ -130,7 +127,6 @@ typedef void *emac_net_data_token;
  * defines
  * --------------------------------------------------------------- */
 #define EMAC_MULTIPACKET_TX_COMPLETE_NOTIFY
-#define EMAC_MULTIPACKET_RX_COMPLETE_NOTIFY
 
 /* NO PHY used in case of external ethernet switches */
 #define CONFIG_EMAC_NOPHY              9999
@@ -162,11 +158,6 @@ typedef void *emac_net_data_token;
    configuration for parameter "maxPktsToProcess" */
 #define EMAC_MAX_TX_COMPLETE_PKTS_TO_NOTIFY    8
 
-/* If multi packet Rx indication is enabled (via
-   EMAC_MULTIPACKET_RX_COMPLETE_NOTIFY) Max number of Rx packets that
-   can be notified - the actual number will depend upon user
-   configuration for parameter "maxPktsToProcess" */
-#define EMAC_MAX_RX_COMPLETE_PKTS_TO_NOTIFY    8
 
 /* config macros */
 #define EMAC_MAX_INSTANCES                     1
@@ -1463,13 +1454,8 @@ typedef struct _emac_rx_cppi_ch_t {
 
 	/* packet and buffer objects required for passing up to DDA
 	 * layer for the given instance */
-#ifdef EMAC_MULTIPACKET_RX_COMPLETE_NOTIFY
-	net_pkt_obj *pkt_queue;
-	net_buf_obj *buf_queue;
-#else
 	net_pkt_obj pkt_queue;
 	net_buf_obj buf_queue[EMAC_MAX_RX_FRAGMENTS];
-#endif
 #ifdef EMAC_MULTIFRAGMENT
 	u32 rx_buffer_ptr[EMAC_MAX_RX_FRAGMENTS];
 	u32 rx_data_token[EMAC_MAX_RX_FRAGMENTS];
@@ -1544,8 +1530,9 @@ typedef struct emac_dev_s {
 	/* tx_rx_param struct added */
 	rx_tx_params napi_rx_tx;
 
-	/* TX lock */
-	spinlock_t lock;
+	/* TX/RX locks */
+	spinlock_t tx_lock;
+	spinlock_t rx_lock;
 
 	emac_drv_state drv_state;
 
@@ -1641,12 +1628,10 @@ static int emac_net_tx_complete(emac_dev_t * dev,
 				emac_net_data_token * net_data_tokens,
 				int num_tokens, u32 channel);
 
-#ifdef EMAC_MULTIPACKET_RX_COMPLETE_NOTIFY
-static int emac_net_rx_multiple_cb(emac_dev_t * dev,
-				   net_pkt_obj * net_pkt_list,
-				   int num_pkts, void *rx_args);
+static int emac_net_rx_cb(emac_dev_t * dev,
+		   	  net_pkt_obj * net_pkt_list,
+			  void *rx_args);
 
-#endif
 
 static int emac_poll(struct net_device *netdev, int *budget);
 #ifdef CONFIG_NET_POLL_CONTROLLER
@@ -3427,7 +3412,8 @@ static int emac_dev_init(struct net_device *netdev)
 	init_status = 2;	/* instance initialized */
 
 	/* init spin lock */
-	spin_lock_init(&dev->lock);
+	spin_lock_init(&dev->tx_lock);
+	spin_lock_init(&dev->rx_lock);
 
 	/* set as per RFC 2665 */
 	dev->link_speed = 100000000;
@@ -5109,7 +5095,6 @@ static int emac_init_rx_channel(emac_dev_t * _dev,
 				emac_ch_info * ch_info, void *ch_open_args)
 {
 	emac_dev_t *dev = (emac_dev_t *) _dev;
-	int ret_code;
 	u32 cnt, bd_size;
 	char *alloc_mem;
 	emac_rx_bd *curr_bd;
@@ -5140,36 +5125,7 @@ static int emac_init_rx_channel(emac_dev_t * _dev,
 	rx_cppi->bd_mem = (char *)EMAC_RX_BD_MEM;
 	memzero(rx_cppi->bd_mem, rx_cppi->alloc_size);
 
-#ifdef EMAC_MULTIPACKET_RX_COMPLETE_NOTIFY
-	/* allocate memory for packet queue on a 4 byte boundry and set to 0 */
-	emac_malloc(ch_info->service_max * sizeof(net_pkt_obj),
-		    (void **)&rx_cppi->pkt_queue);
-
-	ret_code = emac_malloc((ch_info->service_max * sizeof(net_buf_obj) *
-				EMAC_MAX_RX_FRAGMENTS),
-			       (void **)&rx_cppi->buf_queue);
-	if (ret_code) {
-		emac_free(rx_cppi->pkt_queue);
-		emac_free(rx_cppi);
-
-		return ret_code;
-	}
-
-	/* build the packet-buffer structures */
-	{
-		net_pkt_obj *curr_pkt = &rx_cppi->pkt_queue[0];
-		net_buf_obj *curr_buf = &rx_cppi->buf_queue[0];
-
-		/* bind pkt and buffer queue data structures */
-		for (cnt = 0; cnt < ch_info->service_max; cnt++) {
-			curr_pkt->buf_list = curr_buf;
-			++curr_pkt;
-			curr_buf += EMAC_MAX_RX_FRAGMENTS;
-		}
-	}
-#else
 	rx_cppi->pkt_queue.buf_list = &rx_cppi->buf_queue[0];
-#endif
 
 	/* allocate RX buffer and initialize the BD linked list */
 	alloc_mem = (char *)(((u32) rx_cppi->bd_mem + 0xF) & ~0xF);
@@ -6113,6 +6069,7 @@ static int emac_pkt_process_end(emac_dev_t * _dev, void *proc_args)
 static int emac_send(emac_dev_t * _dev, net_pkt_obj * pkt,
 		     int channel, void *send_args)
 {
+	unsigned long flags;
 	emac_dev_t *dev = (emac_dev_t *) _dev;
 	int ret_val = EMAC_SUCCESS;
 	emac_tx_bd *curr_bd;
@@ -6143,7 +6100,7 @@ static int emac_send(emac_dev_t * _dev, net_pkt_obj * pkt,
 		    (EMAC_MIN_ETHERNET_PKT_SIZE - pkt->pkt_length);
 		pkt->pkt_length = EMAC_MIN_ETHERNET_PKT_SIZE;
 	}
-	spin_lock_irq(&dev->lock);
+	spin_lock_irqsave(&dev->tx_lock, flags);
 
 	/* only one tx BD for the packet to be sent */
 	curr_bd = tx_cppi->bd_pool_head;
@@ -6213,7 +6170,7 @@ static int emac_send(emac_dev_t * _dev, net_pkt_obj * pkt,
 #endif
 
       exit_emac_send:
-	spin_unlock_irq(&dev->lock);
+	spin_unlock_irqrestore(&dev->tx_lock, flags);
 
 	if (dev->tx_interrupt_disable == TRUE) {
 		if (--dev->tx_int_threshold[channel] <= 0) {
@@ -6243,6 +6200,7 @@ static int emac_send(emac_dev_t * _dev, net_pkt_obj * pkt,
 static int emac_tx_bdproc(emac_dev_t * _dev, u32 channel,
 			  u32 * handle_pkts_and_status, bool * is_eoq)
 {
+	unsigned long flags;
 	emac_dev_t *dev = (emac_dev_t *) _dev;
 	emac_tx_bd *curr_bd;
 	emac_tx_cppi_ch *tx_cppi;
@@ -6274,7 +6232,7 @@ static int emac_tx_bdproc(emac_dev_t * _dev, u32 channel,
 #ifdef EMAC_GETSTATS
 	++tx_cppi->proc_count;
 #endif
-	spin_lock_irq(&dev->lock);
+	spin_lock_irqsave(&dev->tx_lock, flags);
 
 	/* get first BD to process */
 	curr_bd = tx_cppi->active_queue_head;
@@ -6284,7 +6242,7 @@ static int emac_tx_bdproc(emac_dev_t * _dev, u32 channel,
 #ifdef EMAC_GETSTATS
 		tx_cppi->no_active_pkts++;
 #endif
-		spin_unlock_irq(&dev->lock);
+		spin_unlock_irqrestore(&dev->tx_lock, flags);
 
 		return (EMAC_SUCCESS);
 	}
@@ -6341,7 +6299,6 @@ static int emac_tx_bdproc(emac_dev_t * _dev, u32 channel,
 	if (curr_bd) {
 		*is_eoq = FALSE;
 	}
-	spin_unlock_irq(&dev->lock);
 
 #ifdef EMAC_MULTIPACKET_TX_COMPLETE_NOTIFY
 	/* multiple packet TX complete notify - this function is NOT
@@ -6350,6 +6307,7 @@ static int emac_tx_bdproc(emac_dev_t * _dev, u32 channel,
 			     (emac_net_data_token *) & tx_cppi->
 			     tx_complete[0], tx_complete_cnt, channel);
 #endif
+	spin_unlock_irqrestore(&dev->tx_lock, flags);
 
 	return (pkts_processed);
 }
@@ -6388,7 +6346,6 @@ static void emac_add_bdto_rx_queue(emac_dev_t * _dev, emac_rx_cppi_ch * rx_cppi,
 		emac_rx_bd *tail_bd;
 		u32 frame_status;
 
-		spin_lock_irq(&dev->lock);
 		tail_bd = rx_cppi->active_queue_tail;
 		rx_cppi->active_queue_tail = curr_bd;
 		tail_bd->next = (void *)curr_bd;
@@ -6404,7 +6361,7 @@ static void emac_add_bdto_rx_queue(emac_dev_t * _dev, emac_rx_cppi_ch * rx_cppi,
 			++rx_cppi->end_of_queue_add;
 #endif
 		}
-		spin_unlock_irq(&dev->lock);
+
 	}
 
 #ifdef EMAC_GETSTATS
@@ -6421,6 +6378,7 @@ static void emac_add_bdto_rx_queue(emac_dev_t * _dev, emac_rx_cppi_ch * rx_cppi,
 static int emac_rx_bdproc(emac_dev_t * _dev, u32 channel,
 			  int *handle_pkts_and_status)
 {
+	unsigned long flags;
 	emac_dev_t *dev = (emac_dev_t *) _dev;
 	emac_rx_cppi_ch *rx_cppi;
 	emac_rx_bd *curr_bd, *last_bd;
@@ -6429,11 +6387,9 @@ static int emac_rx_bdproc(emac_dev_t * _dev, u32 channel,
 	emac_net_data_token new_buf_token;
 	net_buf_obj *rx_buf_obj;
 	u32 pkts_processed;
-	net_pkt_obj *curr_pkt;
+	net_pkt_obj *curr_pkt,pkt_obj;
+	net_buf_obj buf_obj;
 	u32 pkts_to_be_processed = *handle_pkts_and_status;
-#ifdef EMAC_MULTIPACKET_RX_COMPLETE_NOTIFY
-	u32 rx_complete_cnt = 0;
-#endif
 
 	/* Here no need to validate channel number, since it is taken
 	   from the interrupt register instead channel structure
@@ -6454,11 +6410,11 @@ static int emac_rx_bdproc(emac_dev_t * _dev, u32 channel,
 #endif
 	*handle_pkts_and_status = 0;
 	pkts_processed = 0;
-#ifdef EMAC_MULTIPACKET_RX_COMPLETE_NOTIFY
-	curr_pkt = &rx_cppi->pkt_queue[0];
-#else
-	curr_pkt = &rx_cppi->pkt_queue;
-#endif
+
+	spin_lock_irqsave(&dev->rx_lock, flags);
+
+	pkt_obj.buf_list = &buf_obj;
+	curr_pkt = &pkt_obj;
 	curr_bd = rx_cppi->active_queue_head;
 	BD_CACHE_INVALIDATE(curr_bd, EMAC_BD_LENGTH_FOR_CACHE);
 	frame_status = curr_bd->mode;
@@ -6513,28 +6469,23 @@ static int emac_rx_bdproc(emac_dev_t * _dev, u32 channel,
 				rx_cppi->queue_active = FALSE;	/* clear software RX queue */
 			}
 		}
-#ifdef EMAC_MULTIPACKET_RX_COMPLETE_NOTIFY
-		/* only queue the packet here - and give it to DDA
-		 * layer before returning */
-		++curr_pkt;
-		++rx_complete_cnt;
-#else
-		/* return the packet to the user - BD ptr passed in
-		 * last parameter for potential *future* use */
-		dev->dda_if->dda_net_if.dda_netrx_cb(dev, curr_pkt,
-						     (void *)channel,
-						     (void *)last_bd);
-#endif
-		++pkts_processed;
 
 		/* recycle BD */
 		emac_add_bdto_rx_queue(_dev, rx_cppi, last_bd, new_buffer,
 				       new_buf_token);
+
+		/* return the packet to the user - BD ptr passed in
+		 * last parameter for potential *future* use */
+		spin_unlock_irqrestore(&dev->rx_lock, flags);
+		emac_net_rx_cb(dev,curr_pkt,(void*)channel);
+		spin_lock_irqsave(&dev->rx_lock, flags);
+
+		curr_bd = rx_cppi->active_queue_head;
 		if (curr_bd) {
 			BD_CACHE_INVALIDATE(curr_bd, EMAC_BD_LENGTH_FOR_CACHE);
 			frame_status = curr_bd->mode;
 		}
-
+		++pkts_processed;
 	}
 
 	if ((curr_bd) && ((frame_status & EMAC_CPPI_OWNERSHIP_BIT) == 0)) {
@@ -6542,15 +6493,7 @@ static int emac_rx_bdproc(emac_dev_t * _dev, u32 channel,
 	}
 
       end_emac_rx_bdproc:
-#ifdef EMAC_MULTIPACKET_RX_COMPLETE_NOTIFY
-	/* return the packet to the user - channel number passed in last parameter for potential *future* use */
-	if (rx_complete_cnt > 0) {
-		emac_net_rx_multiple_cb(dev,
-					&rx_cppi->pkt_queue[0],
-					rx_complete_cnt, (void *)channel);
-	}
-#endif
-
+	spin_unlock_irqrestore(&dev->rx_lock, flags);
 	return (pkts_processed);
 }
 
@@ -6578,7 +6521,9 @@ static int emac_poll(struct net_device *netdev, int *budget)
 		/* if more packets reschedule the tasklet or call
 		 * pkt_process_end */
 		if (!pkts_pending) {
-			netif_rx_complete(netdev);
+			if (test_bit(__LINK_STATE_RX_SCHED, &netdev->state)) {
+				netif_rx_complete(netdev);
+			}
 			emac_pkt_process_end(dev, NULL);
 			return 0;
 		} else if (!test_bit(0, &dev->set_to_close)) {
@@ -6647,44 +6592,40 @@ static int emac_net_free_rx_buf(emac_dev_t * dev, void *buffer,
 	return (EMAC_SUCCESS);
 }
 
-#ifdef EMAC_MULTIPACKET_RX_COMPLETE_NOTIFY
+
 /*
- * Multiple packet receive
+ * Packet receive notification
  *
- * This function get multiple received packets via the netPktList and
- * it queues these packets into the higher layer queue
+ * This function gets received packet via the netPktList and
+ * it queues the packet into the higher layer queue
  *
  * Note that rxArgs contains "channel" and is ignored for this
  * implementation
 */
-static int emac_net_rx_multiple_cb(emac_dev_t * dev,
-				   net_pkt_obj * net_pkt_list,
-				   int num_pkts, void *rx_args)
+static int emac_net_rx_cb(emac_dev_t * dev,
+		          net_pkt_obj * net_pkt_list,
+			  void *rx_args)
 {
-	u32 cnt;
 
-	for (cnt = 0; cnt < num_pkts; cnt++) {
-		struct sk_buff *p_skb =
-		    (struct sk_buff *)net_pkt_list->pkt_token;
+	struct sk_buff *p_skb;
 
-		/* set length of packet */
-		skb_put(p_skb, net_pkt_list->pkt_length);
+	p_skb = (struct sk_buff *)net_pkt_list->pkt_token;
+
+	/* set length of packet */
+	skb_put(p_skb, net_pkt_list->pkt_length);
 #ifndef EMAC_CACHE_INVALIDATE_FIX
-		/* invalidate cache */
-		EMAC_CACHE_INVALIDATE((unsigned long)p_skb->data, p_skb->len);
+	/* invalidate cache */
+	EMAC_CACHE_INVALIDATE((unsigned long)p_skb->data, p_skb->len);
 #endif
-		p_skb->protocol = eth_type_trans(p_skb, dev->owner);
-		p_skb->dev->last_rx = jiffies;
-		netif_receive_skb(p_skb);
-		dev->net_dev_stats.rx_bytes += net_pkt_list->pkt_length;
-		++net_pkt_list;
-	}
-	dev->net_dev_stats.rx_packets += num_pkts;
+	p_skb->protocol = eth_type_trans(p_skb, dev->owner);
+	p_skb->dev->last_rx = jiffies;
+	netif_receive_skb(p_skb);
+	dev->net_dev_stats.rx_bytes += net_pkt_list->pkt_length;
+	dev->net_dev_stats.rx_packets++;
 
 	return (0);
 }
 
-#endif				/*  EMAC_MULTIPACKET_RX_COMPLETE_NOTIFY */
 
 /* transmit complete callback */
 static int emac_net_tx_complete(emac_dev_t * dev,
