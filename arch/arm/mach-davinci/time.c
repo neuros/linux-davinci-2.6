@@ -292,17 +292,26 @@ struct sys_timer davinci_timer = {
 
 
 void davinci_watchdog_reset(void) {
-	volatile davinci_timer_regs_t *davinci_wdt = (davinci_timer_regs_t *)IO_ADDRESS(DAVINCI_WDOG_BASE);
+	volatile davinci_timer_regs_t *davinci_wdt = 
+		(volatile davinci_timer_regs_t *)IO_ADDRESS(DAVINCI_WDOG_BASE);
 
-        davinci_wdt->tgcr = 0x8;
-        davinci_wdt->tgcr |= 0x3;
-
-	davinci_wdt->tim12 = 0;
+	davinci_wdt->tcr = 0x0;		/* disable timer */
+	davinci_wdt->tgcr = 0x0;	/* reset timer */
+        davinci_wdt->tgcr = 0x8;	/* configure timer2 as 64-bit */
+        davinci_wdt->tgcr |= 0x3;	/* release timer from reset */
+	davinci_wdt->tim12 = 0;		/* clear counter and period regs */
 	davinci_wdt->tim34 = 0;
 	davinci_wdt->prd12 =  0;
 	davinci_wdt->prd34 =  0;
-	davinci_wdt->wdtcr |= 0x4000;
-	davinci_wdt->tcr |= 0x40;
+	davinci_wdt->wdtcr |= 0x4000;	/* enable watchdog timer */
+
+	/* put watchdog in pre-active state */
 	davinci_wdt->wdtcr = 0xA5C64000;
-	davinci_wdt->wdtcr = 0xDA7E4000;
+
+	/* put watchdog in active state */
+	davinci_wdt->wdtcr = 0xDA7E4000;	
+
+	/* write an invalid value to the WDKEY field to trigger 
+	 * a watchdog reset */
+	davinci_wdt->wdtcr = 0x00004000;
 }
