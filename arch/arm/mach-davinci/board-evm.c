@@ -112,6 +112,21 @@ static struct platform_device davinci_evm_flash_device = {
 	.resource	= &davinci_evm_flash_resource,
 };
 
+#if defined(CONFIG_FB_DAVINCI) || defined(CONFIG_FB_DAVINCI_MODULE)
+
+static u64 davinci_fb_dma_mask = DMA_32BIT_MASK;
+
+static struct platform_device davinci_fb_device = {
+	.name		= "davincifb",
+	.id		= -1,
+	.dev = {
+		.dma_mask		= &davinci_fb_dma_mask,
+		.coherent_dma_mask      = DMA_32BIT_MASK,
+	},
+	.num_resources = 0,
+};
+#endif
+
 /*
  * USB
  */
@@ -181,6 +196,9 @@ static inline void setup_usb(void)
 
 static struct platform_device *davinci_evm_devices[] __initdata = {
 	&davinci_evm_flash_device,
+#if defined(CONFIG_FB_DAVINCI) || defined(CONFIG_FB_DAVINCI_MODULE)
+	&davinci_fb_device,
+#endif
 };
 
 static void board_init(void)

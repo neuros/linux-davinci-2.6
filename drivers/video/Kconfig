@@ -1584,6 +1584,14 @@ config FB_PNX4008_DUM_RGB
 	---help---
 	  Say Y here to enable support for PNX4008 RGB Framebuffer
 
+config FB_DAVINCI
+	bool "Davinci Framebuffer support"
+	depends on FB && ARCH_DAVINCI
+	help
+	  This is the frame buffer device driver for the DaVinci video
+	  hardware found on the TI DaVinci EVM.	 If
+	  unsure, say N.
+
 config FB_VIRTUAL
 	tristate "Virtual Frame Buffer support (ONLY FOR TESTING!)"
 	depends on FB
