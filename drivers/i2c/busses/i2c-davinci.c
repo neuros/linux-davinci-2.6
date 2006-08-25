@@ -477,8 +477,6 @@ do_unuse_clocks:
 	clk_disable(dev->clk);
 	clk_put(dev->clk);
 	dev->clk = NULL;
-do_free_mem:
-do_release_region:
 	release_mem_region(mem->start, (mem->end - mem->start) + 1);
 
 	return r;

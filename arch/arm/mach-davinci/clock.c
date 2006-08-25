@@ -99,7 +99,7 @@ void board_setup_psc(unsigned int domain, unsigned int id, char enable)
 		while (!((*mdstat & 0x0000001F) == 0x2));
 }
 
-static int board_setup_peripheral(unsigned int id)
+static void board_setup_peripheral(unsigned int id)
 {
 	switch (id) {
 	case DAVINCI_LPSC_ATA:
