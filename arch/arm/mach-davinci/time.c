@@ -11,30 +11,24 @@
  * whether express or implied.
  *
  */
-#include <linux/config.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
-#include <linux/time.h>
-#include <linux/timex.h>
 #include <linux/types.h>
-#include <linux/sched.h>
 #include <linux/interrupt.h>
 
 #include <asm/io.h>
 #include <asm/hardware.h>
 #include <asm/system.h>
-#include <asm/leds.h>
 #include <asm/irq.h>
 #include <asm/mach/irq.h>
 #include <asm/mach/time.h>
 
-#include <asm/arch/timex.h>
-#include <asm/arch/irqs.h>
 #include <asm/errno.h>
 
 enum {
 	T0_BOT = 0, T0_TOP, T1_BOT, T1_TOP, NUM_TIMERS,
 };
+
 #define IS_TIMER1(id)    (id & 0x2)
 #define IS_TIMER0(id)    (!IS_TIMER1(id))
 #define IS_TIMER_TOP(id) ((id & 0x1))
@@ -127,7 +121,8 @@ static inline unsigned long long cycles_2_ns(unsigned long long cyc)
 	return (cyc * cyc2ns_scale) >> CYC2NS_SCALE_FACTOR;
 }
 
-static int davinci_timer32_config(davinci_timer_t *t) {
+static int davinci_timer32_config(davinci_timer_t *t)
+{
 	volatile davinci_timer_regs_t *regs = t->regs;
 	u32 enamode_shift, reset_shift;
 	int ret = 0;
@@ -154,11 +149,10 @@ static int davinci_timer32_config(davinci_timer_t *t) {
 	/* Set enable mode */
 	if (t->opts & TIMER_ONE_SHOT) {
 		regs->tcr |= 0x1 << enamode_shift;
-	}
-	else if (t->opts & TIMER_CONTINUOUS) {
+	} else if (t->opts & TIMER_CONTINUOUS) {
 		regs->tcr |= 0x2 << enamode_shift;
 	}
-	else { /* TIMER_DISABLED */
+	else {	/* TIMER_DISABLED */
 		regs->tcr &= ~(0x3 << enamode_shift);
 	}
 
@@ -168,10 +162,11 @@ static int davinci_timer32_config(davinci_timer_t *t) {
 	return ret;
 }
 
-static inline u32 davinci_timer32_read(davinci_timer_t *t) {
+static inline u32 davinci_timer32_read(davinci_timer_t *t)
+{
 	volatile davinci_timer_regs_t *regs = t->regs;
 
-	if IS_TIMER_TOP(t->id) {
+	if (IS_TIMER_TOP(t->id)) {
 		return regs->tim34;
 	}
 	else {
@@ -183,7 +178,8 @@ static inline u32 davinci_timer32_read(davinci_timer_t *t) {
  * Last processed system timer interrupt
  */
 static unsigned long davinci_timer32_last = 0;
-static irqreturn_t system_timer_interrupt(int irq, void *dev_id, struct pt_regs *regs)
+static irqreturn_t system_timer_interrupt(int irq, void *dev_id,
+					  struct pt_regs *regs)
 {
 	unsigned long now, latency;
 
@@ -199,7 +195,7 @@ static irqreturn_t system_timer_interrupt(int irq, void *dev_id, struct pt_regs 
 	return IRQ_HANDLED;
 }
 
-unsigned long davinci_gettimeoffset(void)
+static unsigned long davinci_gettimeoffset(void)
 {
 	unsigned long now, elapsed, nsec;
 
@@ -210,13 +206,11 @@ unsigned long davinci_gettimeoffset(void)
 	return nsec / 1000;
 }
 
-static irqreturn_t freerun_interrupt(int irq, void *dev_id, struct pt_regs *regs) {
+static irqreturn_t freerun_interrupt(int irq, void *dev_id,
+				     struct pt_regs *regs)
+{
 	/* TODO: keep track of roll-overs for 64-bit cycle-count */
 	return IRQ_HANDLED;
-}
-
-cycles_t davinci_get_cycles(void) {
-	return davinci_timer32_read(&davinci_timers[TID_FREERUN]);
 }
 
 static davinci_timer_t davinci_timers[NUM_TIMERS] = {
@@ -225,7 +219,7 @@ static davinci_timer_t davinci_timers[NUM_TIMERS] = {
 		.period    = (CLOCK_TICK_RATE / (HZ)),
 		.opts      = TIMER_CONTINUOUS,
 		.irqaction = {
-			.flags   = SA_INTERRUPT,
+			.flags   = IRQF_DISABLED | IRQF_TIMER,
 			.handler = system_timer_interrupt,
 		}
 	},
@@ -234,13 +228,13 @@ static davinci_timer_t davinci_timers[NUM_TIMERS] = {
 		.period     = 0xffffffff,
 		.opts       = TIMER_CONTINUOUS,
 		.irqaction = {
-			.flags   = SA_INTERRUPT,
+			.flags   = IRQF_DISABLED | IRQF_TIMER,
 			.handler = freerun_interrupt,
 		}
 	},
 };
 
-void __init davinci_timer_init(void)
+static void __init davinci_timer_init(void)
 {
 	volatile davinci_timer_regs_t *t0 = davinci_timer_base(T0_BOT);
 	volatile davinci_timer_regs_t *t1 = davinci_timer_base(T1_BOT);
@@ -270,7 +264,7 @@ void __init davinci_timer_init(void)
 
 	set_cyc2ns_scale(CLOCK_TICK_RATE / 1000);
 
-	for(i=0; i<sizeof(davinci_timers)/sizeof(davinci_timer_t); i++) {
+	for (i=0; i< ARRAY_SIZE(davinci_timers); i++) {
 		davinci_timer_t *t = &davinci_timers[i];
 
 		if (t->name) {
@@ -309,9 +303,9 @@ void davinci_watchdog_reset(void) {
 	davinci_wdt->wdtcr = 0xA5C64000;
 
 	/* put watchdog in active state */
-	davinci_wdt->wdtcr = 0xDA7E4000;	
+	davinci_wdt->wdtcr = 0xDA7E4000;
 
-	/* write an invalid value to the WDKEY field to trigger 
+	/* write an invalid value to the WDKEY field to trigger
 	 * a watchdog reset */
 	davinci_wdt->wdtcr = 0x00004000;
 }
