@@ -240,6 +240,11 @@ davinci_evm_map_io(void)
 
 static __init void davinci_evm_init(void)
 {
+#if defined(CONFIG_BLK_DEV_DAVINCI) && defined(CONFIG_MTD_PHYSMAP)
+	printk(KERN_WARNING "WARNING: both IDE and NOR flash are enabled, "
+	       "but are pin-muxed.\n\t Disable IDE for NOR support.\n");
+#endif
+
 	platform_add_devices(davinci_evm_devices,
 			     ARRAY_SIZE(davinci_evm_devices));
 
