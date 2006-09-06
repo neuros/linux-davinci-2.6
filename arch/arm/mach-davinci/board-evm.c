@@ -39,9 +39,6 @@
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/partitions.h>
 #include <linux/mtd/physmap.h>
-#if defined(CONFIG_USB_MUSB_HDRC) || defined(CONFIG_USB_MUSB_HDRC_MODULE)
-#include <linux/usb_musb.h>
-#endif
 
 #include <asm/setup.h>
 #include <asm/io.h>
@@ -131,6 +128,8 @@ static struct platform_device davinci_fb_device = {
  */
 #if defined(CONFIG_USB_MUSB_HDRC) || defined(CONFIG_USB_MUSB_HDRC_MODULE)
 
+#include <linux/usb/musb.h>
+
 static struct musb_hdrc_platform_data usb_data = {
 #if     defined(CONFIG_USB_MUSB_OTG)
 	/* OTG requires a Mini-AB connector */
@@ -141,7 +140,7 @@ static struct musb_hdrc_platform_data usb_data = {
 	.mode           = MUSB_HOST,
 #endif
 	/* irlml6401 switches 5V */
-	.power          = 255,          /* sustains 3.0+ Amps (!) */
+	.power          = 250,          /* sustains 3.0+ Amps (!) */
 	.potpgt         = 4,            /* ~8 msec */
 
 	/* REVISIT multipoint is a _chip_ capability; not board specific */
