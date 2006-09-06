@@ -192,10 +192,28 @@ static inline void setup_usb(void)
 #define setup_usb(void)	do {} while(0)
 #endif  /* CONFIG_USB_MUSB_HDRC */
 
+
+#ifdef	CONFIG_RTC_DRV_DAVINCI_EVM
+#define DO_RTC
+#endif
+#ifdef	CONFIG_RTC_DRV_DAVINCI_EVM_MODULE
+#define DO_RTC
+#endif
+#ifdef	DO_RTC
+static struct platform_device rtc_dev = {
+	.name           = "rtc_davinci_evm",
+	.id             = -1,
+};
+#endif
+
+
 static struct platform_device *davinci_evm_devices[] __initdata = {
 	&davinci_evm_flash_device,
 #if defined(CONFIG_FB_DAVINCI) || defined(CONFIG_FB_DAVINCI_MODULE)
 	&davinci_fb_device,
+#endif
+#ifdef	DO_RTC
+	&rtc_dev,
 #endif
 };
 
