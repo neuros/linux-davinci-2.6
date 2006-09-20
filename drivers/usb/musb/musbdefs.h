@@ -41,6 +41,8 @@
 #include <linux/errno.h>
 #include <linux/device.h>
 #include <linux/usb_ch9.h>
+#include <linux/usb_gadget.h>
+#include <linux/usb.h>
 #include <linux/usb_otg.h>
 #include <linux/usb/musb.h>
 
@@ -67,13 +69,17 @@ struct musb_ep;
 #include "plat_arc.h"
 #include "musbhdrc.h"
 
+#include "musb_gadget.h"
+#include "../core/hcd.h"
+#include "musb_host.h"
+#include "otg.h"
+
 
 /* REVISIT tune this */
 #define	MIN_DMA_REQUEST		1	/* use PIO below this xfer size */
 
 
 #ifdef CONFIG_USB_MUSB_OTG
-#include "otg.h"
 
 #define	is_peripheral_enabled(musb)	((musb)->board_mode != MUSB_HOST)
 #define	is_host_enabled(musb)		((musb)->board_mode != MUSB_PERIPHERAL)
@@ -82,15 +88,8 @@ struct musb_ep;
 /* NOTE:  otg and peripheral-only state machines start at B_IDLE.
  * OTG or host-only go to A_IDLE when ID is sensed.
  */
-#define is_peripheral_active(m)	(is_peripheral_capable() && !(m)->bIsHost)
-#define is_host_active(m)	(is_host_capable() && (m)->bIsHost)
-
-/* for some reason, the "select USB_GADGET_MUSB_HDRC" doesn't really
- * override that choice selection (often USB_GADGET_DUMMY_HCD).
- */
-#ifndef CONFIG_USB_GADGET_MUSB_HDRC
-#error bogus Kconfig output ... select CONFIG_USB_GADGET_MUSB_HDRC
-#endif
+#define is_peripheral_active(m)		(!(m)->bIsHost)
+#define is_host_active(m)		((m)->bIsHost)
 
 #else
 #define	is_peripheral_enabled(musb)	is_peripheral_capable()
@@ -101,6 +100,16 @@ struct musb_ep;
 #define	is_host_active(musb)		is_host_capable()
 #endif
 
+#if defined(CONFIG_USB_MUSB_OTG) || defined(CONFIG_USB_MUSB_PERIPHERAL)
+/* for some reason, the "select USB_GADGET_MUSB_HDRC" doesn't always
+ * override that choice selection (often USB_GADGET_DUMMY_HCD).
+ */
+#ifndef CONFIG_USB_GADGET_MUSB_HDRC
+#error bogus Kconfig output ... select CONFIG_USB_GADGET_MUSB_HDRC
+#endif
+#endif	/* need MUSB gadget selection */
+
+
 #ifdef CONFIG_PROC_FS
 #include <linux/fs.h>
 #define MUSB_CONFIG_PROC_FS
@@ -109,9 +118,6 @@ struct musb_ep;
 /****************************** PERIPHERAL ROLE *****************************/
 
 #ifdef CONFIG_USB_GADGET_MUSB_HDRC
-
-#include <linux/usb_gadget.h>
-#include "musb_gadget.h"
 
 #define	is_peripheral_capable()	(1)
 
@@ -128,8 +134,6 @@ extern void musb_g_disconnect(struct musb *);
 #define	is_peripheral_capable()	(0)
 
 static inline irqreturn_t musb_g_ep0_irq(struct musb *m) { return IRQ_NONE; }
-static inline void musb_g_tx(struct musb *m, u8 e) {}
-static inline void musb_g_rx(struct musb *m, u8 e) {}
 static inline void musb_g_reset(struct musb *m) {}
 static inline void musb_g_suspend(struct musb *m) {}
 static inline void musb_g_resume(struct musb *m) {}
@@ -140,10 +144,6 @@ static inline void musb_g_disconnect(struct musb *m) {}
 /****************************** HOST ROLE ***********************************/
 
 #ifdef CONFIG_USB_MUSB_HDRC_HCD
-
-#include <linux/usb.h>
-#include "../core/hcd.h"
-#include "musb_host.h"
 
 #define	is_host_capable()	(1)
 
@@ -158,8 +158,6 @@ extern void musb_host_rx(struct musb *, u8);
 static inline irqreturn_t musb_h_ep0_irq(struct musb *m) { return IRQ_NONE; }
 static inline void musb_host_tx(struct musb *m, u8 e) {}
 static inline void musb_host_rx(struct musb *m, u8 e) {}
-
-static inline void musb_root_disconnect(struct musb *musb) { BUG(); }
 
 #endif
 
@@ -197,18 +195,10 @@ enum musb_g_ep0_state {
 	MGC_END0_STAGE_ACKWAIT,		/* after zlp, before statusin */
 } __attribute__ ((packed));
 
-/* driver and cable VBUS status states for musb_irq_work */
-#define MUSB_VBUS_STATUS_CHG		(1 << 0)
-
-/* failure codes */
-#define MUSB_ERR_WAITING	1
-#define MUSB_ERR_VBUS		-1
-#define MUSB_ERR_BABBLE		-2
-#define MUSB_ERR_CORRUPTED	-3
-#define MUSB_ERR_IRQ		-4
-#define MUSB_ERR_SHUTDOWN	-5
-#define MUSB_ERR_RESTART	-6
-
+/* OTG protocol constants */
+#define OTG_TIME_A_WAIT_VRISE	100		/* msec (max) */
+#define OTG_TIME_A_WAIT_BCON	0		/* 0=infinite; min 1000 msec */
+#define OTG_TIME_A_IDLE_BDIS	200		/* msec (min) */
 
 /*************************** REGISTER ACCESS ********************************/
 
@@ -268,25 +258,15 @@ enum musb_g_ep0_state {
 /****************************** FUNCTIONS ********************************/
 
 #define MUSB_HST_MODE(_pthis)\
-	{ (_pthis)->bIsHost=TRUE; (_pthis)->bIsDevice=FALSE; \
-	(_pthis)->bFailCode=0; }
+	{ (_pthis)->bIsHost=TRUE; (_pthis)->bIsDevice=FALSE; }
 #define MUSB_DEV_MODE(_pthis) \
-	{ (_pthis)->bIsHost=FALSE; (_pthis)->bIsDevice=TRUE; \
-	(_pthis)->bFailCode=0; }
+	{ (_pthis)->bIsHost=FALSE; (_pthis)->bIsDevice=TRUE; }
 #define MUSB_OTG_MODE(_pthis) \
-	{ (_pthis)->bIsHost=FALSE; (_pthis)->bIsDevice=FALSE; \
-	(_pthis)->bFailCode=MUSB_ERR_WAITING; }
-#define MUSB_ERR_MODE(_pthis, _cause) \
-	{ (_pthis)->bIsHost=FALSE; (_pthis)->bIsDevice=FALSE; \
-	(_pthis)->bFailCode=_cause; }
+	{ (_pthis)->bIsHost=FALSE; (_pthis)->bIsDevice=FALSE; }
 
-#define MUSB_IS_ERR(_x) ( (_x)->bFailCode<0 )
-#define MUSB_IS_HST(_x) (!MUSB_IS_ERR(_x) \
-		&& (_x)->bIsHost && !(_x)->bIsDevice )
-#define MUSB_IS_DEV(_x) (!MUSB_IS_ERR(_x) \
-		&& !(_x)->bIsHost && (_x)->bIsDevice )
-#define MUSB_IS_OTG(_x) (!MUSB_IS_ERR(_x) \
-		&& !(_x)->bIsHost && !(_x)->bIsDevice )
+#define MUSB_IS_HST(_x) ((_x)->bIsHost && !(_x)->bIsDevice)
+#define MUSB_IS_DEV(_x) (!(_x)->bIsHost && (_x)->bIsDevice)
+#define MUSB_IS_OTG(_x) (!(_x)->bIsHost && !(_x)->bIsDevice)
 
 #define test_devctl_hst_mode(_x) \
 	(musb_readb((_x)->pRegs, MGC_O_HDRC_DEVCTL)&MGC_M_DEVCTL_HM)
@@ -416,8 +396,12 @@ struct musb {
 	struct list_head	in_bulk;	/* of musb_qh */
 	struct list_head	out_bulk;	/* of musb_qh */
 	struct musb_qh		*periodic[32];	/* tree of interrupt+iso */
-
 #endif
+
+	/* called with IRQs blocked; ON/nonzero implies starting a session,
+	 * and waiting at least a_wait_vrise_tmout.
+	 */
+	void			(*board_set_vbus)(struct musb *, int is_on);
 
 	struct dma_controller	*pDmaController;
 
@@ -450,9 +434,10 @@ struct musb {
 	u8 board_mode;		/* enum musb_mode */
 	int			(*board_set_power)(int state);
 
-	u8 status;		/* status change flags for musb_irq_work */
+	u8			min_power;	/* vbus for periph, in mA/2 */
 
-	s8 bFailCode;		/* one of MUSB_ERR_* failure code */
+	/* active means connected and not suspended */
+	unsigned is_active:1;
 
 	unsigned bIsMultipoint:1;
 	unsigned bIsDevice:1;
@@ -504,6 +489,11 @@ struct musb {
 	struct proc_dir_entry *pProcEntry;
 #endif
 };
+
+static inline void musb_set_vbus(struct musb *musb, int is_on)
+{
+	musb->board_set_vbus(musb, is_on);
+}
 
 #ifdef CONFIG_USB_GADGET_MUSB_HDRC
 static inline struct musb *gadget_to_musb(struct usb_gadget *g)

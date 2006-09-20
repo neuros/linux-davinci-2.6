@@ -44,7 +44,7 @@
 #define		TUSB_DEV_CONF_ID_SEL			(1 << 0)
 
 #define TUSB_PHY_OTG_CTRL_ENABLE	(TUSB_SYS_REG_BASE + 0x004)
-#define		TUSB_PHY_OTG_CTRL		(TUSB_SYS_REG_BASE + 0x008)
+#define TUSB_PHY_OTG_CTRL		(TUSB_SYS_REG_BASE + 0x008)
 #define		TUSB_PHY_OTG_CTRL_WRPROTECT		(0xa5 << 24)
 #define		TUSB_PHY_OTG_CTRL_OTG_ID_PULLUP		(1 << 23)
 #define		TUSB_PHY_OTG_CTRL_OTG_VBUS_DET_EN	(1 << 19)
@@ -75,11 +75,14 @@
 #define		TUSB_DEV_OTG_STAT_VBUS_VALID		(1 << 5)
 #define		TUSB_DEV_OTG_STAT_VBUS_SENSE		(1 << 4)
 #define		TUSB_DEV_OTG_STAT_ID_STATUS		(1 << 3)
+#define		TUSB_DEV_OTG_STAT_HOST_DISCON		(1 << 2)
 #define		TUSB_DEV_OTG_STAT_LINE_STATE		(3 << 0)
 #define		TUSB_DEV_OTG_STAT_DP_ENABLE		(1 << 1)
 #define		TUSB_DEV_OTG_STAT_DM_ENABLE		(1 << 0)
 
 #define TUSB_DEV_OTG_TIMER		(TUSB_SYS_REG_BASE + 0x010)
+#	define TUSB_DEV_OTG_TIMER_ENABLE		(1 << 31)
+#	define TUSB_DEV_OTG_TIMER_VAL(v)		((v) & 0x07ffffff)
 #define TUSB_PRCM_REV			(TUSB_SYS_REG_BASE + 0x014)
 
 /* PRCM configuration register */
@@ -103,9 +106,6 @@
 #define		TUSB_PRCM_MNGMT_5V_CPEN			(1 << 2)
 #define		TUSB_PRCM_MNGMT_PM_IDLE			(1 << 1)
 #define		TUSB_PRCM_MNGMT_DEV_IDLE		(1 << 0)
-#define		TUSB_PRCM_MNGMT_PM_CLEAR_MASK	((0x3 << 3) | (0x3 << 0))
-#define		TUSB_PRCM_MNGMT_CPEN_MASK	((1 << 9) | (0x3 << 3))
-#define		TUSB_PRCM_MNGMT_SUSPEND_MASK	((1 << 10) | (0x3 << 0))
 
 /* Wake-up source clear and mask registers */
 #define TUSB_PRCM_WAKEUP_SOURCE		(TUSB_SYS_REG_BASE + 0x020)
@@ -201,8 +201,6 @@
 #define TUSB_PROD_TEST_RESET		(TUSB_SYS_REG_BASE + 0x1d8)
 
 /* Device System & Control register bitfields */
-#define TUSB_DEV_OTG_TIMER_ENABLE		(1 << 31)
-#define TUSB_DEV_OTG_TIMER_VAL(v)		((v) & 0x07ffffff)
 #define TUSB_INT_CTRL_CONF_INT_RELCYC(v)	(((v) & 0x7) << 18)
 #define TUSB_INT_CTRL_CONF_INT_POLARITY		(1 << 17)
 #define TUSB_INT_CTRL_CONF_INT_MODE		(1 << 16)

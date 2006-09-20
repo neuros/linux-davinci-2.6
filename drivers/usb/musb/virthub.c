@@ -51,6 +51,9 @@ static void musb_port_suspend(struct musb *musb, u8 bSuspend)
 	u8		power;
 	void __iomem	*pBase = musb->pRegs;
 
+	if (!is_host_active(musb))
+		return;
+
 	power = musb_readb(pBase, MGC_O_HDRC_POWER);
 
 	if (bSuspend) {
@@ -58,11 +61,15 @@ static void musb_port_suspend(struct musb *musb, u8 bSuspend)
 		musb_writeb(pBase, MGC_O_HDRC_POWER,
 				power | MGC_M_POWER_SUSPENDM);
 		musb->port1_status |= USB_PORT_STAT_SUSPEND;
+		musb->is_active = is_otg_enabled(musb)
+				&& musb->xceiv.host->b_hnp_enable;
+		musb_platform_try_idle(musb);
 	} else if (power & MGC_M_POWER_SUSPENDM) {
 		DBG(3, "Root port resumed\n");
 		musb_writeb(pBase, MGC_O_HDRC_POWER,
 				power | MGC_M_POWER_RESUME);
 
+		musb->is_active = 1;
 		musb_writeb(pBase, MGC_O_HDRC_POWER, power);
 		musb->port1_status &= ~USB_PORT_STAT_SUSPEND;
 		musb->port1_status |= USB_PORT_STAT_C_SUSPEND << 16;
@@ -134,6 +141,7 @@ void musb_root_disconnect(struct musb *musb)
 		);
 	musb->port1_status |= USB_PORT_STAT_C_CONNECTION << 16;
 	usb_hcd_poll_rh_status(musb_to_hcd(musb));
+	musb->is_active = 0;
 
 	switch (musb->xceiv.state) {
 	case OTG_STATE_A_HOST:
@@ -176,12 +184,11 @@ int musb_hub_control(
 	int		retval = 0;
 	unsigned long	flags;
 
-	if (unlikely(!test_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags)
-			|| !is_host_active(musb)))
+	if (unlikely(!test_bit(HCD_FLAG_HW_ACCESSIBLE, &hcd->flags)))
 		return -ESHUTDOWN;
 
 	/* hub features:  always zero, setting is a NOP
-	 * port features: reported, sometimes updated
+	 * port features: reported, sometimes updated when host is active
 	 * no indicators
 	 */
 	spin_lock_irqsave(&musb->Lock, flags);
@@ -207,6 +214,9 @@ int musb_hub_control(
 			musb_port_suspend(musb, FALSE);
 			break;
 		case USB_PORT_FEAT_POWER:
+			if (!(is_otg_enabled(musb) && hcd->self.is_b_host))
+				musb_set_vbus(musb, 0);
+			break;
 		case USB_PORT_FEAT_C_CONNECTION:
 		case USB_PORT_FEAT_C_ENABLE:
 		case USB_PORT_FEAT_C_OVER_CURRENT:
@@ -271,8 +281,8 @@ int musb_hub_control(
 			 * initialization logic, e.g. for OTG, or change any
 			 * logic relating to VBUS power-up.
 			 */
-			musb_start(musb);
-			musb->port1_status |= USB_PORT_STAT_POWER;
+			if (!(is_otg_enabled(musb) && hcd->self.is_b_host))
+				musb_start(musb);
 			break;
 		case USB_PORT_FEAT_RESET:
 			musb_port_reset(musb, TRUE);
@@ -281,6 +291,9 @@ int musb_hub_control(
 			musb_port_suspend(musb, TRUE);
 			break;
 		case USB_PORT_FEAT_TEST:
+			if (unlikely(is_host_active(musb)))
+				goto error;
+
 			wIndex >>= 8;
 			switch (wIndex) {
 			case 1:
@@ -311,12 +324,12 @@ int musb_hub_control(
 				goto error;
 			}
 			musb_writeb(musb->pRegs, MGC_O_HDRC_TESTMODE, temp);
-			musb->port1_status |= USB_PORT_STAT_TEST;
 			break;
 		default:
 			goto error;
 		}
 		DBG(5, "set feature %d\n", wValue);
+		musb->port1_status |= 1 << wValue;
 		break;
 
 	default:

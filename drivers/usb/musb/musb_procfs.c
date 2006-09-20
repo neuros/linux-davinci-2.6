@@ -48,11 +48,9 @@
 #include "davinci.h"
 
 
-#ifdef CONFIG_USB_MUSB_OTG
-
-static const char *state_string(enum usb_otg_state state)
+const char *otg_state_string(struct musb *musb)
 {
-	switch (state) {
+	switch (musb->xceiv.state) {
 	case OTG_STATE_A_IDLE:		return "a_idle";
 	case OTG_STATE_A_WAIT_VRISE:	return "a_wait_vrise";
 	case OTG_STATE_A_WAIT_BCON:	return "a_wait_bcon";
@@ -69,8 +67,6 @@ static const char *state_string(enum usb_otg_state state)
 	default:			return "UNDEFINED";
 	}
 }
-
-#endif
 
 #ifdef CONFIG_USB_MUSB_HDRC_HCD
 
@@ -489,15 +485,13 @@ static int dump_header_stats(struct musb *pThis, char *buffer)
 		return count;
 	buffer += count;
 
-#ifdef CONFIG_USB_MUSB_OTG
-	code = sprintf(buffer, "OTG state: %s (%s)\n",
-		state_string(pThis->OtgMachine.bState),
-		state_string(pThis->xceiv.state));
+	code = sprintf(buffer, "OTG state: %s; %sactive\n",
+			otg_state_string(pThis),
+			pThis->is_active ? "" : "in");
 	if (code < 0)
 		return code;
 	buffer += code;
 	count += code;
-#endif
 
 	code = sprintf(buffer,
 			"Options: "
@@ -542,6 +536,26 @@ static int dump_header_stats(struct musb *pThis, char *buffer)
 					DAVINCI_USB_INT_SOURCE_REG),
 			musb_readl(pThis->ctrl_base,
 					DAVINCI_USB_INT_MASK_REG));
+	if (code < 0)
+		return count;
+	count += code;
+	buffer += code;
+#endif	/* DAVINCI */
+
+#ifdef CONFIG_USB_TUSB6010
+	code = sprintf(buffer,
+			"TUSB6010: devconf %08x, phy enable %08x drive %08x"
+			"\n\totg %03x timer %08x"
+			"\n\tprcm conf %08x mgmt %08x; intmask %08x"
+			"\n",
+			musb_readl(pThis->ctrl_base, TUSB_DEV_CONF),
+			musb_readl(pThis->ctrl_base, TUSB_PHY_OTG_CTRL_ENABLE),
+			musb_readl(pThis->ctrl_base, TUSB_PHY_OTG_CTRL),
+			musb_readl(pThis->ctrl_base, TUSB_DEV_OTG_STAT),
+			musb_readl(pThis->ctrl_base, TUSB_DEV_OTG_TIMER),
+			musb_readl(pThis->ctrl_base, TUSB_PRCM_CONF),
+			musb_readl(pThis->ctrl_base, TUSB_PRCM_MNGMT),
+			musb_readl(pThis->ctrl_base, TUSB_INT_MASK));
 	if (code < 0)
 		return count;
 	count += code;
@@ -754,10 +768,10 @@ static int musb_proc_read(char *page, char **start,
 		}
 	}
 
+	musb_platform_try_idle(pThis);
+
 	spin_unlock_irqrestore(&pThis->Lock, flags);
 	*eof = 1;
-
-	musb_platform_try_idle(pThis);
 
 	return (buffer - page) - off;
 }
