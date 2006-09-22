@@ -36,9 +36,6 @@
 #include <linux/root_dev.h>
 #include <linux/dma-mapping.h>
 #include <linux/platform_device.h>
-#include <linux/mtd/mtd.h>
-#include <linux/mtd/partitions.h>
-#include <linux/mtd/physmap.h>
 
 #include <asm/setup.h>
 #include <asm/io.h>
@@ -52,6 +49,13 @@
 #include <asm/arch/common.h>
 #include <asm/arch/hardware.h>
 #include "clock.h"
+
+#if defined(CONFIG_MTD_PHYSMAP) || defined(CONFIG_MTD_PHYSMAP_MODULE)
+#define DO_MTD
+
+#include <linux/mtd/mtd.h>
+#include <linux/mtd/partitions.h>
+#include <linux/mtd/physmap.h>
 
 static struct mtd_partition davinci_evm_partitions[] = {
 	/* bootloader (U-Boot, etc) in first 4 sectors */
@@ -107,6 +111,7 @@ static struct platform_device davinci_evm_flash_device = {
 	.num_resources	= 1,
 	.resource	= &davinci_evm_flash_resource,
 };
+#endif
 
 #if defined(CONFIG_FB_DAVINCI) || defined(CONFIG_FB_DAVINCI_MODULE)
 
@@ -199,6 +204,7 @@ static inline void setup_usb(void)
 #ifdef	CONFIG_RTC_DRV_DAVINCI_EVM_MODULE
 #define DO_RTC
 #endif
+
 #ifdef	DO_RTC
 static struct platform_device rtc_dev = {
 	.name           = "rtc_davinci_evm",
@@ -208,7 +214,9 @@ static struct platform_device rtc_dev = {
 
 
 static struct platform_device *davinci_evm_devices[] __initdata = {
+#ifdef	DO_MTD
 	&davinci_evm_flash_device,
+#endif
 #if defined(CONFIG_FB_DAVINCI) || defined(CONFIG_FB_DAVINCI_MODULE)
 	&davinci_fb_device,
 #endif
@@ -240,9 +248,11 @@ davinci_evm_map_io(void)
 
 static __init void davinci_evm_init(void)
 {
-#if defined(CONFIG_BLK_DEV_DAVINCI) && defined(CONFIG_MTD_PHYSMAP)
+#if defined(CONFIG_BLK_DEV_DAVINCI) || defined(CONFIG_BLK_DEV_DAVINCI_MODULE)
+#ifdef	DO_MTD
 	printk(KERN_WARNING "WARNING: both IDE and NOR flash are enabled, "
 	       "but are pin-muxed.\n\t Disable IDE for NOR support.\n");
+#endif
 #endif
 
 	platform_add_devices(davinci_evm_devices,
