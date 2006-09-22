@@ -61,6 +61,10 @@ static int evm_read_time(struct device *dev, struct rtc_time *tm)
 	davinci_i2c_read(9, rtcdata, 0x23);
 	msleep(1);
 
+	/* FIXME the RTC reports 12-hour time, without an AM/PM indicator,
+	 * but Linux requires that we report 24 hour time...
+	 */
+
 	tm->tm_year = BCD_TO_BIN(rtcdata[3]) * 100
 			+ BCD_TO_BIN(rtcdata[2])
 			- 1900;
@@ -219,11 +223,16 @@ static int __devinit evm_rtc_probe(struct platform_device *pdev)
 
 	/* the 2005-12-05 firmware doesn't issue RTC alarms on GPIO(7);
 	 * it only uses IRQ for card detect irqs with removable media.
+	 * plus it also hides the am/pm indicator and does magic DST...
 	 */
 	rtc = rtc_device_register(pdev->name, &pdev->dev,
 			&evm_rtc_ops, THIS_MODULE);
 	if (IS_ERR(rtc))
 		return PTR_ERR(rtc);
+
+	printk(KERN_WARNING "%s: hours 12-23 are misreported as "
+			"duplicate hours 00-11\n",
+			rtc->class_dev.class_id);
 
 	platform_set_drvdata(pdev, rtc);
 	return 0;
