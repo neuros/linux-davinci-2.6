@@ -14,7 +14,7 @@
 
 		.macro	get_irqnr_and_base, irqnr, irqstat, base, tmp
 		/* GIVEN:
-		 *   IRQ Entry Table Base Address
+		 *   EABASE = 0 ... so IRQNR = (IRQENTRY/4) - 1
 		 * RETURN:
 		 *   irqnr:  Interrupt number.  Zero corresponds
 		 *     to bit 0 of the status register
@@ -24,11 +24,9 @@
 		 */
 		ldr \base, =IO_ADDRESS(DAVINCI_ARM_INTC_BASE)
 		ldr \tmp, [\base, #0x14]
-		ldr  \irqstat, =DAVINCI_IRAM_VIRT
-		add  \tmp, \irqstat, \tmp
-		ldr  \irqnr, [\tmp]
-		ldr  \irqstat, =0xFFFFFFFF
-		cmp  \irqnr, \irqstat
+		mov \tmp, \tmp, lsr #2
+		sub \irqnr, \tmp, #1
+		cmp \tmp, #0
 		.endm
 
 		.macro	irq_prio_table

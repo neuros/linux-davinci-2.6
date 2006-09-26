@@ -265,7 +265,7 @@ static __init void davinci_evm_init(void)
 static __init void davinci_evm_irq_init(void)
 {
 	davinci_init_common_hw();
-	davinci_irq_init();
+	davinci_irq_init(NULL);
 }
 
 MACHINE_START(DAVINCI_EVM, "DaVinci EVM")

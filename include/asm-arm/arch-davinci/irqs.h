@@ -43,28 +43,28 @@
 #define IRQ_H3AINT       4
 #define IRQ_PRVUINT      5
 #define IRQ_RSZINT       6
-#define IRQ_VFOCINT      7
+//#define IRQ_VFOCINT      7
 #define IRQ_VENCINT      8
 #define IRQ_ASQINT       9
 #define IRQ_IMXINT       10
 #define IRQ_VLCDINT      11
 #define IRQ_USBINT       12
 #define IRQ_EMACINT      13
-#define IRQ_IEEE1394INT  14
-#define IRQ_IEEE1394WK   15
+//#define IRQ_IEEE1394INT  14
+//#define IRQ_IEEE1394WK   15
 #define IRQ_CCINT0       16
 #define IRQ_CCERRINT     17
 #define IRQ_TCERRINT0    18
 #define IRQ_TCERRINT     19
 #define IRQ_PSCIN        20
-#define IRQ_RESERVED     21
+//#define IRQ_RESERVED     21
 #define IRQ_IDE          22
-#define IRQ_HPIINT       23
+//#define IRQ_HPIINT       23
 #define IRQ_MBXINT       24
 #define IRQ_MBRINT       25
 #define IRQ_MMCINT       26
 #define IRQ_SDIOINT      27
-#define IRQ_MSINT        28
+//#define IRQ_MSINT        28
 #define IRQ_DDRINT       29
 #define IRQ_AEMIFINT     30
 #define IRQ_VLQINT       31
@@ -81,7 +81,7 @@
 #define IRQ_UARTINT2     42
 #define IRQ_SPINT0       43
 #define IRQ_SPINT1       44
-#define IRQ_RESERVED_2   45
+//#define IRQ_RESERVED_2   45
 #define IRQ_DSP2ARM0     46
 #define IRQ_DSP2ARM1     47
 #define IRQ_GPIO0        48
@@ -111,7 +111,8 @@
 #define ARCH_TIMER_IRQ IRQ_TINT1_TINT34
 
 #ifndef __ASSEMBLY__
-extern void davinci_irq_init(void);
+extern void
+davinci_irq_init(const unsigned char priority[DAVINCI_N_AINTC_IRQ]);
 #endif
 
 #endif /* __ASM_ARCH_IRQS_H */
