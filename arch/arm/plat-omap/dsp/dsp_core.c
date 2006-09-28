@@ -1,177 +1,242 @@
 /*
- * linux/arch/arm/mach-omap/dsp/dsp_core.c
+ * This file is part of OMAP DSP driver (DSP Gateway version 3.3.1)
  *
- * OMAP DSP driver
+ * Copyright (C) 2002-2006 Nokia Corporation. All rights reserved.
  *
- * Copyright (C) 2002-2005 Nokia Corporation
+ * Contact: Toshihiro Kobayashi <toshihiro.kobayashi@nokia.com>
  *
- * Written by Toshihiro Kobayashi <toshihiro.kobayashi@nokia.com>
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * version 2 as published by the Free Software Foundation.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
- * GNU General Public License for more details.
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA
  *
- * 2005/06/07:  DSP Gateway version 3.3
  */
 
 #include <linux/init.h>
 #include <linux/module.h>
-#include <linux/slab.h>
 #include <linux/platform_device.h>
 #include <linux/sched.h>
-#include <linux/interrupt.h>
-#include <linux/proc_fs.h>
 #include <linux/mutex.h>
-#include <asm/uaccess.h>
-#include <asm/io.h>
-#include <asm/signal.h>
+#include <linux/err.h>
+#include <linux/clk.h>
 #include <asm/delay.h>
-#include <asm/irq.h>
+#include <asm/arch/mailbox.h>
 #include <asm/arch/dsp_common.h>
-#include <asm/arch/dsp.h>
-#include "hardware_dsp.h"
+#include "dsp_mbcmd.h"
 #include "dsp.h"
 #include "ipbuf.h"
-
+#include "dsp_common.h"
 
 MODULE_AUTHOR("Toshihiro Kobayashi <toshihiro.kobayashi@nokia.com>");
 MODULE_DESCRIPTION("OMAP DSP driver module");
 MODULE_LICENSE("GPL");
 
-enum mbseq_check_level {
-	MBSEQ_CHECK_NONE,	/* no check */
-	MBSEQ_CHECK_VERBOSE,	/* discard the illegal command and
-				   error report */
-	MBSEQ_CHECK_SILENT,	/* discard the illegal command */
-};
-
-static enum mbseq_check_level mbseq_check_level = MBSEQ_CHECK_VERBOSE;
-
-static int mbx1_valid;
+struct omap_dsp *omap_dsp;
 static struct sync_seq *mbseq;
-static unsigned short mbseq_expect_tmp;
-static unsigned short *mbseq_expect = &mbseq_expect_tmp;
+static u16 mbseq_expect_tmp;
+static u16 *mbseq_expect = &mbseq_expect_tmp;
+
+extern void dsp_mem_late_init(void);
 
 /*
  * mailbox commands
  */
-extern void mbx1_wdsnd(struct mbcmd *mb);
-extern void mbx1_wdreq(struct mbcmd *mb);
-extern void mbx1_bksnd(struct mbcmd *mb);
-extern void mbx1_bkreq(struct mbcmd *mb);
-extern void mbx1_bkyld(struct mbcmd *mb);
-extern void mbx1_bksndp(struct mbcmd *mb);
-extern void mbx1_bkreqp(struct mbcmd *mb);
-extern void mbx1_tctl(struct mbcmd *mb);
-extern void mbx1_poll(struct mbcmd *mb);
+extern void mbox_wdsnd(struct mbcmd *mb);
+extern void mbox_wdreq(struct mbcmd *mb);
+extern void mbox_bksnd(struct mbcmd *mb);
+extern void mbox_bkreq(struct mbcmd *mb);
+extern void mbox_bkyld(struct mbcmd *mb);
+extern void mbox_bksndp(struct mbcmd *mb);
+extern void mbox_bkreqp(struct mbcmd *mb);
+extern void mbox_tctl(struct mbcmd *mb);
+extern void mbox_poll(struct mbcmd *mb);
 #ifdef OLD_BINARY_SUPPORT
 /* v3.3 obsolete */
-extern void mbx1_wdt(struct mbcmd *mb);
+extern void mbox_wdt(struct mbcmd *mb);
 #endif
-extern void mbx1_suspend(struct mbcmd *mb);
-static void mbx1_kfunc(struct mbcmd *mb);
-extern void mbx1_tcfg(struct mbcmd *mb);
-extern void mbx1_tadd(struct mbcmd *mb);
-extern void mbx1_tdel(struct mbcmd *mb);
-extern void mbx1_dspcfg(struct mbcmd *mb);
-extern void mbx1_regrw(struct mbcmd *mb);
-extern void mbx1_getvar(struct mbcmd *mb);
-extern void mbx1_err(struct mbcmd *mb);
-extern void mbx1_dbg(struct mbcmd *mb);
+extern void mbox_suspend(struct mbcmd *mb);
+static void mbox_kfunc(struct mbcmd *mb);
+extern void mbox_tcfg(struct mbcmd *mb);
+extern void mbox_tadd(struct mbcmd *mb);
+extern void mbox_tdel(struct mbcmd *mb);
+extern void mbox_dspcfg(struct mbcmd *mb);
+extern void mbox_regrw(struct mbcmd *mb);
+extern void mbox_getvar(struct mbcmd *mb);
+extern void mbox_err(struct mbcmd *mb);
+extern void mbox_dbg(struct mbcmd *mb);
 
 static const struct cmdinfo
-	cif_null     = { "Unknown",  CMD_L_TYPE_NULL,   NULL         },
-	cif_wdsnd    = { "WDSND",    CMD_L_TYPE_TID,    mbx1_wdsnd   },
-	cif_wdreq    = { "WDREQ",    CMD_L_TYPE_TID,    mbx1_wdreq   },
-	cif_bksnd    = { "BKSND",    CMD_L_TYPE_TID,    mbx1_bksnd   },
-	cif_bkreq    = { "BKREQ",    CMD_L_TYPE_TID,    mbx1_bkreq   },
-	cif_bkyld    = { "BKYLD",    CMD_L_TYPE_NULL,   mbx1_bkyld   },
-	cif_bksndp   = { "BKSNDP",   CMD_L_TYPE_TID,    mbx1_bksndp  },
-	cif_bkreqp   = { "BKREQP",   CMD_L_TYPE_TID,    mbx1_bkreqp  },
-	cif_tctl     = { "TCTL",     CMD_L_TYPE_TID,    mbx1_tctl    },
-	cif_poll     = { "POLL",     CMD_L_TYPE_NULL,   mbx1_poll    },
+	cif_wdsnd    = { "WDSND",    CMD_L_TYPE_TID,    mbox_wdsnd   },
+	cif_wdreq    = { "WDREQ",    CMD_L_TYPE_TID,    mbox_wdreq   },
+	cif_bksnd    = { "BKSND",    CMD_L_TYPE_TID,    mbox_bksnd   },
+	cif_bkreq    = { "BKREQ",    CMD_L_TYPE_TID,    mbox_bkreq   },
+	cif_bkyld    = { "BKYLD",    CMD_L_TYPE_NULL,   mbox_bkyld   },
+	cif_bksndp   = { "BKSNDP",   CMD_L_TYPE_TID,    mbox_bksndp  },
+	cif_bkreqp   = { "BKREQP",   CMD_L_TYPE_TID,    mbox_bkreqp  },
+	cif_tctl     = { "TCTL",     CMD_L_TYPE_TID,    mbox_tctl    },
+	cif_poll     = { "POLL",     CMD_L_TYPE_NULL,   mbox_poll    },
 #ifdef OLD_BINARY_SUPPORT
 	/* v3.3 obsolete */
-	cif_wdt      = { "WDT",      CMD_L_TYPE_NULL,   mbx1_wdt     },
+	cif_wdt      = { "WDT",      CMD_L_TYPE_NULL,   mbox_wdt     },
 #endif
-	cif_runlevel = { "RUNLEVEL", CMD_L_TYPE_SUBCMD, NULL         },
-	cif_pm       = { "PM",       CMD_L_TYPE_SUBCMD, NULL         },
-	cif_suspend  = { "SUSPEND",  CMD_L_TYPE_NULL,   mbx1_suspend },
-	cif_kfunc    = { "KFUNC",    CMD_L_TYPE_SUBCMD, mbx1_kfunc   },
-	cif_tcfg     = { "TCFG",     CMD_L_TYPE_TID,    mbx1_tcfg    },
-	cif_tadd     = { "TADD",     CMD_L_TYPE_TID,    mbx1_tadd    },
-	cif_tdel     = { "TDEL",     CMD_L_TYPE_TID,    mbx1_tdel    },
-	cif_tstop    = { "TSTOP",    CMD_L_TYPE_TID,    NULL         },
-	cif_dspcfg   = { "DSPCFG",   CMD_L_TYPE_SUBCMD, mbx1_dspcfg  },
-	cif_regrw    = { "REGRW",    CMD_L_TYPE_SUBCMD, mbx1_regrw   },
-	cif_getvar   = { "GETVAR",   CMD_L_TYPE_SUBCMD, mbx1_getvar  },
-	cif_setvar   = { "SETVAR",   CMD_L_TYPE_SUBCMD, NULL         },
-	cif_err      = { "ERR",      CMD_L_TYPE_SUBCMD, mbx1_err     },
-	cif_dbg      = { "DBG",      CMD_L_TYPE_NULL,   mbx1_dbg     };
+	cif_runlevel = { "RUNLEVEL", CMD_L_TYPE_SUBCMD, NULL        },
+	cif_pm       = { "PM",       CMD_L_TYPE_SUBCMD, NULL        },
+	cif_suspend  = { "SUSPEND",  CMD_L_TYPE_NULL,   mbox_suspend },
+	cif_kfunc    = { "KFUNC",    CMD_L_TYPE_SUBCMD, mbox_kfunc   },
+	cif_tcfg     = { "TCFG",     CMD_L_TYPE_TID,    mbox_tcfg    },
+	cif_tadd     = { "TADD",     CMD_L_TYPE_TID,    mbox_tadd    },
+	cif_tdel     = { "TDEL",     CMD_L_TYPE_TID,    mbox_tdel    },
+	cif_tstop    = { "TSTOP",    CMD_L_TYPE_TID,    NULL        },
+	cif_dspcfg   = { "DSPCFG",   CMD_L_TYPE_SUBCMD, mbox_dspcfg  },
+	cif_regrw    = { "REGRW",    CMD_L_TYPE_SUBCMD, mbox_regrw   },
+	cif_getvar   = { "GETVAR",   CMD_L_TYPE_SUBCMD, mbox_getvar  },
+	cif_setvar   = { "SETVAR",   CMD_L_TYPE_SUBCMD, NULL        },
+	cif_err      = { "ERR",      CMD_L_TYPE_SUBCMD, mbox_err     },
+	cif_dbg      = { "DBG",      CMD_L_TYPE_NULL,   mbox_dbg     };
 
-const struct cmdinfo *cmdinfo[128] = {
-/*00*/	&cif_null, &cif_null, &cif_null, &cif_null,
-	&cif_null, &cif_null, &cif_null, &cif_null,
-	&cif_null, &cif_null, &cif_null, &cif_null,
-	&cif_null, &cif_null, &cif_null, &cif_null,
-/*10*/	&cif_wdsnd, &cif_wdreq, &cif_null, &cif_null,
-	&cif_null, &cif_null, &cif_null, &cif_null,
-	&cif_null, &cif_null, &cif_null, &cif_null,
-	&cif_null, &cif_null, &cif_null, &cif_null,
-/*20*/	&cif_bksnd, &cif_bkreq, &cif_null, &cif_bkyld,
-	&cif_bksndp, &cif_bkreqp, &cif_null, &cif_null,
-	&cif_null, &cif_null, &cif_null, &cif_null,
-	&cif_null, &cif_null, &cif_null, &cif_null,
-/*30*/	&cif_tctl, &cif_null, &cif_poll, &cif_null,
-	&cif_null, &cif_null, &cif_null, &cif_null,
-	&cif_null, &cif_null, &cif_null, &cif_null,
-	&cif_null, &cif_null, &cif_null, &cif_null,
-/*40*/	&cif_null, &cif_null, &cif_null, &cif_null,
-	&cif_null, &cif_null, &cif_null, &cif_null,
-	&cif_null, &cif_null, &cif_null, &cif_null,
-	&cif_null, &cif_null, &cif_null, &cif_null,
+#define MBOX_CMD_MAX	0x80
+const struct cmdinfo *cmdinfo[MBOX_CMD_MAX] = {
+	[MBOX_CMD_DSP_WDSND]    = &cif_wdsnd,
+	[MBOX_CMD_DSP_WDREQ]    = &cif_wdreq,
+	[MBOX_CMD_DSP_BKSND]    = &cif_bksnd,
+	[MBOX_CMD_DSP_BKREQ]    = &cif_bkreq,
+	[MBOX_CMD_DSP_BKYLD]    = &cif_bkyld,
+	[MBOX_CMD_DSP_BKSNDP]   = &cif_bksndp,
+	[MBOX_CMD_DSP_BKREQP]   = &cif_bkreqp,
+	[MBOX_CMD_DSP_TCTL]     = &cif_tctl,
+	[MBOX_CMD_DSP_POLL]     = &cif_poll,
 #ifdef OLD_BINARY_SUPPORT
-	/* v3.3 obsolete */
-/*50*/	&cif_wdt, &cif_runlevel, &cif_pm, &cif_suspend,
-#else
-/*50*/	&cif_null, &cif_runlevel, &cif_pm, &cif_suspend,
+	[MBOX_CMD_DSP_WDT]      = &cif_wdt, /* v3.3 obsolete */
 #endif
-	&cif_kfunc, &cif_null, &cif_null, &cif_null,
-	&cif_null, &cif_null, &cif_null, &cif_null,
-	&cif_null, &cif_null, &cif_null, &cif_null,
-/*60*/	&cif_tcfg, &cif_null, &cif_tadd, &cif_tdel,
-	&cif_null, &cif_tstop, &cif_null, &cif_null,
-	&cif_null, &cif_null, &cif_null, &cif_null,
-	&cif_null, &cif_null, &cif_null, &cif_null,
-/*70*/	&cif_dspcfg, &cif_null, &cif_regrw, &cif_null,
-	&cif_getvar, &cif_setvar, &cif_null, &cif_null,
-	&cif_err, &cif_dbg, &cif_null, &cif_null,
-	&cif_null, &cif_null, &cif_null, &cif_null
+	[MBOX_CMD_DSP_RUNLEVEL] = &cif_runlevel,
+	[MBOX_CMD_DSP_PM]       = &cif_pm,
+	[MBOX_CMD_DSP_SUSPEND]  = &cif_suspend,
+	[MBOX_CMD_DSP_KFUNC]    = &cif_kfunc,
+	[MBOX_CMD_DSP_TCFG]     = &cif_tcfg,
+	[MBOX_CMD_DSP_TADD]     = &cif_tadd,
+	[MBOX_CMD_DSP_TDEL]     = &cif_tdel,
+	[MBOX_CMD_DSP_TSTOP]    = &cif_tstop,
+	[MBOX_CMD_DSP_DSPCFG]   = &cif_dspcfg,
+	[MBOX_CMD_DSP_REGRW]    = &cif_regrw,
+	[MBOX_CMD_DSP_GETVAR]   = &cif_getvar,
+	[MBOX_CMD_DSP_SETVAR]   = &cif_setvar,
+	[MBOX_CMD_DSP_ERR]      = &cif_err,
+	[MBOX_CMD_DSP_DBG]      = &cif_dbg,
 };
 
-int sync_with_dsp(unsigned short *syncwd, unsigned short tid, int try_cnt)
+static int dsp_kfunc_probe_devices(struct omap_dsp *dsp)
+{
+	struct dsp_kfunc_device *p;
+	int ret, fail = 0;
+
+	mutex_lock(&dsp->lock);
+	list_for_each_entry(p, dsp->kdev_list, entry) {
+		if (p->probe == NULL)
+			continue;
+		ret = p->probe(p);
+		if (ret) {
+			printk(KERN_ERR
+			       "probing %s failed\n", p->name);
+			fail++;
+		}
+	}
+	mutex_unlock(&dsp->lock);
+
+	pr_debug("%s() fail:%d\n", __FUNCTION__, fail);
+
+	return fail;
+}
+
+static int dsp_kfunc_remove_devices(struct omap_dsp *dsp)
+{
+	struct dsp_kfunc_device *p;
+	int ret, fail = 0;
+
+	mutex_lock(&dsp->lock);
+	list_for_each_entry_reverse(p, dsp->kdev_list, entry) {
+		if (p->remove == NULL)
+			continue;
+		ret = p->remove(p);
+		if (ret) {
+			printk(KERN_ERR
+			       "removing %s failed\n", p->name);
+			fail++;
+		}
+	}
+	mutex_unlock(&dsp->lock);
+
+	pr_debug("%s() fail:%d\n", __FUNCTION__, fail);
+
+	return fail;
+}
+
+static int dsp_kfunc_enable_devices(struct omap_dsp *dsp, int type, int stage)
+{
+	struct dsp_kfunc_device *p;
+	int ret, fail = 0;
+
+	mutex_lock(&dsp->lock);
+	list_for_each_entry(p, dsp->kdev_list, entry) {
+		if ((p->type != type) || (p->enable == NULL))
+			continue;
+		ret = p->enable(p, stage);
+		if (ret) {
+			printk(KERN_ERR
+			       "enabling %s failed\n", p->name);
+			fail++;
+		}
+	}
+	mutex_unlock(&dsp->lock);
+
+	pr_debug("%s(%d) fail:%d\n", __FUNCTION__, type, fail);
+
+	return fail;
+}
+
+static int dsp_kfunc_disable_devices(struct omap_dsp *dsp, int type, int stage)
+{
+	struct dsp_kfunc_device *p;
+	int ret, fail = 0;
+
+	mutex_lock(&dsp->lock);
+	list_for_each_entry_reverse(p, omap_dsp->kdev_list, entry) {
+		if ((p->type != type) || (p->disable == NULL))
+			continue;
+		ret = p->disable(p, stage);
+		if (ret) {
+			printk(KERN_ERR
+			       "disabling %s failed\n", p->name);
+			fail++;
+		}
+	}
+	mutex_unlock(&dsp->lock);
+
+	pr_debug("%s(%d) fail:%d\n", __FUNCTION__, type, fail);
+
+	return fail;
+}
+
+int sync_with_dsp(u16 *adr, u16 val, int try_cnt)
 {
 	int try;
 
-	if (*(volatile unsigned short *)syncwd == tid)
+	if (*(volatile u16 *)adr == val)
 		return 0;
 
 	for (try = 0; try < try_cnt; try++) {
 		udelay(1);
-		if (*(volatile unsigned short *)syncwd == tid) {
+		if (*(volatile u16 *)adr == val) {
 			/* success! */
-			printk(KERN_INFO
-			       "omapdsp: sync_with_dsp(): try = %d\n", try);
+			pr_info("omapdsp: sync_with_dsp(): try = %d\n", try);
 			return 0;
 		}
 	}
@@ -180,123 +245,79 @@ int sync_with_dsp(unsigned short *syncwd, unsigned short tid, int try_cnt)
 	return -1;
 }
 
-static __inline__ int mbsync_irq_save(unsigned long *flags, int try_cnt)
+static int mbcmd_sender_prepare(void *data)
 {
-	int cnt;
-
-	local_irq_save(*flags);
-	if (omap_readw(MAILBOX_ARM2DSP1_Flag) == 0)
-		return 0;
+	struct mb_exarg *arg = data;
+	int i, ret = 0;
 	/*
-	 * mailbox is busy. wait for some usecs...
+	 * even if ipbuf_sys_ad is in DSP internal memory,
+	 * dsp_mem_enable() never cause to call PM mailbox command
+	 * because in that case DSP memory should be always enabled.
+	 * (see ipbuf_sys_hold_mem_active in ipbuf.c)
+	 *
+	 * Therefore, we can call this function here safely.
 	 */
-	local_irq_restore(*flags);
-	for (cnt = 0; cnt < try_cnt; cnt++) {
-		udelay(1);
-		local_irq_save(*flags);
-		if (omap_readw(MAILBOX_ARM2DSP1_Flag) == 0)	/* success! */
-			return 0;
-		local_irq_restore(*flags);
+	if (sync_with_dsp(&ipbuf_sys_ad->s, TID_FREE, 10) < 0) {
+		printk(KERN_ERR "omapdsp: ipbuf_sys_ad is busy.\n");
+		ret = -EBUSY;
+		goto out;
 	}
 
-	/* fail! */
-	return -1;
-}
-
-#ifdef CONFIG_OMAP_DSP_MBCMD_VERBOSE
-#define print_mb_busy_abort(mb) \
-	printk(KERN_DEBUG \
-	       "mbx: mailbox is busy. %s is aborting.\n", cmd_name(*mb))
-#define print_mb_mmu_abort(mb) \
-	printk(KERN_DEBUG \
-	       "mbx: mmu interrupt is set. %s is aborting.\n", cmd_name(*mb))
-#else /* CONFIG_OMAP_DSP_MBCMD_VERBOSE */
-#define print_mb_busy_abort(mb)	do {} while(0)
-#define print_mb_mmu_abort(mb)	do {} while(0)
-#endif /* !CONFIG_OMAP_DSP_MBCMD_VERBOSE */
-
-int __mbcmd_send(struct mbcmd *mb)
-{
-	struct mbcmd_hw *mb_hw = (struct mbcmd_hw *)mb;
-	unsigned long flags;
-
-	/*
-	 * DSP mailbox interrupt latency must be less than 1ms.
-	 */
-	if (mbsync_irq_save(&flags, 1000) < 0) {
-		print_mb_busy_abort(mb);
-		return -1;
+	for (i = 0; i < arg->argc; i++) {
+		ipbuf_sys_ad->d[i] = arg->argv[i];
 	}
-
-	if (mbseq) {
-		mb->seq = mbseq->ad_arm;
-		mbseq->ad_arm++;
-	} else
-		mb->seq = 0;
-	mblog_add(mb, DIR_A2D);
-	mblog_printcmd(mb, DIR_A2D);
-
-	omap_writew(mb_hw->data, MAILBOX_ARM2DSP1);
-	omap_writew(mb_hw->cmd, MAILBOX_ARM2DSP1b);
-
-	local_irq_restore(flags);
-	return 0;
+	ipbuf_sys_ad->s = arg->tid;
+ out:
+	return ret;
 }
 
 /*
- * __dsp_mbcmd_send(): mailbox dispatcher
+ * __dsp_mbcmd_send_exarg(): mailbox dispatcher
  */
-int __dsp_mbcmd_send(struct mbcmd *mb, struct mb_exarg *arg, int recovery_flag)
+int __dsp_mbcmd_send_exarg(struct mbcmd *mb, struct mb_exarg *arg,
+			   int recovery_flag)
 {
-	static DEFINE_MUTEX(mbsend_lock);
 	int ret = 0;
+
+	if (unlikely(omap_dsp->enabled == 0)) {
+		ret = dsp_kfunc_enable_devices(omap_dsp,
+					       DSP_KFUNC_DEV_TYPE_COMMON, 0);
+		if (ret == 0)
+			omap_dsp->enabled = 1;
+	}
 
 	/*
 	 * while MMU fault is set,
 	 * only recovery command can be executed
 	 */
-	if (dsp_err_mmu_isset() && !recovery_flag) {
-		print_mb_mmu_abort(mb);
-		return -1;
+	if (dsp_err_isset(ERRCODE_MMU) && !recovery_flag) {
+		printk(KERN_ERR
+		       "mbox: mmu interrupt is set. %s is aborting.\n",
+		       cmd_name(*mb));
+		goto out;
 	}
 
-	if (mutex_lock_interruptible(&mbsend_lock) < 0)
-		return -1;
-
-	if (arg) {	/* we have extra argument */
-		int i;
-
-		/*
-		 * even if ipbuf_sys_ad is in DSP internal memory,
-		 * dsp_mem_enable() never cause to call PM mailbox command
-		 * because in that case DSP memory should be always enabled.
-		 * (see ipbuf_sys_hold_mem_active in ipbuf.c)
-		 *
-		 * Therefore, we can call this function here safely.
-		 */
+	if (arg)
 		dsp_mem_enable(ipbuf_sys_ad);
-		if (sync_with_dsp(&ipbuf_sys_ad->s, OMAP_DSP_TID_FREE, 10) < 0) {
-			printk(KERN_ERR "omapdsp: ipbuf_sys_ad is busy.\n");
-			dsp_mem_disable(ipbuf_sys_ad);
-			ret = -EBUSY;
-			goto out;
-		}
-		for (i = 0; i < arg->argc; i++) {
-			ipbuf_sys_ad->d[i] = arg->argv[i];
-		}
-		ipbuf_sys_ad->s = arg->tid;
+
+	ret = omap_mbox_msg_send(omap_dsp->mbox,
+				 *(mbox_msg_t *)mb, (void*)arg);
+	if (ret)
+		goto out;
+
+	if (mbseq)
+		mbseq->ad_arm++;
+
+	mblog_add(mb, DIR_A2D);
+ out:
+	if (arg)
 		dsp_mem_disable(ipbuf_sys_ad);
-	}
 
-	ret = __mbcmd_send(mb);
-
-out:
-	mutex_unlock(&mbsend_lock);
 	return ret;
 }
 
-int __dsp_mbcmd_send_and_wait(struct mbcmd *mb, struct mb_exarg *arg,
-			      wait_queue_head_t *q)
+int dsp_mbcmd_send_and_wait_exarg(struct mbcmd *mb, struct mb_exarg *arg,
+				  wait_queue_head_t *q)
 {
 	long current_state;
 	DECLARE_WAITQUEUE(wait, current);
@@ -316,35 +337,46 @@ int __dsp_mbcmd_send_and_wait(struct mbcmd *mb, struct mb_exarg *arg,
 	return 0;
 }
 
-int __dsp_mbsend(unsigned char cmdh, unsigned char cmdl, unsigned short data,
-		 int recovery_flag)
+/*
+ * mbcmd receiver
+ */
+static void mbcmd_receiver(mbox_msg_t msg)
 {
-	struct mbcmd mb;
+	struct mbcmd *mb = (struct mbcmd *)&msg;
 
-	mbcmd_set(mb, cmdh, cmdl, data);
-	return __dsp_mbcmd_send(&mb, NULL, recovery_flag);
+	if (cmdinfo[mb->cmd_h] == NULL) {
+		printk(KERN_ERR
+		       "invalid message (%08x) for mbcmd_receiver().\n", msg);
+		return;
+	}
+
+	(*mbseq_expect)++;
+
+	mblog_add(mb, DIR_D2A);
+
+	/* call handler for the command */
+	if (cmdinfo[mb->cmd_h]->handler)
+		cmdinfo[mb->cmd_h]->handler(mb);
+	else
+		printk(KERN_ERR "mbox: %s is not allowed from DSP.\n",
+		       cmd_name(*mb));
 }
 
 static int mbsync_hold_mem_active;
 
-void dsp_mb_start(void)
+void dsp_mbox_start(void)
 {
-	mbx1_valid = 1;	/* start interpreting */
+	omap_mbox_init_seq(omap_dsp->mbox);
 	mbseq_expect_tmp = 0;
 }
 
-void dsp_mb_stop(void)
+void dsp_mbox_stop(void)
 {
-	mbx1_valid = 0;	/* stop interpreting */
-	if (mbsync_hold_mem_active) {
-		dsp_mem_disable((void *)daram_base);
-		mbsync_hold_mem_active = 0;
-	}
 	mbseq = NULL;
 	mbseq_expect = &mbseq_expect_tmp;
 }
 
-int dsp_mb_config(void *p)
+int dsp_mbox_config(void *p)
 {
 	unsigned long flags;
 
@@ -372,225 +404,138 @@ int dsp_mb_config(void *p)
 	return 0;
 }
 
-/*
- * mbq: mailbox queue
- */
-#define MBQ_DEPTH	16
-struct mbq {
-	struct mbcmd mb[MBQ_DEPTH];
-	int rp, wp, full;
-} mbq = {
-	.rp = 0,
-	.wp = 0,
-};
-
-#define mbq_inc(p)	do { if (++(p) == MBQ_DEPTH) (p) = 0; } while(0)
-
-/*
- * workqueue for mbx1
- */
-static void do_mbx1(void)
+static int __init dsp_mbox_init(void)
 {
-	int empty = 0;
-
-	disable_irq(INT_D2A_MB1);
-	if ((mbq.rp == mbq.wp) && !mbq.full)
-		empty = 1;
-	enable_irq(INT_D2A_MB1);
-
-	while (!empty) {
-		struct mbcmd *mb;
-
-		mb = &mbq.mb[mbq.rp];
-
-		mblog_add(mb, DIR_D2A);
-		mblog_printcmd(mb, DIR_D2A);
-
-		/*
-		 * call handler for each command
-		 */
-		if (cmdinfo[mb->cmd_h]->handler)
-			cmdinfo[mb->cmd_h]->handler(mb);
-		else if (cmdinfo[mb->cmd_h] != &cif_null)
-			printk(KERN_ERR "mbx: %s is not allowed from DSP.\n",
-			       cmd_name(*mb));
-		else
-			printk(KERN_ERR
-			       "mbx: Unrecognized command: "
-			       "cmd=0x%04x, data=0x%04x\n",
-			       ((struct mbcmd_hw *)mb)->cmd & 0x7fff, mb->data);
-
-		disable_irq(INT_D2A_MB1);
-		mbq_inc(mbq.rp);
-		if (mbq.rp == mbq.wp)
-			empty = 1;
-		/* if mbq has been full, now we have a room. */
-		if (mbq.full) {
-			mbq.full = 0;
-			enable_irq(INT_D2A_MB1);
-		}
-		enable_irq(INT_D2A_MB1);
+	omap_dsp->mbox = omap_mbox_get("dsp");
+	if (IS_ERR(omap_dsp->mbox)) {
+		printk(KERN_ERR "failed to get mailbox handler for DSP.\n");
+		return -ENODEV;
 	}
+
+	omap_dsp->mbox->msg_receive_cb = mbcmd_receiver;
+	omap_dsp->mbox->msg_sender_cb = mbcmd_sender_prepare;
+
+	return 0;
 }
 
-static DECLARE_WORK(mbx1_work, (void (*)(void *))do_mbx1, NULL);
+static void dsp_mbox_exit(void)
+{
+	omap_dsp->mbox->msg_sender_cb = NULL;
+	omap_dsp->mbox->msg_receive_cb = NULL;
+
+	if (mbsync_hold_mem_active) {
+		dsp_mem_disable((void *)daram_base);
+		mbsync_hold_mem_active = 0;
+	}
+}
 
 /*
  * kernel function dispatcher
  */
-extern void mbx1_fbctl_upd(void);
-extern void mbx1_fbctl_disable(void);
+extern void mbox_fbctl_upd(void);
+extern void mbox_fbctl_disable(struct mbcmd *mb);
 
-static void mbx1_kfunc_fbctl(unsigned short data)
+static void mbox_kfunc_fbctl(struct mbcmd *mb)
 {
-	switch (data) {
-	case OMAP_DSP_MBCMD_FBCTL_UPD:
-		mbx1_fbctl_upd();
+	switch (mb->data) {
+	case FBCTL_UPD:
+		mbox_fbctl_upd();
 		break;
-	case OMAP_DSP_MBCMD_FBCTL_DISABLE:
-		mbx1_fbctl_disable();
+	case FBCTL_DISABLE:
+		mbox_fbctl_disable(mb);
 		break;
 	default:
 		printk(KERN_ERR
-		       "mailbox: Unknown FBCTL from DSP: 0x%04x\n", data);
-	}
-}
-
-static void mbx1_kfunc_audio_pwr(unsigned short data)
-{
-	struct mbcmd mb;
-
-	switch (data) {
-	case OMAP_DSP_MBCMD_AUDIO_PWR_UP:
-		omap_dsp_audio_pwr_up_request(0);
-		/* send back ack */
-		mbcmd_set(mb, MBCMD(KFUNC), OMAP_DSP_MBCMD_KFUNC_AUDIO_PWR,
-			  OMAP_DSP_MBCMD_AUDIO_PWR_UP);
-		dsp_mbcmd_send(&mb);
-		break;
-	case OMAP_DSP_MBCMD_AUDIO_PWR_DOWN1:
-		omap_dsp_audio_pwr_down_request(1);
-		break;
-	case OMAP_DSP_MBCMD_AUDIO_PWR_DOWN2:
-		omap_dsp_audio_pwr_down_request(2);
-		break;
-	default:
-		printk(KERN_ERR
-		       "mailbox: Unknown AUDIO_PWR from DSP: 0x%04x\n", data);
-	}
-}
-
-static void mbx1_kfunc(struct mbcmd *mb)
-{
-	switch (mb->cmd_l) {
-	case OMAP_DSP_MBCMD_KFUNC_FBCTL:
-		mbx1_kfunc_fbctl(mb->data);
-		break;
-	case OMAP_DSP_MBCMD_KFUNC_AUDIO_PWR:
-		mbx1_kfunc_audio_pwr(mb->data);
-		break;
-	default:
-		printk(KERN_ERR
-		       "mailbox: Unknown kfunc from DSP: 0x%02x\n", mb->cmd_l);
+		       "mbox: Unknown FBCTL from DSP: 0x%04x\n", mb->data);
 	}
 }
 
 /*
- * mailbox interrupt handler
+ * dspgw: KFUNC message handler
  */
-static irqreturn_t mbx1_interrupt(int irq, void *dev_id, struct pt_regs *regs)
+static void mbox_kfunc_power(unsigned short data)
 {
-	union {
-		struct mbcmd sw;
-		struct mbcmd_hw hw;
-	} *mb = (void *)&mbq.mb[mbq.wp];
+	int ret = -1;
 
-#if (INT_D2A_MB1 == INT_DSP_MAILBOX1)
-	mb->hw.data = omap_readw(MAILBOX_DSP2ARM1);
-	mb->hw.cmd  = omap_readw(MAILBOX_DSP2ARM1b);
-#elif (INT_D2A_MB1 == INT_DSP_MAILBOX2)
-	mb->hw.data = omap_readw(MAILBOX_DSP2ARM2);
-	mb->hw.cmd  = omap_readw(MAILBOX_DSP2ARM2b);
-#endif
-
-	/* if mbx1 has not been validated yet, discard. */
-	if (!mbx1_valid)
-		return IRQ_HANDLED;
-
-	if (mb->sw.seq != (*mbseq_expect & 1)) {
-		switch (mbseq_check_level) {
-		case MBSEQ_CHECK_NONE:
-			break;
-		case MBSEQ_CHECK_VERBOSE:
-			printk(KERN_INFO
-			       "mbx: illegal seq bit!!!  ignoring this command."
-			       " (%04x:%04x)\n", mb->hw.cmd, mb->hw.data);
-			return IRQ_HANDLED;
-		case MBSEQ_CHECK_SILENT:
-			return IRQ_HANDLED;
-		}
-	}
-
-	(*mbseq_expect)++;
-
-	mbq_inc(mbq.wp);
-	if (mbq.wp == mbq.rp) {	/* mbq is full */
-		mbq.full = 1;
-		disable_irq(INT_D2A_MB1);
-	}
-	schedule_work(&mbx1_work);
-
-	return IRQ_HANDLED;
-}
-
-static irqreturn_t mbx2_interrupt(int irq, void *dev_id, struct pt_regs *regs)
-{
-	unsigned short cmd, data;
-
-#if (INT_D2A_MB1 == INT_DSP_MAILBOX1)
-	data = omap_readw(MAILBOX_DSP2ARM2);
-	cmd  = omap_readw(MAILBOX_DSP2ARM2b);
-#elif (INT_D2A_MB1 == INT_DSP_MAILBOX2)
-	data = omap_readw(MAILBOX_DSP2ARM1);
-	cmd  = omap_readw(MAILBOX_DSP2ARM1b);
-#endif
-	printk(KERN_DEBUG
-	       "mailbox2 interrupt!  cmd=%04x, data=%04x\n", cmd, data);
-
-	return IRQ_HANDLED;
-}
-
-#if 0
-static void mpuio_interrupt(int irq, void *dev_id, struct pt_regs *regs)
-{
-	printk(KERN_INFO "MPUIO interrupt!\n");
-}
-#endif
-
-#ifdef CONFIG_PROC_FS
-struct proc_dir_entry *procdir_dsp = NULL;
-
-static void dsp_create_procdir_dsp(void)
-{
-	procdir_dsp = proc_mkdir("dsp", 0);
-	if (procdir_dsp == NULL) {
+	switch (data) {
+	case DVFS_START: /* ACK from DSP */
+		/* TBD */
+		break;
+	case AUDIO_PWR_UP:
+		ret = dsp_kfunc_enable_devices(omap_dsp,
+					       DSP_KFUNC_DEV_TYPE_AUDIO, 0);
+		if (ret == 0)
+			ret++;
+		break;
+	case AUDIO_PWR_DOWN: /* == AUDIO_PWR_DOWN1 */
+		ret = dsp_kfunc_disable_devices(omap_dsp,
+						DSP_KFUNC_DEV_TYPE_AUDIO, 1);
+		break;
+	case AUDIO_PWR_DOWN2:
+		ret = dsp_kfunc_disable_devices(omap_dsp,
+						DSP_KFUNC_DEV_TYPE_AUDIO, 2);
+		break;
+	case DSP_PWR_DOWN:
+		ret = dsp_kfunc_disable_devices(omap_dsp,
+						DSP_KFUNC_DEV_TYPE_COMMON, 0);
+		if (ret == 0)
+			omap_dsp->enabled = 0;
+		break;
+	default:
 		printk(KERN_ERR
-		       "omapdsp: failed to register proc directory: dsp\n");
+		       "mailbox: Unknown PWR from DSP: 0x%04x\n", data);
+		break;
+	}
+
+	if (unlikely(ret < 0)) {
+		printk(KERN_ERR "mailbox: PWR(0x%04x) failed\n", data);
+		return;
+	}
+
+	if (likely(ret == 0))
+		return;
+
+	mbcompose_send(KFUNC, KFUNC_POWER, data);
+}
+
+static void mbox_kfunc(struct mbcmd *mb)
+{
+	switch (mb->cmd_l) {
+	case KFUNC_FBCTL:
+		mbox_kfunc_fbctl(mb);
+		break;
+	case KFUNC_POWER:
+		mbox_kfunc_power(mb->data);
+		break;
+	default:
+		printk(KERN_ERR
+		       "mbox: Unknown KFUNC from DSP: 0x%02x\n", mb->cmd_l);
 	}
 }
 
-static void dsp_remove_procdir_dsp(void)
+int dsp_late_init(void)
 {
-	procdir_dsp = NULL;
-	remove_proc_entry("dsp", 0);
-}
-#else /* CONFIG_PROC_FS */
-#define dsp_create_procdir_dsp()	do { } while (0)
-#define dsp_remove_procdir_dsp()	do { } while (0)
-#endif /* CONFIG_PROC_FS */
+	int ret;
 
-extern irqreturn_t dsp_mmu_interrupt(int irq, void *dev_id,
-				     struct pt_regs *regs);
+	dsp_clk_autoidle();
+
+#ifdef CONFIG_ARCH_OMAP2
+	clk_enable(dsp_fck_handle);
+	clk_enable(dsp_ick_handle);
+	__dsp_per_enable();
+#endif
+	dsp_mem_late_init();
+
+#ifdef CONFIG_ARCH_OMAP1
+	dsp_set_idle_boot_base(IDLEPG_BASE, IDLEPG_SIZE);
+#endif
+	ret = dsp_kfunc_enable_devices(omap_dsp,
+				       DSP_KFUNC_DEV_TYPE_COMMON, 0);
+	if (ret == 0)
+		omap_dsp->enabled = 0;
+
+	return 0;
+}
 
 extern int  dsp_ctl_core_init(void);
 extern void dsp_ctl_core_exit(void);
@@ -604,124 +549,92 @@ extern int  dsp_taskmod_init(void);
 extern void dsp_taskmod_exit(void);
 
 /*
- * device functions
- */
-static void dsp_dev_release(struct device *dev)
-{
-}
-
-/*
  * driver functions
  */
-#if (INT_D2A_MB1 == INT_DSP_MAILBOX1)
-#	define INT_D2A_MB2 INT_DSP_MAILBOX2
-#elif(INT_D2A_MB1 == INT_DSP_MAILBOX2)	/* swap MB1 and MB2 */
-#	define INT_D2A_MB2 INT_DSP_MAILBOX1
-#endif
-
 static int __init dsp_drv_probe(struct platform_device *pdev)
 {
 	int ret;
+	struct omap_dsp *info;
+	struct dsp_platform_data *pdata = pdev->dev.platform_data;
 
-	printk(KERN_INFO "OMAP DSP driver initialization\n");
+	dev_info(&pdev->dev, "OMAP DSP driver initialization\n");
 
-	//__dsp_enable(); // XXX
+	info = kzalloc(sizeof(struct omap_dsp), GFP_KERNEL);
+	if (unlikely(info == NULL)) {
+		dev_dbg(&pdev->dev, "no memory for info\n");
+		return -ENOMEM;
+	}
+	platform_set_drvdata(pdev, info);
+	omap_dsp = info;
 
-	dsp_create_procdir_dsp();
+	mutex_init(&info->lock);
+	info->dev = &pdev->dev;
+	info->kdev_list = &pdata->kdev_list;
+
+	ret = dsp_kfunc_probe_devices(info);
+	if (ret) {
+		ret = -ENXIO;
+		goto fail0;
+	}
+
+	info->mmu_irq = platform_get_irq_byname(pdev, "dsp_mmu");
+	if (unlikely(info->mmu_irq) < 0) {
+		ret = -ENXIO;
+		goto fail1;
+	}
 
 	if ((ret = dsp_ctl_core_init()) < 0)
-		goto fail1;
-	if ((ret = dsp_mem_init()) < 0)
 		goto fail2;
+	if ((ret = dsp_mem_init()) < 0)
+		goto fail3;
 	dsp_ctl_init();
 	mblog_init();
 	if ((ret = dsp_taskmod_init()) < 0)
-		goto fail3;
-
-	/*
-	 * mailbox interrupt handlers registration
-	 */
-	ret = request_irq(INT_D2A_MB1, mbx1_interrupt, SA_INTERRUPT, "dsp",
-			  &pdev->dev);
-	if (ret) {
-		printk(KERN_ERR
-		       "failed to register mailbox1 interrupt: %d\n", ret);
 		goto fail4;
-	}
-
-	ret = request_irq(INT_D2A_MB2, mbx2_interrupt, SA_INTERRUPT, "dsp",
-			  &pdev->dev);
-	if (ret) {
-		printk(KERN_ERR
-		       "failed to register mailbox2 interrupt: %d\n", ret);
+	if ((ret = dsp_mbox_init()) < 0)
 		goto fail5;
-	}
-
-	ret = request_irq(INT_DSP_MMU, dsp_mmu_interrupt, SA_INTERRUPT, "dsp",
-			  &pdev->dev);
-	if (ret) {
-		printk(KERN_ERR
-		       "failed to register DSP MMU interrupt: %d\n", ret);
-		goto fail6;
-	}
-
-	/* MMU interrupt is not enabled until DSP runs */
-	disable_irq(INT_DSP_MMU);
-
-#if 0
-	ret = request_irq(INT_MPUIO, mpuio_interrupt, SA_INTERRUPT, "dsp", dev);
-	if (ret) {
-		printk(KERN_ERR
-		       "failed to register MPUIO interrupt: %d\n", ret);
-		goto fail7;
-	}
-#endif
 
 	return 0;
 
-fail6:
-	free_irq(INT_D2A_MB2, &pdev->dev);
-fail5:
-	free_irq(INT_D2A_MB1, &pdev->dev);
-fail4:
+ fail5:
 	dsp_taskmod_exit();
-fail3:
+ fail4:
 	mblog_exit();
 	dsp_ctl_exit();
 	dsp_mem_exit();
-fail2:
+ fail3:
 	dsp_ctl_core_exit();
-fail1:
-	dsp_remove_procdir_dsp();
+ fail2:
+ fail1:
+	dsp_kfunc_remove_devices(info);
+ fail0:
+	kfree(info);
 
-	//__dsp_disable(); // XXX
 	return ret;
 }
 
 static int dsp_drv_remove(struct platform_device *pdev)
 {
+	struct omap_dsp *info = platform_get_drvdata(pdev);
+
 	dsp_cpustat_request(CPUSTAT_RESET);
 
-#if 0
-	free_irq(INT_MPUIO, dev);
-#endif
-	free_irq(INT_DSP_MMU, &pdev->dev);
-	free_irq(INT_D2A_MB2, &pdev->dev);
-	free_irq(INT_D2A_MB1, &pdev->dev);
-
-	/* recover disable_depth */
-	enable_irq(INT_DSP_MMU);
-
-	dspuncfg();
+	dsp_cfgstat_request(CFGSTAT_CLEAN);
+	dsp_mbox_exit();
 	dsp_taskmod_exit();
 	mblog_exit();
 	dsp_ctl_exit();
 	dsp_mem_exit();
 
 	dsp_ctl_core_exit();
-	dsp_remove_procdir_dsp();
 
-	//__dsp_disable(); // XXX
+#ifdef CONFIG_ARCH_OMAP2
+	__dsp_per_disable();
+	clk_disable(dsp_ick_handle);
+	clk_disable(dsp_fck_handle);
+#endif
+	dsp_kfunc_remove_devices(info);
+	kfree(info);
 
 	return 0;
 }
@@ -729,14 +642,14 @@ static int dsp_drv_remove(struct platform_device *pdev)
 #ifdef CONFIG_PM
 static int dsp_drv_suspend(struct platform_device *pdev, pm_message_t state)
 {
-	dsp_suspend();
+	dsp_cfgstat_request(CFGSTAT_SUSPEND);
 
 	return 0;
 }
 
 static int dsp_drv_resume(struct platform_device *pdev)
 {
-	dsp_resume();
+	dsp_cfgstat_request(CFGSTAT_RESUME);
 
 	return 0;
 }
@@ -744,31 +657,6 @@ static int dsp_drv_resume(struct platform_device *pdev)
 #define dsp_drv_suspend		NULL
 #define dsp_drv_resume		NULL
 #endif /* CONFIG_PM */
-
-static struct resource dsp_resources[] = {
-	{
-		.start = INT_DSP_MAILBOX1,
-		.flags = IORESOURCE_IRQ,
-	},
-	{
-		.start = INT_DSP_MAILBOX2,
-		.flags = IORESOURCE_IRQ,
-	},
-	{
-		.start = INT_DSP_MMU,
-		.flags = IORESOURCE_IRQ,
-	},
-};
-
-struct platform_device dsp_device = {
-	.name		= "dsp",
-	.id		= -1,
-	.dev = {
-		.release	= dsp_dev_release,
-	},
-	.num_resources	= ARRAY_SIZE(&dsp_resources),
-	.resource	= dsp_resources,
-};
 
 static struct platform_driver dsp_driver = {
 	.probe		= dsp_drv_probe,
@@ -782,32 +670,12 @@ static struct platform_driver dsp_driver = {
 
 static int __init omap_dsp_mod_init(void)
 {
-	int ret;
-
-	ret = platform_device_register(&dsp_device);
-	if (ret) {
-		printk(KERN_ERR "failed to register the DSP device: %d\n", ret);
-		goto fail1;
-	}
-
-	ret = platform_driver_register(&dsp_driver);
-	if (ret) {
-		printk(KERN_ERR "failed to register the DSP driver: %d\n", ret);
-		goto fail2;
-	}
-
-	return 0;
-
-fail2:
-	platform_device_unregister(&dsp_device);
-fail1:
-	return -ENODEV;
+	return platform_driver_register(&dsp_driver);
 }
 
 static void __exit omap_dsp_mod_exit(void)
 {
 	platform_driver_unregister(&dsp_driver);
-	platform_device_unregister(&dsp_device);
 }
 
 module_init(omap_dsp_mod_init);

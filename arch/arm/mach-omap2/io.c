@@ -26,6 +26,7 @@
 extern void omap_sram_init(void);
 extern int omap2_clk_init(void);
 extern void omap2_check_revision(void);
+extern void omap2_init_memory(void);
 extern void gpmc_init(void);
 
 /*
@@ -43,6 +44,24 @@ static struct map_desc omap2_io_desc[] __initdata = {
 		.virtual	= L4_24XX_VIRT,
 		.pfn		= __phys_to_pfn(L4_24XX_PHYS),
 		.length		= L4_24XX_SIZE,
+		.type		= MT_DEVICE
+	},
+	{
+		.virtual	= DSP_MEM_24XX_VIRT,
+		.pfn		= __phys_to_pfn(DSP_MEM_24XX_PHYS),
+		.length		= DSP_MEM_24XX_SIZE,
+		.type		= MT_DEVICE
+	},
+	{
+		.virtual	= DSP_IPI_24XX_VIRT,
+		.pfn		= __phys_to_pfn(DSP_IPI_24XX_PHYS),
+		.length		= DSP_IPI_24XX_SIZE,
+		.type		= MT_DEVICE
+	},
+	{
+		.virtual	= DSP_MMU_24XX_VIRT,
+		.pfn		= __phys_to_pfn(DSP_MMU_24XX_PHYS),
+		.length		= DSP_MMU_24XX_SIZE,
 		.type		= MT_DEVICE
 	}
 };
@@ -67,5 +86,6 @@ void __init omap2_init_common_hw(void)
 {
 	omap2_mux_init();
 	omap2_clk_init();
+	omap2_init_memory();
 	gpmc_init();
 }

@@ -113,40 +113,31 @@ static void musb_ep_program(struct musb *pThis, u8 bEnd,
  * Start transmit. Caller is responsible for locking shared resources.
  * pThis must be locked.
  */
-void musb_h_tx_start(struct musb *pThis, u8 bEnd)
+static inline void musb_h_tx_start(struct musb_hw_ep *ep)
 {
-	u16 wCsr;
-	void __iomem *pBase = pThis->pRegs;
+	u16	txcsr;
 
-	/* NOTE: no locks here; caller should lock */
-	MGC_SelectEnd(pBase, bEnd);
-	if (bEnd) {
-		wCsr = MGC_ReadCsr16(pBase, MGC_O_HDRC_TXCSR, bEnd);
-		wCsr |= MGC_M_TXCSR_TXPKTRDY | MGC_M_TXCSR_H_WZC_BITS;
-		DBG(5, "Writing TXCSR%d = %x\n", bEnd, wCsr);
-		MGC_WriteCsr16(pBase, MGC_O_HDRC_TXCSR, bEnd, wCsr);
+	/* NOTE: no locks here; caller should lock and select EP */
+	if (ep->bLocalEnd) {
+		txcsr = musb_readw(ep->regs, MGC_O_HDRC_TXCSR);
+		txcsr |= MGC_M_TXCSR_TXPKTRDY | MGC_M_TXCSR_H_WZC_BITS;
+		musb_writew(ep->regs, MGC_O_HDRC_TXCSR, txcsr);
 	} else {
-		wCsr = MGC_M_CSR0_H_SETUPPKT | MGC_M_CSR0_TXPKTRDY;
-		MGC_WriteCsr16(pBase, MGC_O_HDRC_CSR0, 0, wCsr);
+		txcsr = MGC_M_CSR0_H_SETUPPKT | MGC_M_CSR0_TXPKTRDY;
+		musb_writew(ep->regs, MGC_O_HDRC_CSR0, txcsr);
 	}
 
 }
 
-#ifdef	CONFIG_USB_TI_CPPI_DMA
-
-void cppi_hostdma_start(struct musb *pThis, u8 bEnd)
+static inline void cppi_host_txdma_start(struct musb_hw_ep *ep)
 {
-	void __iomem *pBase = pThis->pRegs;
-	u16 txCsr;
+	u16	txcsr;
 
-	/* NOTE: no locks here; caller should lock */
-	MGC_SelectEnd(pBase, bEnd);
-	txCsr = MGC_ReadCsr16(pBase, MGC_O_HDRC_TXCSR, bEnd);
-	txCsr |= MGC_M_TXCSR_DMAENAB | MGC_M_TXCSR_H_WZC_BITS;
-	MGC_WriteCsr16(pBase, MGC_O_HDRC_TXCSR, bEnd, txCsr);
+	/* NOTE: no locks here; caller should lock and select EP */
+	txcsr = musb_readw(ep->regs, MGC_O_HDRC_TXCSR);
+	txcsr |= MGC_M_TXCSR_DMAENAB | MGC_M_TXCSR_H_WZC_BITS;
+	musb_writew(ep->regs, MGC_O_HDRC_TXCSR, txcsr);
 }
-
-#endif
 
 /*
  * Start the URB at the front of an endpoint's queue
@@ -214,15 +205,6 @@ musb_start_urb(struct musb *musb, int is_in, struct musb_qh *qh)
 	if (is_in)
 		return;
 
-	/* TODO: with CPPI DMA, once DMA is setup and DmaReqEnable in TxCSR
-	 * is set (which is the case) transfer is initiated. For periodic
-	 * transfer support, add another field in pEnd struct which will
-	 * serve as a flag. If CPPI DMA is programmed for the transfer set
-	 * this flag and disable DMAReqEnab while programming TxCSR in
-	 * programEnd() Once we reach the appropriate time, enable DMA Req
-	 * instead of calling musb_h_tx_start() function
-	 */
-
 	/* determine if the time is right for a periodic transfer */
 	switch (qh->type) {
 	case USB_ENDPOINT_XFER_ISOC:
@@ -236,17 +218,10 @@ musb_start_urb(struct musb *musb, int is_in, struct musb_qh *qh)
 		if ((urb->transfer_flags & URB_ISO_ASAP)
 				|| (wFrame >= urb->start_frame)) {
 			/* REVISIT the SOF irq handler shouldn't duplicate
-			 * this code... or the branch below...
-			 * ... and we don't set urb->start_frame
+			 * this code; and we don't init urb->start_frame...
 			 */
 			qh->frame = 0;
-			printk("Start --> periodic TX%s on %d\n",
-				pEnd->tx_channel ? " DMA" : "",
-				bEnd);
-			if (!pEnd->tx_channel)
-				musb_h_tx_start(musb, bEnd);
-			else
-				cppi_hostdma_start(musb, bEnd);
+			goto start;
 		} else {
 			qh->frame = urb->start_frame;
 			/* enable SOF interrupt so we can count down */
@@ -257,24 +232,23 @@ DBG(1,"SOF for %d\n", bEnd);
 		}
 		break;
 	default:
+start:
 		DBG(4, "Start TX%d %s\n", bEnd,
 			pEnd->tx_channel ? "dma" : "pio");
 
 		if (!pEnd->tx_channel)
-			musb_h_tx_start(musb, bEnd);
-		else
-			cppi_hostdma_start(musb, bEnd);
+			musb_h_tx_start(pEnd);
+		else if (is_cppi_enabled())
+			cppi_host_txdma_start(pEnd);
 	}
 }
 
-/* caller owns no controller locks, irqs are blocked */
-static inline void
-__musb_giveback(struct musb_hw_ep *hw_ep, struct urb *urb, int status)
-__releases(urb->lock)
-__acquires(urb->lock)
+/* caller owns controller lock, irqs are blocked */
+static void
+__musb_giveback(struct musb *musb, struct urb *urb, int status)
+__releases(musb->Lock)
+__acquires(musb->Lock)
 {
-	struct musb	*musb = hw_ep->musb;
-
 	if ((urb->transfer_flags & URB_SHORT_NOT_OK)
 			&& (urb->actual_length < urb->transfer_buffer_length)
 			&& status == 0
@@ -294,6 +268,7 @@ __acquires(urb->lock)
 				/* common/boring faults */
 				case -EREMOTEIO:
 				case -ESHUTDOWN:
+				case -ECONNRESET:
 				case -EPIPE:
 					level = 3;
 					break;
@@ -309,7 +284,9 @@ __acquires(urb->lock)
 			urb->actual_length, urb->transfer_buffer_length
 			);
 
+	spin_unlock(&musb->Lock);
 	usb_hcd_giveback_urb(musb_to_hcd(musb), urb, musb->int_regs);
+	spin_lock(&musb->Lock);
 }
 
 /* for bulk/interrupt endpoints only */
@@ -347,8 +324,6 @@ static inline void musb_save_toggle(struct musb_hw_ep *ep, int is_in, struct urb
 /* caller owns controller lock, irqs are blocked */
 static struct musb_qh *
 musb_giveback(struct musb_qh *qh, struct urb *urb, int status)
-__releases(qh->hw_ep->musb->Lock)
-__acquires(qh->hw_ep->musb->Lock)
 {
 	int			is_in;
 	struct musb_hw_ep	*ep = qh->hw_ep;
@@ -373,9 +348,7 @@ __acquires(qh->hw_ep->musb->Lock)
 	}
 
 	qh->is_ready = 0;
-	spin_unlock(&musb->Lock);
-	__musb_giveback(ep, urb, status);
-	spin_lock(&musb->Lock);
+	__musb_giveback(musb, urb, status);
 	qh->is_ready = ready;
 
 	/* reclaim resources (and bandwidth) ASAP; deschedule it, and
@@ -648,17 +621,14 @@ musb_rx_reinit(struct musb *musb, struct musb_qh *qh, struct musb_hw_ep *ep)
  * Program an HDRC endpoint as per the given URB
  * Context: irqs blocked, controller lock held
  */
-#define	MGC_M_TXCSR_ISO	0	/* FIXME */
 static void musb_ep_program(struct musb *pThis, u8 bEnd,
 			struct urb *pUrb, unsigned int is_out,
 			u8 * pBuffer, u32 dwLength)
 {
-#ifndef	CONFIG_USB_INVENTRA_FIFO
-	struct dma_controller *pDmaController;
-	struct dma_channel *pDmaChannel;
-	u8 bDmaOk;
-#endif
-	void __iomem *pBase = pThis->pRegs;
+	struct dma_controller	*pDmaController;
+	struct dma_channel	*pDmaChannel;
+	u8			bDmaOk;
+	void __iomem		*pBase = pThis->pRegs;
 	struct musb_hw_ep	*pEnd = pThis->aLocalEnd + bEnd;
 	struct musb_qh		*qh;
 	u16			wPacketSize;
@@ -680,14 +650,11 @@ static void musb_ep_program(struct musb *pThis, u8 bEnd,
 
 	MGC_SelectEnd(pBase, bEnd);
 
-#ifndef	CONFIG_USB_INVENTRA_FIFO
-	pDmaChannel = is_out ? pEnd->tx_channel : pEnd->rx_channel;
+	/* candidate for DMA? */
 	pDmaController = pThis->pDmaController;
-
-	/* candidate for DMA */
 	if (is_dma_capable() && bEnd && pDmaController) {
-		bDmaOk = 1;
-		if (bDmaOk && !pDmaChannel) {
+		pDmaChannel = is_out ? pEnd->tx_channel : pEnd->rx_channel;
+		if (!pDmaChannel) {
 			pDmaChannel = pDmaController->channel_alloc(
 					pDmaController, pEnd, is_out);
 			if (is_out)
@@ -696,8 +663,7 @@ static void musb_ep_program(struct musb *pThis, u8 bEnd,
 				pEnd->rx_channel = pDmaChannel;
 		}
 	} else
-		bDmaOk = 0;
-#endif	/* PIO isn't the only option */
+		pDmaChannel = NULL;
 
 	/* make sure we clear DMAEnab, autoSet bits from previous run */
 
@@ -725,7 +691,6 @@ static void musb_ep_program(struct musb *pThis, u8 bEnd,
 			csr &= ~(MGC_M_TXCSR_H_NAKTIMEOUT
 					| MGC_M_TXCSR_DMAMODE
 					| MGC_M_TXCSR_FRCDATATOG
-					| MGC_M_TXCSR_ISO
 					| MGC_M_TXCSR_H_RXSTALL
 					| MGC_M_TXCSR_H_ERROR
 					| MGC_M_TXCSR_FIFONOTEMPTY
@@ -733,9 +698,7 @@ static void musb_ep_program(struct musb *pThis, u8 bEnd,
 					);
 			csr |= MGC_M_TXCSR_MODE;
 
-			if (qh->type == USB_ENDPOINT_XFER_ISOC)
-				csr |= MGC_M_TXCSR_ISO;
-			else if (usb_gettoggle(pUrb->dev,
+			if (usb_gettoggle(pUrb->dev,
 					qh->epnum, 1))
 				csr |= MGC_M_TXCSR_H_WR_DATATOGGLE
 					| MGC_M_TXCSR_H_DATATOGGLE;
@@ -802,7 +765,7 @@ static void musb_ep_program(struct musb *pThis, u8 bEnd,
 			wLoadCount = min((u32) wPacketSize, dwLength);
 
 #ifdef CONFIG_USB_INVENTRA_DMA
-		if (bDmaOk && pDmaChannel) {
+		if (pDmaChannel) {
 
 			/* clear previous state */
 			wCsr = MGC_ReadCsr16(pBase, MGC_O_HDRC_TXCSR, bEnd);
@@ -845,10 +808,10 @@ static void musb_ep_program(struct musb *pThis, u8 bEnd,
 				pDmaChannel = pEnd->pDmaChannel = NULL;
 			}
 		}
-#elif defined(CONFIG_USB_TI_CPPI_DMA)
+#endif
 
 		/* candidate for DMA */
-		if (bDmaOk && pDmaChannel) {
+		if (is_cppi_enabled() && pDmaChannel) {
 
 			/* program endpoint CSRs first, then setup DMA.
 			 * assume CPPI setup succeeds.
@@ -887,7 +850,7 @@ static void musb_ep_program(struct musb *pThis, u8 bEnd,
 				 */
 			}
 		}
-#endif
+
 		if (wLoadCount) {
 			/* ASSERT:  TXCSR_DMAENAB was already cleared */
 
@@ -940,7 +903,8 @@ static void musb_ep_program(struct musb *pThis, u8 bEnd,
 		}
 
 		/* kick things off */
-#ifdef	CONFIG_USB_TI_CPPI_DMA
+
+		if (is_cppi_enabled()) {
 			/* candidate for DMA */
 			if (pDmaChannel) {
 				pDmaChannel->dwActualLength = 0L;
@@ -967,7 +931,8 @@ static void musb_ep_program(struct musb *pThis, u8 bEnd,
 				} else
 					csr |= MGC_M_RXCSR_DMAENAB;
 			}
-#endif
+		}
+
 		csr |= MGC_M_RXCSR_H_REQPKT;
 		DBG(7, "RXCSR%d := %04x\n", bEnd, csr);
 		musb_writew(pEnd->regs, MGC_O_HDRC_RXCSR, csr);
@@ -1776,7 +1741,7 @@ static int musb_schedule(
 		else
 			diff = hw_ep->wMaxPacketSizeTx - qh->maxpacket;
 
-		if (wBestDiff > diff) {
+		if (diff > 0 && wBestDiff > diff) {
 			wBestDiff = diff;
 			nBestEnd = nEnd;
 		}
@@ -2050,7 +2015,7 @@ static int musb_urb_dequeue(struct usb_hcd *hcd, struct urb *urb)
 	 * has already been updated.  This is a synchronous abort; it'd be
 	 * OK to hold off until after some IRQ, though.
 	 */
-	if (urb->urb_list.prev != &qh->hep->urb_list)
+	if (!qh->is_ready || urb->urb_list.prev != &qh->hep->urb_list)
 		status = -EINPROGRESS;
 	else {
 		switch (qh->type) {
@@ -2075,8 +2040,12 @@ static int musb_urb_dequeue(struct usb_hcd *hcd, struct urb *urb)
 
 	/* NOTE:  qh is invalid unless !list_empty(&hep->urb_list) */
 	if (status < 0 || (sched && qh != first_qh(sched))) {
-		status = -EINPROGRESS;
-		musb_giveback(qh, urb, 0);
+		int	ready = qh->is_ready;
+
+		status = 0;
+		qh->is_ready = 0;
+		__musb_giveback(musb, urb, 0);
+		qh->is_ready = ready;
 	} else
 		status = musb_cleanup_urb(urb, qh, urb->pipe & USB_DIR_IN);
 done:
