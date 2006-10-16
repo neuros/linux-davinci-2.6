@@ -49,6 +49,7 @@
 #include <linux/sysctl.h>
 #include <linux/wait.h>
 #include <asm/arch/irqs.h>
+#include <asm/mach-types.h>
 #include "i2c-davinci.h"
 
 MODULE_AUTHOR("Texas Instruments India");
@@ -74,12 +75,20 @@ static const char driver_name[] = "i2c_davinci";
 				 DAVINCI_I2C_ICIMR_AL_MASK)
 
 /* Following are the default values for the module parameters */
-static int bus_freq = 20; /*  Fast Mode = 400 KHz, Standard Mode = 100 KHz */
+
+
+static int bus_freq = 400; /* Default: Fast Mode = 400 KHz, Standard Mode = 100 KHz */
 
 static int own_addr = 0xa;	/* Randomly assigned own address */
 
 /* Instance of the private I2C device structure */
 static struct i2c_davinci_device i2c_davinci_dev;
+
+#define PINMUX1		__REG(0x01c40004)
+#define GPIO		__REG(0x01C67000)
+#define GPIO23_DIR	__REG(0x01C67038)
+#define GPIO23_SET	__REG(0x01C67040)
+#define GPIO23_CLR	__REG(0x01C67044)
 
 /*
  * This functions configures I2C and brings I2C out of reset.
@@ -118,7 +127,7 @@ static int i2c_davinci_reset(struct i2c_davinci_device *dev)
         clk = ((input_clock/(psc + 1)) / (bus_freq * 1000)) - 10;
 
 	dev->regs->icpsc = psc;
-	dev->regs->icclkh = (27 * clk) / 100; /* duty cycle should be 27% */
+	dev->regs->icclkh = (50 * clk) / 100; /* duty cycle should be 27% */
 	dev->regs->icclkl = (clk - dev->regs->icclkh);
 
 	dev_dbg(dev->dev, "CLK  = %d\n", clk);
@@ -141,14 +150,45 @@ static int i2c_davinci_reset(struct i2c_davinci_device *dev)
 /*
  * Waiting on Bus Busy
  */
-static int i2c_davinci_wait_for_bb(char allow_sleep)
+static int i2c_davinci_wait_for_bb(struct i2c_davinci_device *dev,
+				   char allow_sleep)
 {
 	unsigned long timeout;
+ 	int i;
+ 	static	char to_cnt = 0;
 
 	timeout = jiffies + DAVINCI_I2C_TIMEOUT;
 	while ((i2c_davinci_dev.regs->icstr) & DAVINCI_I2C_ICSTR_BB_MASK) {
-		if (time_after(jiffies, timeout)) {
-			return -ETIMEDOUT;
+		if (to_cnt <= 2) {
+			if (time_after(jiffies, timeout)) {
+				dev_warn(dev->dev,
+					 "timeout waiting for bus ready");
+				to_cnt ++;
+				return -ETIMEDOUT;
+			}
+		}
+		else {
+			to_cnt = 0;
+			/* Send the NACK to the slave */
+			dev->regs->icmdr |= DAVINCI_I2C_ICMDR_NACKMOD_MASK;
+			/* Disable I2C */
+			PINMUX1 &= (~(1 << 7));
+
+			/* Set the GPIO direction register */
+			GPIO23_DIR &= ~0x0800;
+
+			/* Send high and low on the SCL line */
+			for (i = 0; i < 10; i++) {
+				GPIO23_SET |= 0x0800;
+				udelay(25);
+				GPIO23_CLR |= 0x0800;
+				udelay(25);
+			}
+			/* Re-enable I2C */
+			PINMUX1 |= (1 << 7);
+
+			i2c_davinci_reset(dev);
+			init_completion(&dev->cmd_complete);
 		}
 		if (allow_sleep)
 			schedule_timeout(1);
@@ -166,11 +206,14 @@ i2c_davinci_xfer_msg(struct i2c_adapter *adap, struct i2c_msg *msg, int stop)
 {
 	struct i2c_davinci_device *dev = i2c_get_adapdata(adap);
 	u8 zero_byte = 0;
-	u32 flag = 0, stat = 0, cnt = 2000;
 	int r;
 
-	/* Introduce a 20musec delay.  Required for Davinci EVM */
-	while (cnt--);
+	u32 flag = 0, stat = 0;
+	int i;
+
+	/* Introduce a 100musec delay.  Required for Davinci EVM board only */
+	if (machine_is_davinci_evm())
+		udelay(100);
 
 	/* set the slave address */
 	dev->regs->icsar = msg->addr;
@@ -211,14 +254,14 @@ i2c_davinci_xfer_msg(struct i2c_adapter *adap, struct i2c_msg *msg, int stop)
 	if (stop)
 		flag |= DAVINCI_I2C_ICMDR_STP_MASK;
 
-	/* write the data into mode register */
-	dev->regs->icmdr = flag;
-
 	/* Enable receive and transmit interrupts */
 	if (msg->flags & I2C_M_RD)
 		dev->regs->icimr |= DAVINCI_I2C_ICIMR_ICRRDY_MASK;
 	else
 		dev->regs->icimr |= DAVINCI_I2C_ICIMR_ICXRDY_MASK;
+
+	/* write the data into mode register */
+	dev->regs->icmdr = flag;
 
 	r = wait_for_completion_interruptible_timeout(&dev->cmd_complete,
 						      DAVINCI_I2C_TIMEOUT);
@@ -227,6 +270,25 @@ i2c_davinci_xfer_msg(struct i2c_adapter *adap, struct i2c_msg *msg, int stop)
 		return r;
 	if (r == 0) {
 		dev_err(dev->dev, "controller timed out\n");
+
+		/* Send the NACK to the slave */
+		dev->regs->icmdr |= DAVINCI_I2C_ICMDR_NACKMOD_MASK;
+		/* Disable I2C */
+		PINMUX1 &= (~(1 << 7));
+
+		/* Set the GPIO direction register */
+		GPIO23_DIR &= ~0x0800;
+
+		/* Send high and low on the SCL line */
+		for (i = 0; i < 10; i++) {
+			GPIO23_SET |= 0x0800;
+			udelay(25);
+			GPIO23_CLR |= 0x0800;
+			udelay(25);
+		}
+		/* Re-enable I2C */
+		PINMUX1 |= (1 << 7);
+
 		i2c_davinci_reset(dev);
 		return -ETIMEDOUT;
 	}
@@ -243,8 +305,7 @@ i2c_davinci_xfer_msg(struct i2c_adapter *adap, struct i2c_msg *msg, int stop)
 			dev->regs->icmdr |= DAVINCI_I2C_ICMDR_STP_MASK;
 		return -EREMOTEIO;
 	}
-	if (dev->cmd_err & DAVINCI_I2C_ICSTR_AL_MASK ||
-	    dev->cmd_err & DAVINCI_I2C_ICSTR_RSFULL_MASK) {
+	if (dev->cmd_err & DAVINCI_I2C_ICSTR_AL_MASK) {
 		i2c_davinci_reset(dev);
 		return -EIO;
 	}
@@ -273,7 +334,7 @@ i2c_davinci_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 		if (msgs[count].buf == NULL)
 			return -EINVAL;
 
-	if ((ret = i2c_davinci_wait_for_bb(1)) < 0) {
+	if ((ret = i2c_davinci_wait_for_bb(dev, 1)) < 0) {
 		dev_warn(dev->dev, "timeout waiting for bus ready");
 		return ret;
 	}
@@ -432,6 +493,19 @@ davinci_i2c_probe(struct platform_device *pdev)
 	memset(dev, 0, sizeof(struct i2c_davinci_device));
 	init_waitqueue_head(&dev->cmd_wait);
 	dev->dev = &pdev->dev;
+
+	/*
+	 * NOTE: On DaVinci EVM, the i2c bus frequency is set to 20kHz
+	 *	 so that the MSP430, which is doing software i2c, has
+	 *	 some extra processing time
+	 */
+	if (machine_is_davinci_evm())
+		bus_freq = 20;
+
+	else if (bus_freq > 200)
+		bus_freq = 400;	/* Fast mode */
+	else
+		bus_freq = 100;	/* Standard mode */
 
 	dev->clk = clk_get (&pdev->dev, "I2CCLK");	
 	if (IS_ERR(dev->clk))
