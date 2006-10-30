@@ -178,8 +178,7 @@ static inline u32 davinci_timer32_read(davinci_timer_t *t)
  * Last processed system timer interrupt
  */
 static unsigned long davinci_timer32_last = 0;
-static irqreturn_t system_timer_interrupt(int irq, void *dev_id,
-					  struct pt_regs *regs)
+static irqreturn_t system_timer_interrupt(int irq, void *dev_id)
 {
 	unsigned long now, latency;
 
@@ -189,7 +188,7 @@ static irqreturn_t system_timer_interrupt(int irq, void *dev_id,
 	davinci_timer32_last = now - latency;
 
 	/* Do the Linux timer operations */
-	timer_tick(regs);
+	timer_tick();
 	write_sequnlock(&xtime_lock);
 
 	return IRQ_HANDLED;
@@ -206,8 +205,7 @@ static unsigned long davinci_gettimeoffset(void)
 	return nsec / 1000;
 }
 
-static irqreturn_t freerun_interrupt(int irq, void *dev_id,
-				     struct pt_regs *regs)
+static irqreturn_t freerun_interrupt(int irq, void *dev_id)
 {
 	/* TODO: keep track of roll-overs for 64-bit cycle-count */
 	return IRQ_HANDLED;

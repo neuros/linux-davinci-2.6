@@ -33,7 +33,6 @@
  * 2005-10-01   Rishi Bhattacharya / Sharath Kumar - Added support for TI Davinci DM644x processor
  */
 
-#include <linux/config.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/types.h>

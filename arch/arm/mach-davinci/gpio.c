@@ -147,7 +147,7 @@ static struct irq_chip gpio_irqchip = {
 };
 
 static void
-gpio_irq_handler(unsigned irq, struct irqdesc *desc, struct pt_regs *regs)
+gpio_irq_handler(unsigned irq, struct irqdesc *desc)
 {
 	struct gpio_controller	*__iomem g = get_irq_chipdata(irq);
 	u32			mask = 0xffff;
@@ -176,7 +176,7 @@ gpio_irq_handler(unsigned irq, struct irqdesc *desc, struct pt_regs *regs)
 		gpio = &irq_desc[n];
 		while (status) {
 			if (status & 1)
-				gpio->handle_irq(n, gpio, regs);
+				gpio->handle_irq(n, gpio);
 			n++;
 			gpio++;
 			status >>= 1;

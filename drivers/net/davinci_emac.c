@@ -47,7 +47,6 @@
         - feature was added for another TI platform
 
  */
-#include <linux/config.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
@@ -117,7 +116,6 @@ const char emac_version_string[] = "TI DaVinci EMAC Linux version updated 4.0";
 /* ---------------------------------------------------------------
  * types
  * --------------------------------------------------------------- */
-typedef int bool;
 #define TRUE		((bool) 1)
 #define FALSE		((bool) 0)
 
@@ -1613,8 +1611,7 @@ extern int davinci_get_macaddr(char *ptr);
 
 static int emac_dev_tx(struct sk_buff *skb, struct net_device *netdev);
 
-static irqreturn_t emac_hal_isr(int irq, void *dev_id,
-				struct pt_regs *p_cb_param);
+static irqreturn_t emac_hal_isr(int irq, void *dev_id);
 
 static void *emac_net_alloc_rx_buf(emac_dev_t * dev, int buf_size,
 				   emac_net_data_token * data_token,
@@ -1698,7 +1695,7 @@ static int emac_control_cb(emac_dev_t * dev, int cmd,
 
 /* function prototypes */
 static int emac_send(emac_dev_t * dev, net_pkt_obj * pkt,
-		     int channel, void *send_args);
+		     int channel, bool send_args);
 
 static int emac_tick(emac_dev_t * dev, void *tick_args);
 
@@ -6067,7 +6064,7 @@ static int emac_pkt_process_end(emac_dev_t * _dev, void *proc_args)
  */
 
 static int emac_send(emac_dev_t * _dev, net_pkt_obj * pkt,
-		     int channel, void *send_args)
+		     int channel, bool send_args)
 {
 	unsigned long flags;
 	emac_dev_t *dev = (emac_dev_t *) _dev;
@@ -6547,7 +6544,7 @@ void emac_poll_controller(struct net_device *netdev)
 	emac_dev_t *dev = NETDEV_PRIV(netdev);
 
 	disable_irq(netdev->irq);
-	emac_hal_isr(netdev->irq, dev, NULL);
+	emac_hal_isr(netdev->irq, dev);
 	enable_irq(netdev->irq);
 }
 #endif
@@ -6656,7 +6653,7 @@ static int emac_net_tx_complete(emac_dev_t * dev,
  *  Interrupt functions
  *****************************************************************************/
 
-irqreturn_t emac_hal_isr(int irq, void *dev_id, struct pt_regs * regs)
+irqreturn_t emac_hal_isr(int irq, void *dev_id)
 {
 	emac_dev_t *dev = (emac_dev_t *) dev_id;
 
