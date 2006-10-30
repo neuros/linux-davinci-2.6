@@ -1,5 +1,5 @@
 /*
- * linux/arch/arm/mach-omap/omap2/board-apollon.c
+ * linux/arch/arm/mach-omap2/board-apollon.c
  *
  * Copyright (C) 2005,2006 Samsung Electronics
  * Author: Kyungmin Park <kyungmin.park@samsung.com>
@@ -25,6 +25,7 @@
 #include <linux/interrupt.h>
 #include <linux/delay.h>
 #include <linux/leds.h>
+#include <linux/irq.h>
 
 #include <asm/hardware.h>
 #include <asm/mach-types.h>
@@ -199,7 +200,7 @@ static inline void __init apollon_init_smc91x(void)
 		return;
 	}
 	apollon_smc91x_resources[0].start = base + 0x300;
-	apollon_smc91x_resources[1].end   = base + 0x30f;
+	apollon_smc91x_resources[0].end   = base + 0x30f;
 	udelay(100);
 
 	omap_cfg_reg(W4__24XX_GPIO74);
@@ -234,6 +235,13 @@ static struct omap_mmc_config apollon_mmc_config __initdata = {
 	},
 };
 
+static struct omap_usb_config apollon_usb_config __initdata = {
+	.register_dev	= 1,
+	.hmc_mode	= 0x14,	/* 0:dev 1:host1 2:disable */
+
+	.pins[0]	= 6,
+};
+
 static struct omap_lcd_config apollon_lcd_config __initdata = {
 	.ctrl_name	= "internal",
 };
@@ -241,6 +249,7 @@ static struct omap_lcd_config apollon_lcd_config __initdata = {
 static struct omap_board_config_kernel apollon_config[] = {
 	{ OMAP_TAG_UART,	&apollon_uart_config },
 	{ OMAP_TAG_MMC,		&apollon_mmc_config },
+	{ OMAP_TAG_USB,		&apollon_usb_config },
 	{ OMAP_TAG_LCD,		&apollon_lcd_config },
 };
 
@@ -263,7 +272,7 @@ static void __init apollon_led_init(void)
 	omap_set_gpio_dataout(LED2_GPIO15, 0);
 }
 
-static irqreturn_t apollon_sw_interrupt(int irq, void *ignored, struct pt_regs *regs)
+static irqreturn_t apollon_sw_interrupt(int irq, void *ignored)
 {
 	static unsigned int led0, led1, led2;
 
@@ -309,11 +318,22 @@ static void __init apollon_sw_init(void)
 		return;
 }
 
+static void __init apollon_usb_init(void)
+{
+	/* USB device */
+	/* DEVICE_SUSPEND */
+	omap_cfg_reg(P21_242X_GPIO12);
+	omap_request_gpio(12);
+	omap_set_gpio_direction(12, 0);		/* OUT */
+	omap_set_gpio_dataout(12, 0);
+}
+
 static void __init omap_apollon_init(void)
 {
 	apollon_led_init();
 	apollon_sw_init();
 	apollon_flash_init();
+	apollon_usb_init();
 
 	/* REVISIT: where's the correct place */
 	omap_cfg_reg(W19_24XX_SYS_NIRQ);

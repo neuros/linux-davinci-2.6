@@ -26,7 +26,6 @@
 #include <linux/module.h>
 #include <linux/init.h>
 
-#include <linux/config.h>
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/device.h>
@@ -89,6 +88,26 @@ void tahvo_write_reg(int reg, u16 val)
 {
 	BUG_ON(!tahvo_initialized);
 	cbus_write_reg(cbus_host, TAHVO_ID, reg, val);
+}
+
+/**
+ * tahvo_set_clear_reg_bits - set and clear register bits atomically
+ * @reg: the register to write to
+ * @bits: the bits to set
+ *
+ * This function sets and clears the specified Tahvo register bits atomically
+ */
+void tahvo_set_clear_reg_bits(int reg, u16 set, u16 clear)
+{
+	unsigned long flags;
+	u16 w;
+
+	spin_lock_irqsave(&tahvo_lock, flags);
+	w = tahvo_read_reg(reg);
+	w &= ~clear;
+	w |= set;
+	tahvo_write_reg(reg, w);
+	spin_unlock_irqrestore(&tahvo_lock, flags);
 }
 
 /*

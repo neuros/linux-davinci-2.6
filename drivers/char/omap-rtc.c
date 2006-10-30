@@ -43,7 +43,6 @@
  *	REVISIT: Elaborate on OMAP1510 TRM 15uS BUSY access rule.
  */
 
-#include <linux/config.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/types.h>
@@ -121,7 +120,7 @@ static const unsigned char days_in_mo[] =
  *	A very tiny interrupt handler. It runs with SA_INTERRUPT set.
  */
 
-irqreturn_t rtc_interrupt(int irq, void *dev_id, struct pt_regs *regs)
+irqreturn_t rtc_interrupt(int irq, void *dev_id)
 {
 	/*
 	 *	Either an alarm interrupt or update complete interrupt.

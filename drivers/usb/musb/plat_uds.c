@@ -93,9 +93,7 @@
  * Most of the conditional compilation will (someday) vanish.
  */
 
-#include <linux/config.h>
 #include <linux/module.h>
-#include <linux/pci.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
@@ -666,6 +664,7 @@ void musb_start(struct musb *musb)
 	musb_writeb(regs, MGC_O_HDRC_POWER, MGC_M_POWER_ISOUPDATE
 						| MGC_M_POWER_SOFTCONN
 						| MGC_M_POWER_HSENAB
+						/* ENSUSPEND wedges tusb */
 						// | MGC_M_POWER_ENSUSPEND
 						);
 
@@ -673,7 +672,7 @@ void musb_start(struct musb *musb)
 	devctl = musb_readb(regs, MGC_O_HDRC_DEVCTL);
 	devctl &= ~MGC_M_DEVCTL_SESSION;
 
-	if (is_otg_enabled(pThis)) {
+	if (is_otg_enabled(musb)) {
 		/* session started after:
 		 * (a) ID-grounded irq, host mode;
 		 * (b) vbus present/connect IRQ, peripheral mode;
@@ -684,7 +683,7 @@ void musb_start(struct musb *musb)
 		else
 			devctl |= MGC_M_DEVCTL_SESSION;
 
-	} else if (is_host_enabled(pThis)) {
+	} else if (is_host_enabled(musb)) {
 		/* assume ID pin is hard-wired to ground */
 		devctl |= MGC_M_DEVCTL_SESSION;
 
@@ -1277,7 +1276,7 @@ static int __devinit musb_core_init(u16 wType, struct musb *pThis)
 
 #ifdef CONFIG_ARCH_OMAP243X
 
-static irqreturn_t generic_interrupt(int irq, void *__hci, struct pt_regs *r)
+static irqreturn_t generic_interrupt(int irq, void *__hci)
 {
 	unsigned long	flags;
 	irqreturn_t	retval = IRQ_NONE;
@@ -1288,7 +1287,6 @@ static irqreturn_t generic_interrupt(int irq, void *__hci, struct pt_regs *r)
 	musb->int_usb = musb_readb(musb->pRegs, MGC_O_HDRC_INTRUSB);
 	musb->int_tx = musb_readw(musb->pRegs, MGC_O_HDRC_INTRTX);
 	musb->int_rx = musb_readw(musb->pRegs, MGC_O_HDRC_INTRRX);
-	musb->int_regs = r;
 
 	if (musb->int_usb || musb->int_tx || musb->int_rx)
 		retval = musb_interrupt(musb);
@@ -1605,7 +1603,6 @@ static void musb_free(struct musb *musb)
 	if (is_dma_capable() && musb->pDmaController) {
 		struct dma_controller	*c = musb->pDmaController;
 
-//
 		(void) c->stop(c->pPrivateData);
 		dma_controller_factory.destroy(c);
 	}
@@ -1668,7 +1665,7 @@ musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl)
 	bad_config:
 #endif
 	default:
-		dev_dbg(dev, "incompatible Kconfig role setting\n");
+		dev_err(dev, "incompatible Kconfig role setting\n");
 		return -EINVAL;
 	}
 
@@ -1812,8 +1809,9 @@ fail:
 	INIT_WORK(&pThis->irq_work, musb_irq_work, pThis);
 
 #ifdef CONFIG_SYSFS
-	device_create_file(dev, &dev_attr_mode);
-	device_create_file(dev, &dev_attr_cable);
+	status = device_create_file(dev, &dev_attr_mode);
+	status = device_create_file(dev, &dev_attr_cable);
+	status = 0;
 #endif
 
 	return status;
@@ -1828,6 +1826,10 @@ fail2:
 /* all implementations (PCI bridge to FPGA, VLYNQ, etc) should just
  * bridge to a platform device; this driver then suffices.
  */
+
+#ifndef CONFIG_USB_INVENTRA_FIFO
+static u64	*orig_dma_mask;
+#endif
 
 static int __devinit musb_probe(struct platform_device *pdev)
 {
@@ -1846,12 +1848,18 @@ static int __devinit musb_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
+#ifndef CONFIG_USB_INVENTRA_FIFO
+	/* clobbered by use_dma=n */
+	orig_dma_mask = dev->dma_mask;
+#endif
 	return musb_init_controller(dev, irq, base);
 }
 
 static int __devexit musb_remove(struct platform_device *pdev)
 {
+	struct device	*dev = &pdev->dev;
 	struct musb	*musb = dev_to_musb(&pdev->dev);
+	void __iomem	*ctrl_base = musb->ctrl_base;
 
 	/* this gets called on rmmod.
 	 *  - Host mode: host may still be active
@@ -1865,7 +1873,11 @@ static int __devexit musb_remove(struct platform_device *pdev)
 		usb_remove_hcd(musb_to_hcd(musb));
 #endif
 	musb_free(musb);
+	iounmap(ctrl_base);
 	device_init_wakeup(&pdev->dev, 0);
+#ifndef CONFIG_USB_INVENTRA_FIFO
+	dev->dma_mask = orig_dma_mask;
+#endif
 	return 0;
 }
 

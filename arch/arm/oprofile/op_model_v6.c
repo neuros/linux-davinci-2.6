@@ -90,11 +90,15 @@ static struct pmu_type pmu_parms[] = {
 		.id		= PMU_ARM11,
 		.name		= "arm/arm11",
 		.num_counters	= 3,
+#ifdef CONFIG_ARCH_OMAP2
+		.interrupt	= 3,
+#else
 		.interrupt	= -1,
+#endif
 		.int_mask	= { [PMN0] = 0x10, [PMN1] = 0x20,
-				    [CCNT] = 0x40 },
+					[CCNT] = 0x40 },
 		.cnt_ovf	= { [CCNT] = 0x400, [PMN0] = 0x100,
-				    [PMN1] = 0x200},
+					[PMN1] = 0x200},
 	},
 };
 
@@ -160,7 +164,8 @@ static int arm11_setup_ctrs(void)
 		counter_config[i].event = EVT_UNUSED;
 	}
 
-	pmnc = (counter_config[PMN1].event << 20) | (counter_config[PMN0].event << 12);
+	pmnc = (counter_config[PMN1].event << 20)
+			| (counter_config[PMN0].event << 12);
 	pr_debug("arm11_setup_ctrs: pmnc: %#08x\n", pmnc);
 	write_pmnc(pmnc);
 
@@ -238,21 +243,21 @@ static int arm11_pmu_start(void)
 	u32 pmnc = read_pmnc();
 
 	if (pmu->interrupt >= 0) {
-		ret = request_irq(pmu->interrupt, arm11_pmu_interrupt, SA_INTERRUPT,
-				  "ARM11 PMU", (void *)results);
+		ret = request_irq(pmu->interrupt, arm11_pmu_interrupt,
+			IRQF_DISABLED, "ARM11 PMU", (void *)results);
 		if (ret < 0) {
-			printk(KERN_ERR "oprofile: unable to request IRQ%d for ARM11 PMU\n",
-			       pmu->interrupt);
+			printk(KERN_ERR "oprofile: unable to request IRQ%d "
+				"for ARM11 PMU\n", pmu->interrupt);
 			return ret;
 		}
 
 		pmnc |= pmu->int_enable;
 	}
 
-	printk("XXX enabling PMNC: %08x\n", pmnc);
 	pmnc |= PMU_ENABLE;
 	write_pmnc(pmnc);
-	pr_debug("arm11_pmu_start: pmnc: %#08x mask: %08x\n", pmnc, pmu->int_enable);
+	pr_debug("arm11_pmu_start: pmnc: %#08x mask: %08x\n",
+			pmnc, pmu->int_enable);
 	return 0;
 }
 
@@ -273,15 +278,3 @@ struct op_arm_model_spec op_arm11_spec = {
 	.start		= arm11_pmu_start,
 	.stop		= arm11_pmu_stop,
 };
-
-static int __init op_arm11_init(void)
-{
-	int ret;
-
-	ret = arm11_detect_pmu();
-	if (ret == 0)
-		ret = arm11_pmu_start();
-
-	return ret;
-}
-subsys_initcall(op_arm11_init);
