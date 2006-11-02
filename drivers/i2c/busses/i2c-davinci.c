@@ -55,12 +55,12 @@
 MODULE_AUTHOR("Texas Instruments India");
 MODULE_DESCRIPTION("TI DaVinci I2C bus adapter");
 MODULE_LICENSE("GPL");
-  
+
 static int bus_freq;
 module_param(bus_freq, int, 0);
 MODULE_PARM_DESC(bus_freq,
   "Set I2C bus frequency in KHz: 100 (Standard Mode) or 400 (Fast Mode)");
-  
+
 /* ----- global defines ----------------------------------------------- */
 static const char driver_name[] = "i2c_davinci";
 
@@ -106,21 +106,21 @@ static int i2c_davinci_reset(struct i2c_davinci_device *dev)
 	dev->regs->icmdr &= ~DAVINCI_I2C_ICMDR_IRS_MASK;
 
         /* NOTE: I2C Clock divider programming info
- 	 * As per I2C specs the following formulas provide prescalar
+	 * As per I2C specs the following formulas provide prescalar
          * and low/high divider values
- 	 *
- 	 * input clk --> PSC Div -----------> ICCL/H Div --> output clock
- 	 *                       module clk
- 	 *
- 	 * output clk = module clk / (PSC + 1) [ (ICCL + d) + (ICCH + d) ]
- 	 *
- 	 * Thus,
- 	 * (ICCL + ICCH) = clk = (input clk / ((psc +1) * output clk)) - 2d;
- 	 *
- 	 * where if PSC == 0, d = 7,
- 	 *       if PSC == 1, d = 6
- 	 *       if PSC > 1 , d = 5
- 	 */
+	 *
+	 * input clk --> PSC Div -----------> ICCL/H Div --> output clock
+	 *                       module clk
+	 *
+	 * output clk = module clk / (PSC + 1) [ (ICCL + d) + (ICCH + d) ]
+	 *
+	 * Thus,
+	 * (ICCL + ICCH) = clk = (input clk / ((psc +1) * output clk)) - 2d;
+	 *
+	 * where if PSC == 0, d = 7,
+	 *       if PSC == 1, d = 6
+	 *       if PSC > 1 , d = 5
+	 */
 
 	psc = 26; /* To get 1MHz clock */
 
@@ -154,8 +154,8 @@ static int i2c_davinci_wait_for_bb(struct i2c_davinci_device *dev,
 				   char allow_sleep)
 {
 	unsigned long timeout;
- 	int i;
- 	static	char to_cnt = 0;
+	int i;
+	static	char to_cnt = 0;
 
 	timeout = jiffies + DAVINCI_I2C_TIMEOUT;
 	while ((i2c_davinci_dev.regs->icstr) & DAVINCI_I2C_ICSTR_BB_MASK) {
@@ -340,7 +340,7 @@ i2c_davinci_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 	}
 
 	for (count = 0; count < num; count++) {
-		dev_dbg(dev->dev, 
+		dev_dbg(dev->dev,
 			"%s: %d, addr: 0x%04x, len: %d, flags: 0x%x\n",
 			__FUNCTION__,
 			count, msgs[count].addr, msgs[count].len,
@@ -348,7 +348,7 @@ i2c_davinci_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 
 		do {
 			ret = i2c_davinci_xfer_msg(adap, &msgs[count],
-					   	   (count == (num - 1)));
+						   (count == (num - 1)));
 
 			if (ret < 0) {
 				dev_dbg(dev->dev, "Retrying ...\n");
@@ -358,7 +358,7 @@ i2c_davinci_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 				break;
 		} while (retries);
 
-		dev_dbg(dev->dev, "%s:%d ret: %d\n", 
+		dev_dbg(dev->dev, "%s:%d ret: %d\n",
 			__FUNCTION__, __LINE__, ret);
 
 		if (ret != msgs[count].len)
@@ -368,7 +368,7 @@ i2c_davinci_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 	if (ret >= 0 && num > 1)
 		ret = num;
 
-	dev_dbg(dev->dev, "%s:%d ret: %d\n", 
+	dev_dbg(dev->dev, "%s:%d ret: %d\n",
 		__FUNCTION__, __LINE__, ret);
 
 	return ret;
@@ -393,14 +393,14 @@ static inline void i2c_davinci_complete_cmd(struct i2c_davinci_device *dev)
  * occurs.
  */
 static irqreturn_t
-i2c_davinci_isr(int this_irq, void *dev_id, struct pt_regs *reg)
+i2c_davinci_isr(int this_irq, void *dev_id)
 {
 	struct i2c_davinci_device *dev = dev_id;
 	u32 stat;
 
 	while ((stat = dev->regs->icivr) != 0) {
 		dev_dbg(dev->dev, "%s: stat=0x%x\n", __FUNCTION__, stat);
-	
+
 		switch (stat) {
 		case DAVINCI_I2C_ICIVR_INTCODE_AL:
 			dev->cmd_err |= DAVINCI_I2C_ICSTR_AL_MASK;
@@ -507,9 +507,9 @@ davinci_i2c_probe(struct platform_device *pdev)
 	else
 		bus_freq = 100;	/* Standard mode */
 
-	dev->clk = clk_get (&pdev->dev, "I2CCLK");	
+	dev->clk = clk_get (&pdev->dev, "I2CCLK");
 	if (IS_ERR(dev->clk))
-        	return -1;
+		return -1;
 	clk_enable(dev->clk);
 
 	dev->regs = (davinci_i2cregsovly)mem->start;
@@ -578,7 +578,7 @@ davinci_i2c_remove(struct platform_device *pdev)
 static struct platform_driver davinci_i2c_driver = {
 	.probe		= davinci_i2c_probe,
 	.remove		= davinci_i2c_remove,
-	.driver 	= {
+	.driver		= {
 		.name	= (char *)driver_name,
 	},
 };

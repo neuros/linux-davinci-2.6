@@ -101,7 +101,7 @@ static inline int gpio_clear(unsigned gpio)
 	struct gpio_controller	*__iomem g;
 
 	if (!__builtin_constant_p(gpio))
-		return __gpio_set(gpio, 1);
+		return __gpio_set(gpio, 0);
 
 	if (gpio >= DAVINCI_N_GPIO)
 		return __error_inval_gpio();

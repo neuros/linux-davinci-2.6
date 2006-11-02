@@ -1649,43 +1649,37 @@ void davinci_clean_channel(int ch_no)
  * DMA interrupt handlers
  *
  *****************************************************************************/
-static int dma_irq_handler_l(int sound_curr_lch, void
-			     *ch_status, struct
-			     pt_regs
-			     *data)
+static int dma_irq_handler_l(int sound_curr_lch, void *ch_status)
 {
 	dev_dbg(&edma_dev.dev, "dma_irq_handler\n");
 	(*cb[0]) ();
 	return IRQ_HANDLED;
 }
 
-static int
-    dma_ccerr_handler_l
-    (int sound_curr_lch, void *ch_status, struct pt_regs *data) {
+static int dma_ccerr_handler_l(int sound_curr_lch, void *ch_status)
+{
 	dev_dbg(&edma_dev.dev, "dma_ccerr_handler\n");
 	(*cb[1]) ();
 	return IRQ_HANDLED;
 }
 
-static int
-    dma_tc1err_handler_l
-    (int sound_curr_lch, void *ch_status, struct pt_regs *data) {
+static int dma_tc1err_handler_l (int sound_curr_lch, void *ch_status)
+{
 	dev_dbg(&edma_dev.dev, "dma_tc1err_handler\n");
 	(*cb[2]) ();
 	return IRQ_HANDLED;
 }
 
-static int
-    dma_tc2err_handler_l
-    (int sound_curr_lch, void *ch_status, struct pt_regs *data) {
+static int dma_tc2err_handler_l(int sound_curr_lch, void *ch_status)
+{
 	dev_dbg(&edma_dev.dev, "dma_tc2err_handler\n");
 	(*cb[3]) ();
 	return IRQ_HANDLED;
 }
 
-int register_dma_interrupts
-    (intr_callback cb1,
-     intr_callback cb2, intr_callback cb3, intr_callback cb4) {
+int register_dma_interrupts(intr_callback cb1, intr_callback cb2,
+			intr_callback cb3, intr_callback cb4)
+{
 	cb[0] = cb1;
 	cb[1] = cb2;
 	cb[2] = cb3;
