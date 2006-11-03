@@ -70,7 +70,7 @@ static const char driver_name[] = "i2c_davinci";
 				 DAVINCI_I2C_ICIMR_SCD_MASK | \
 				 /*DAVINCI_I2C_ICIMR_ICXRDY_MASK | */\
 				 /*DAVINCI_I2C_ICIMR_ICRRDY_MASK | */\
-				 /*DAVINCI_I2C_ICIMR_ARDY_MASK | */\
+				 DAVINCI_I2C_ICIMR_ARDY_MASK | \
 				 DAVINCI_I2C_ICIMR_NACK_MASK | \
 				 DAVINCI_I2C_ICIMR_AL_MASK)
 
@@ -79,7 +79,7 @@ static const char driver_name[] = "i2c_davinci";
 
 static int bus_freq = 400; /* Default: Fast Mode = 400 KHz, Standard Mode = 100 KHz */
 
-static int own_addr = 0xa;	/* Randomly assigned own address */
+static int own_addr = 0x1;	/* Randomly assigned own address */
 
 /* Instance of the private I2C device structure */
 static struct i2c_davinci_device i2c_davinci_dev;
@@ -365,7 +365,7 @@ i2c_davinci_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num)
 			break;
 	}
 
-	if (ret >= 0 && num > 1)
+	if (ret >= 0 && num >= 1)
 		ret = num;
 
 	dev_dbg(dev->dev, "%s:%d ret: %d\n",
@@ -414,6 +414,7 @@ i2c_davinci_isr(int this_irq, void *dev_id)
 
 		case DAVINCI_I2C_ICIVR_INTCODE_RAR:
                         dev->regs->icstr |= DAVINCI_I2C_ICSTR_ARDY_MASK;
+			i2c_davinci_complete_cmd(dev);
                         break;
 
 		case DAVINCI_I2C_ICIVR_INTCODE_RDR:
