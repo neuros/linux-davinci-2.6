@@ -1449,12 +1449,18 @@ static int musb_gadget_wakeup(struct usb_gadget *gadget)
 
 	switch (musb->xceiv.state) {
 	case OTG_STATE_B_PERIPHERAL:
+		/* NOTE:  OTG state machine doesn't include B_SUSPENDED;
+		 * that's part of the standard usb 1.1 state machine, and
+		 * doesn't affect OTG transitions.
+		 */
 		if (musb->bMayWakeup)
 			break;
 		goto done;
 	case OTG_STATE_B_IDLE:
 		/* REVISIT we might be able to do SRP even without OTG,
-		 * though Linux doesn't yet expose that capability
+		 * though Linux doesn't yet expose that capability.  SRP
+		 * starts by setting DEVCTL.SESSION (not POWER.RESUME);
+		 * though DaVinci can't do it.
 		 */
 		if (is_otg_enabled(musb)) {
 			musb->xceiv.state = OTG_STATE_B_SRP_INIT;
@@ -1470,12 +1476,14 @@ static int musb_gadget_wakeup(struct usb_gadget *gadget)
 	musb_writeb(musb->pRegs, MGC_O_HDRC_POWER, power);
 
 	/* FIXME do this next chunk in a timer callback, no udelay */
-	mdelay(10);
+	mdelay(2);
 
 	power = musb_readb(musb->pRegs, MGC_O_HDRC_POWER);
 	power &= ~MGC_M_POWER_RESUME;
 	musb_writeb(musb->pRegs, MGC_O_HDRC_POWER, power);
 
+	if (musb->xceiv.state == OTG_STATE_B_SRP_INIT)
+		musb->xceiv.state = OTG_STATE_B_IDLE;
 done:
 	spin_unlock_irqrestore(&musb->Lock, flags);
 	return status;
@@ -1897,11 +1905,21 @@ EXPORT_SYMBOL(usb_gadget_unregister_driver);
 
 void musb_g_resume(struct musb *pThis)
 {
-	DBG(4, "<==\n");
-	if (pThis->pGadgetDriver && pThis->pGadgetDriver->resume) {
-		spin_unlock(&pThis->Lock);
-		pThis->pGadgetDriver->resume(&pThis->g);
-		spin_lock(&pThis->Lock);
+	switch (pThis->xceiv.state) {
+	case OTG_STATE_B_IDLE:
+		break;
+	case OTG_STATE_B_WAIT_ACON:
+	case OTG_STATE_B_PERIPHERAL:
+		pThis->is_active = 1;
+		if (pThis->pGadgetDriver && pThis->pGadgetDriver->resume) {
+			spin_unlock(&pThis->Lock);
+			pThis->pGadgetDriver->resume(&pThis->g);
+			spin_lock(&pThis->Lock);
+		}
+		break;
+	default:
+		WARN("unhandled RESUME transition (%s)\n",
+				otg_state_string(pThis));
 	}
 }
 
@@ -1929,7 +1947,8 @@ void musb_g_suspend(struct musb *pThis)
 		/* REVISIT if B_HOST, clear DEVCTL.HOSTREQ;
 		 * A_PERIPHERAL may need care too
 		 */
-		WARN("unhandled SUSPEND transition (%d)\n", pThis->xceiv.state);
+		WARN("unhandled SUSPEND transition (%s)\n",
+				otg_state_string(pThis));
 	}
 }
 

@@ -2077,6 +2077,7 @@ static inline int machine_needs_vbus_session(void)
 #ifndef CONFIG_MACH_OMAP_H4_OTG
 		|| machine_is_omap_h4()
 #endif
+		|| machine_is_sx1()
 		);
 }
 
@@ -2093,7 +2094,6 @@ int usb_gadget_register_driver (struct usb_gadget_driver *driver)
 			// FIXME if otg, check:  driver->is_otg
 			|| driver->speed < USB_SPEED_FULL
 			|| !driver->bind
-			|| !driver->unbind
 			|| !driver->setup)
 		return -EINVAL;
 
@@ -2140,9 +2140,11 @@ int usb_gadget_register_driver (struct usb_gadget_driver *driver)
 		status = otg_set_peripheral(udc->transceiver, &udc->gadget);
 		if (status < 0) {
 			ERR("can't bind to transceiver\n");
-			driver->unbind (&udc->gadget);
-			udc->gadget.dev.driver = NULL;
-			udc->driver = NULL;
+			if (driver->unbind) {
+				driver->unbind (&udc->gadget);
+				udc->gadget.dev.driver = NULL;
+				udc->driver = NULL;
+			}
 			goto done;
 		}
 	} else {
@@ -2172,7 +2174,7 @@ int usb_gadget_unregister_driver (struct usb_gadget_driver *driver)
 
 	if (!udc)
 		return -ENODEV;
-	if (!driver || driver != udc->driver)
+	if (!driver || driver != udc->driver || !driver->unbind)
 		return -EINVAL;
 
 	if (udc->dc_clk != NULL)
@@ -2579,6 +2581,7 @@ omap_ep_setup(char *name, u8 addr, u8 type,
 		 * (for more reliable behavior)
 		 */
 		if ((!use_dma && (addr & USB_DIR_IN))
+				|| machine_is_omap_apollon()
 				|| cpu_is_omap15xx())
 			dbuf = 0;
 
@@ -2655,7 +2658,7 @@ omap_udc_setup(struct platform_device *odev, struct otg_transceiver *xceiv)
 	/* UDC_PULLUP_EN gates the chip clock */
 	// OTG_SYSCON_1_REG |= DEV_IDLE_EN;
 
-	udc = kzalloc(sizeof(*udc), SLAB_KERNEL);
+	udc = kzalloc(sizeof(*udc), GFP_KERNEL);
 	if (!udc)
 		return -ENOMEM;
 
@@ -2822,7 +2825,7 @@ static int __init omap_udc_probe(struct platform_device *pdev)
 		hmc = HMC_1510;
 		type = "(unknown)";
 
-		if (machine_is_omap_innovator()) {
+		if (machine_is_omap_innovator() || machine_is_sx1()) {
 			/* just set up software VBUS detect, and then
 			 * later rig it so we always report VBUS.
 			 * FIXME without really sensing VBUS, we can't
@@ -2963,9 +2966,10 @@ known:
 	}
 
 	create_proc_file();
-	device_add(&udc->gadget.dev);
-	return 0;
-
+	status = device_add(&udc->gadget.dev);
+	if (!status)
+		return status;
+	/* If fail, fall through */
 #ifdef	USE_ISO
 cleanup3:
 	free_irq(pdev->resource[2].start, udc);
@@ -3001,6 +3005,8 @@ static int __exit omap_udc_remove(struct platform_device *pdev)
 
 	if (!udc)
 		return -ENODEV;
+	if (udc->driver)
+		return -EBUSY;
 
 	udc->done = &done;
 

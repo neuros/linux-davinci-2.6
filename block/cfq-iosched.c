@@ -43,8 +43,8 @@ static int cfq_slice_idle = HZ / 125;
 #define RQ_CIC(rq)		((struct cfq_io_context*)(rq)->elevator_private)
 #define RQ_CFQQ(rq)		((rq)->elevator_private2)
 
-static kmem_cache_t *cfq_pool;
-static kmem_cache_t *cfq_ioc_pool;
+static struct kmem_cache *cfq_pool;
+static struct kmem_cache *cfq_ioc_pool;
 
 static DEFINE_PER_CPU(unsigned long, ioc_count);
 static struct completion *ioc_gone;
@@ -219,9 +219,12 @@ static int cfq_queue_empty(request_queue_t *q)
 	return !cfqd->busy_queues;
 }
 
-static inline pid_t cfq_queue_pid(struct task_struct *task, int rw)
+static inline pid_t cfq_queue_pid(struct task_struct *task, int rw, int is_sync)
 {
-	if (rw == READ || rw == WRITE_SYNC)
+	/*
+	 * Use the per-process queue, for read requests and syncronous writes
+	 */
+	if (!(rw & REQ_RW) || is_sync)
 		return task->pid;
 
 	return CFQ_KEY_ASYNC;
@@ -456,6 +459,9 @@ static void cfq_add_rq_rb(struct request *rq)
 	 */
 	while ((__alias = elv_rb_add(&cfqq->sort_list, rq)) != NULL)
 		cfq_dispatch_insert(cfqd->queue, __alias);
+
+	if (!cfq_cfqq_on_rr(cfqq))
+		cfq_add_cfqq_rr(cfqd, cfqq);
 }
 
 static inline void
@@ -470,7 +476,7 @@ static struct request *
 cfq_find_rq_fmerge(struct cfq_data *cfqd, struct bio *bio)
 {
 	struct task_struct *tsk = current;
-	pid_t key = cfq_queue_pid(tsk, bio_data_dir(bio));
+	pid_t key = cfq_queue_pid(tsk, bio_data_dir(bio), bio_sync(bio));
 	struct cfq_queue *cfqq;
 
 	cfqq = cfq_find_cfq_hash(cfqd, key, tsk->ioprio);
@@ -560,6 +566,33 @@ cfq_merged_requests(request_queue_t *q, struct request *rq,
 		list_move(&rq->queuelist, &next->queuelist);
 
 	cfq_remove_request(next);
+}
+
+static int cfq_allow_merge(request_queue_t *q, struct request *rq,
+			   struct bio *bio)
+{
+	struct cfq_data *cfqd = q->elevator->elevator_data;
+	const int rw = bio_data_dir(bio);
+	struct cfq_queue *cfqq;
+	pid_t key;
+
+	/*
+	 * Disallow merge of a sync bio into an async request.
+	 */
+	if ((bio_data_dir(bio) == READ || bio_sync(bio)) && !rq_is_sync(rq))
+		return 0;
+
+	/*
+	 * Lookup the cfqq that this bio will be queued with. Allow
+	 * merge only if rq is queued there.
+	 */
+	key = cfq_queue_pid(current, rw, bio_sync(bio));
+	cfqq = cfq_find_cfq_hash(cfqd, key, current->ioprio);
+
+	if (cfqq == RQ_CFQQ(rq))
+		return 1;
+
+	return 0;
 }
 
 static inline void
@@ -1215,11 +1248,12 @@ static inline void changed_ioprio(struct cfq_io_context *cic)
 {
 	struct cfq_data *cfqd = cic->key;
 	struct cfq_queue *cfqq;
+	unsigned long flags;
 
 	if (unlikely(!cfqd))
 		return;
 
-	spin_lock(cfqd->queue->queue_lock);
+	spin_lock_irqsave(cfqd->queue->queue_lock, flags);
 
 	cfqq = cic->cfqq[ASYNC];
 	if (cfqq) {
@@ -1236,7 +1270,7 @@ static inline void changed_ioprio(struct cfq_io_context *cic)
 	if (cfqq)
 		cfq_mark_cfqq_prio_changed(cfqq);
 
-	spin_unlock(cfqd->queue->queue_lock);
+	spin_unlock_irqrestore(cfqd->queue->queue_lock, flags);
 }
 
 static void cfq_ioc_set_ioprio(struct io_context *ioc)
@@ -1362,6 +1396,7 @@ cfq_cic_link(struct cfq_data *cfqd, struct io_context *ioc,
 	struct rb_node **p;
 	struct rb_node *parent;
 	struct cfq_io_context *__cic;
+	unsigned long flags;
 	void *k;
 
 	cic->ioc = ioc;
@@ -1391,9 +1426,9 @@ restart:
 	rb_link_node(&cic->rb_node, parent, p);
 	rb_insert_color(&cic->rb_node, &ioc->cic_root);
 
-	spin_lock_irq(cfqd->queue->queue_lock);
+	spin_lock_irqsave(cfqd->queue->queue_lock, flags);
 	list_add(&cic->queue_list, &cfqd->cic_list);
-	spin_unlock_irq(cfqd->queue->queue_lock);
+	spin_unlock_irqrestore(cfqd->queue->queue_lock, flags);
 }
 
 /*
@@ -1459,8 +1494,7 @@ cfq_update_io_thinktime(struct cfq_data *cfqd, struct cfq_io_context *cic)
 }
 
 static void
-cfq_update_io_seektime(struct cfq_data *cfqd, struct cfq_io_context *cic,
-		       struct request *rq)
+cfq_update_io_seektime(struct cfq_io_context *cic, struct request *rq)
 {
 	sector_t sdist;
 	u64 total;
@@ -1612,7 +1646,7 @@ cfq_rq_enqueued(struct cfq_data *cfqd, struct cfq_queue *cfqq,
 	}
 
 	cfq_update_io_thinktime(cfqd, cic);
-	cfq_update_io_seektime(cfqd, cic, rq);
+	cfq_update_io_seektime(cic, rq);
 	cfq_update_idle_window(cfqd, cfqq, cic);
 
 	cic->last_queue = jiffies;
@@ -1649,9 +1683,6 @@ static void cfq_insert_request(request_queue_t *q, struct request *rq)
 	cfq_init_prio_data(cfqq);
 
 	cfq_add_rq_rb(rq);
-
-	if (!cfq_cfqq_on_rr(cfqq))
-		cfq_add_cfqq_rr(cfqd, cfqq);
 
 	list_add_tail(&rq->queuelist, &cfqq->fifo);
 
@@ -1747,6 +1778,9 @@ static int cfq_may_queue(request_queue_t *q, int rw)
 	struct cfq_data *cfqd = q->elevator->elevator_data;
 	struct task_struct *tsk = current;
 	struct cfq_queue *cfqq;
+	unsigned int key;
+
+	key = cfq_queue_pid(tsk, rw, rw & REQ_RW_SYNC);
 
 	/*
 	 * don't force setup of a queue from here, as a call to may_queue
@@ -1754,7 +1788,7 @@ static int cfq_may_queue(request_queue_t *q, int rw)
 	 * so just lookup a possibly existing queue, or return 'may queue'
 	 * if that fails
 	 */
-	cfqq = cfq_find_cfq_hash(cfqd, cfq_queue_pid(tsk, rw), tsk->ioprio);
+	cfqq = cfq_find_cfq_hash(cfqd, key, tsk->ioprio);
 	if (cfqq) {
 		cfq_init_prio_data(cfqq);
 		cfq_prio_boost(cfqq);
@@ -1768,7 +1802,7 @@ static int cfq_may_queue(request_queue_t *q, int rw)
 /*
  * queue lock held here
  */
-static void cfq_put_request(request_queue_t *q, struct request *rq)
+static void cfq_put_request(struct request *rq)
 {
 	struct cfq_queue *cfqq = RQ_CFQQ(rq);
 
@@ -1797,10 +1831,10 @@ cfq_set_request(request_queue_t *q, struct request *rq, gfp_t gfp_mask)
 	struct task_struct *tsk = current;
 	struct cfq_io_context *cic;
 	const int rw = rq_data_dir(rq);
-	pid_t key = cfq_queue_pid(tsk, rw);
+	const int is_sync = rq_is_sync(rq);
+	pid_t key = cfq_queue_pid(tsk, rw, is_sync);
 	struct cfq_queue *cfqq;
 	unsigned long flags;
-	int is_sync = key != CFQ_KEY_ASYNC;
 
 	might_sleep_if(gfp_mask & __GFP_WAIT);
 
@@ -1839,9 +1873,11 @@ queue_fail:
 	return 1;
 }
 
-static void cfq_kick_queue(void *data)
+static void cfq_kick_queue(struct work_struct *work)
 {
-	request_queue_t *q = data;
+	struct cfq_data *cfqd =
+		container_of(work, struct cfq_data, unplug_work);
+	request_queue_t *q = cfqd->queue;
 	unsigned long flags;
 
 	spin_lock_irqsave(q->queue_lock, flags);
@@ -1949,7 +1985,7 @@ static void cfq_exit_queue(elevator_t *e)
 	kfree(cfqd);
 }
 
-static void *cfq_init_queue(request_queue_t *q, elevator_t *e)
+static void *cfq_init_queue(request_queue_t *q)
 {
 	struct cfq_data *cfqd;
 	int i;
@@ -1985,7 +2021,7 @@ static void *cfq_init_queue(request_queue_t *q, elevator_t *e)
 	cfqd->idle_class_timer.function = cfq_idle_class_timer;
 	cfqd->idle_class_timer.data = (unsigned long) cfqd;
 
-	INIT_WORK(&cfqd->unplug_work, cfq_kick_queue, q);
+	INIT_WORK(&cfqd->unplug_work, cfq_kick_queue);
 
 	cfqd->cfq_quantum = cfq_quantum;
 	cfqd->cfq_fifo_expire[0] = cfq_fifo_expire[0];
@@ -2116,6 +2152,7 @@ static struct elevator_type iosched_cfq = {
 		.elevator_merge_fn = 		cfq_merge,
 		.elevator_merged_fn =		cfq_merged_request,
 		.elevator_merge_req_fn =	cfq_merged_requests,
+		.elevator_allow_merge_fn =	cfq_allow_merge,
 		.elevator_dispatch_fn =		cfq_dispatch_requests,
 		.elevator_add_req_fn =		cfq_insert_request,
 		.elevator_activate_req_fn =	cfq_activate_request,

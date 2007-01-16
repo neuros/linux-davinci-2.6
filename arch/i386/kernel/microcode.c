@@ -1,7 +1,7 @@
 /*
  *	Intel CPU Microcode Update Driver for Linux
  *
- *	Copyright (C) 2000-2004 Tigran Aivazian
+ *	Copyright (C) 2000-2006 Tigran Aivazian <tigran@aivazian.fsnet.co.uk>
  *		      2006	Shaohua Li <shaohua.li@intel.com>
  *
  *	This driver allows to upgrade microcode on Intel processors
@@ -92,7 +92,7 @@
 #include <asm/processor.h>
 
 MODULE_DESCRIPTION("Intel CPU (IA-32) Microcode Update Driver");
-MODULE_AUTHOR("Tigran Aivazian <tigran@veritas.com>");
+MODULE_AUTHOR("Tigran Aivazian <tigran@aivazian.fsnet.co.uk>");
 MODULE_LICENSE("GPL");
 
 #define MICROCODE_VERSION 	"1.14a"
@@ -577,7 +577,7 @@ static void microcode_init_cpu(int cpu)
 	set_cpus_allowed(current, cpumask_of_cpu(cpu));
 	mutex_lock(&microcode_mutex);
 	collect_cpu_info(cpu);
-	if (uci->valid)
+	if (uci->valid && system_state == SYSTEM_RUNNING)
 		cpu_request_microcode(cpu);
 	mutex_unlock(&microcode_mutex);
 	set_cpus_allowed(current, old);
@@ -703,7 +703,6 @@ static struct sysdev_driver mc_sysdev_driver = {
 	.resume = mc_sysdev_resume,
 };
 
-#ifdef CONFIG_HOTPLUG_CPU
 static __cpuinit int
 mc_cpu_callback(struct notifier_block *nb, unsigned long action, void *hcpu)
 {
@@ -723,10 +722,9 @@ mc_cpu_callback(struct notifier_block *nb, unsigned long action, void *hcpu)
 	return NOTIFY_OK;
 }
 
-static struct notifier_block mc_cpu_notifier = {
+static struct notifier_block __cpuinitdata mc_cpu_notifier = {
 	.notifier_call = mc_cpu_callback,
 };
-#endif
 
 static int __init microcode_init (void)
 {
@@ -754,7 +752,7 @@ static int __init microcode_init (void)
 	register_hotcpu_notifier(&mc_cpu_notifier);
 
 	printk(KERN_INFO 
-		"IA-32 Microcode Update Driver: v" MICROCODE_VERSION " <tigran@veritas.com>\n");
+		"IA-32 Microcode Update Driver: v" MICROCODE_VERSION " <tigran@aivazian.fsnet.co.uk>\n");
 	return 0;
 }
 

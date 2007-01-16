@@ -2,7 +2,7 @@
  *  linux/drivers/media/mmc/omap.c
  *
  *  Copyright (C) 2004 Nokia Corporation
- *  Written by Tuukka Tikkanen and Juha Yrjölä<juha.yrjola@nokia.com>
+ *  Written by Tuukka Tikkanen and Juha Yrjölä <juha.yrjola@nokia.com>
  *  Misc hacks here and there by Tony Lindgren <tony@atomide.com>
  *  Other hacks (DMA, SD, etc) by David Brownell
  *
@@ -37,6 +37,7 @@
 #include <asm/arch/mux.h>
 #include <asm/arch/fpga.h>
 #include <asm/arch/tps65010.h>
+#include <asm/arch/board-sx1.h>
 
 #define	OMAP_MMC_REG_CMD	0x00
 #define	OMAP_MMC_REG_ARGL	0x04
@@ -91,7 +92,6 @@
 
 
 #define DRIVER_NAME "mmci-omap"
-#define RSP_TYPE(x)	((x) & ~(MMC_RSP_BUSY|MMC_RSP_OPCODE))
 
 /* Specifies how often in millisecs to poll for card status changes
  * when the cover switch is open */
@@ -204,18 +204,25 @@ mmc_omap_start_command(struct mmc_omap_host *host, struct mmc_command *cmd)
 	cmdtype = 0;
 
 	/* Our hardware needs to know exact type */
-	switch (RSP_TYPE(mmc_resp_type(cmd))) {
-	case RSP_TYPE(MMC_RSP_R1):
+	switch (mmc_resp_type(cmd)) {
+	case MMC_RSP_NONE:
+		break;
+	case MMC_RSP_R1:
+	case MMC_RSP_R1B:
 		/* resp 1, resp 1b */
 		resptype = 1;
 		break;
-	case RSP_TYPE(MMC_RSP_R2):
+	case MMC_RSP_R2:
 		resptype = 2;
 		break;
-	case RSP_TYPE(MMC_RSP_R3):
+	case MMC_RSP_R3:
 		resptype = 3;
 		break;
+	case MMC_RSP_R6:
+		resptype = 6;
+		break;
 	default:
+		dev_err(mmc_dev(host->mmc), "Invalid response type: %04x\n", mmc_resp_type(cmd));
 		break;
 	}
 
@@ -581,15 +588,9 @@ static void mmc_omap_switch_timer(unsigned long arg)
 	schedule_work(&host->switch_work);
 }
 
-/* FIXME: Handle card insertion and removal properly. Maybe use a mask
- * for MMC state? */
-static void mmc_omap_switch_callback(unsigned long data, u8 mmc_mask)
+static void mmc_omap_switch_handler(struct work_struct *work)
 {
-}
-
-static void mmc_omap_switch_handler(void *data)
-{
-	struct mmc_omap_host *host = (struct mmc_omap_host *) data;
+	struct mmc_omap_host *host = container_of(work, struct mmc_omap_host, switch_work);
 	struct mmc_card *card;
 	static int complained = 0;
 	int cards = 0, cover_open;
@@ -633,10 +634,10 @@ mmc_omap_prepare_dma(struct mmc_omap_host *host, struct mmc_data *data)
 	int sync_dev = 0;
 
 	data_addr = host->phys_base + OMAP_MMC_REG_DATA;
-	frame = 1 << data->blksz_bits;
+	frame = data->blksz;
 	count = sg_dma_len(sg);
 
-	if ((data->blocks == 1) && (count > (1 << data->blksz_bits)))
+	if ((data->blocks == 1) && (count > data->blksz))
 		count = frame;
 
 	host->dma_len = count;
@@ -691,8 +692,7 @@ mmc_omap_prepare_dma(struct mmc_omap_host *host, struct mmc_data *data)
 	}
 
 	/* Max limit for DMA frame count is 0xffff */
-	if (unlikely(count > 0xffff))
-		BUG();
+	BUG_ON(count > 0xffff);
 
 	OMAP_MMC_WRITE(host, BUF, buf);
 	omap_set_dma_transfer_params(dma_ch, OMAP_DMA_DATA_TYPE_S16,
@@ -824,8 +824,7 @@ mmc_omap_prepare_data(struct mmc_omap_host *host, struct mmc_request *req)
 		return;
 	}
 
-
-	block_size = 1 << data->blksz_bits;
+	block_size = data->blksz;
 
 	OMAP_MMC_WRITE(host, NBLK, data->blocks - 1);
 	OMAP_MMC_WRITE(host, BLEN, block_size - 1);
@@ -912,7 +911,9 @@ static void innovator_fpga_socket_power(int on)
  */
 static void mmc_omap_power(struct mmc_omap_host *host, int on)
 {
-	if (on) {
+	if (machine_is_sx1())
+		sx1_setmmcpower(on);
+	else if (on) {
 		if (machine_is_omap_innovator())
 			innovator_fpga_socket_power(1);
 		else if (machine_is_omap_h2())
@@ -1012,7 +1013,7 @@ static int mmc_omap_get_ro(struct mmc_host *mmc)
 	return host->wp_pin && omap_get_gpio_datain(host->wp_pin);
 }
 
-static struct mmc_host_ops mmc_omap_ops = {
+static const struct mmc_host_ops mmc_omap_ops = {
 	.request	= mmc_omap_request,
 	.set_ios	= mmc_omap_set_ios,
 	.get_ro		= mmc_omap_get_ro,
@@ -1072,6 +1073,7 @@ static int __init mmc_omap_probe(struct platform_device *pdev)
 		host->fclk = clk_get(&pdev->dev, "mmc_ck");
 	else
 		host->fclk = clk_get(&pdev->dev, "mmc_fck");
+
 	if (IS_ERR(host->fclk)) {
 		ret = PTR_ERR(host->fclk);
 		goto err_free_iclk;
@@ -1094,8 +1096,8 @@ static int __init mmc_omap_probe(struct platform_device *pdev)
 	mmc->ops = &mmc_omap_ops;
 	mmc->f_min = 400000;
 	mmc->f_max = 24000000;
-	mmc->ocr_avail = MMC_VDD_32_33 | MMC_VDD_33_34 | MMC_CAP_MULTIWRITE
-				| MMC_CAP_BYTEBLOCK;
+	mmc->ocr_avail = MMC_VDD_32_33 | MMC_VDD_33_34;
+	mmc->caps = MMC_CAP_MULTIWRITE | MMC_CAP_BYTEBLOCK;
 
 	if (minfo->wire4)
 		 mmc->caps |= MMC_CAP_4_BIT_DATA;
@@ -1126,7 +1128,7 @@ static int __init mmc_omap_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, host);
 
 	if (host->switch_pin >= 0) {
-		INIT_WORK(&host->switch_work, mmc_omap_switch_handler, host);
+		INIT_WORK(&host->switch_work, mmc_omap_switch_handler);
 		init_timer(&host->switch_timer);
 		host->switch_timer.function = mmc_omap_switch_timer;
 		host->switch_timer.data = (unsigned long) host;
@@ -1138,7 +1140,7 @@ static int __init mmc_omap_probe(struct platform_device *pdev)
 
 		omap_set_gpio_direction(host->switch_pin, 1);
 		ret = request_irq(OMAP_GPIO_IRQ(host->switch_pin),
-				  mmc_omap_switch_irq, SA_TRIGGER_RISING, DRIVER_NAME, host);
+				  mmc_omap_switch_irq, IRQF_TRIGGER_RISING, DRIVER_NAME, host);
 		if (ret) {
 			dev_warn(mmc_dev(host->mmc), "Unable to get IRQ for MMC cover switch\n");
 			omap_free_gpio(host->switch_pin);
@@ -1175,7 +1177,6 @@ no_switch:
 			clk_put(host->fclk);
 		mmc_free_host(host->mmc);
 	}
-
 err_free_power_gpio:
 	if (host->power_pin >= 0)
 		omap_free_gpio(host->power_pin);

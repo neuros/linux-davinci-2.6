@@ -109,15 +109,19 @@ EXPORT_SYMBOL(omap_mbox_msg_send);
 /*
  * Message receiver(workqueue)
  */
-static void mbox_msg_receiver(void *p)
+static void mbox_msg_receiver(struct work_struct *work)
 {
-	struct omap_mbox *mbox = (struct omap_mbox *)p;
+	struct omap_mbox *mbox =
+		container_of(work, struct omap_mbox, msg_receive);
 	struct omap_mbq *mbq = mbox->mbq;
 	mbox_msg_t msg;
+	int was_full;
 
 	while (!mbq_empty(mbq)) {
+		was_full = mbq_full(mbq);
 		msg = mbq_get(mbq);
-		enable_mbox_irq(mbox, IRQ_RX);
+		if (was_full)	/* now we have a room in the mbq. */
+			enable_mbox_irq(mbox, IRQ_RX);
 
 		if (unlikely(mbox_seq_test(mbox, msg))) {
 			printk(KERN_ERR
@@ -228,31 +232,39 @@ static int omap_mbox_init(struct omap_mbox *mbox)
 	if (unlikely(ret))
 		return ret;
 
-	class_device_create_file(&mbox->class_dev, &class_device_attr_mbox);
-
-	ret = request_irq(mbox->irq, mbox_interrupt, SA_INTERRUPT,
-			  mbox->name, mbox);
+	ret = class_device_create_file(&mbox->class_dev, &class_device_attr_mbox);
 	if (unlikely(ret)) {
 		printk(KERN_ERR
-		       "failed to register mailbox interrupt:%d\n", ret);
+		       "class_device_create_file failed: %d\n", ret);
 		goto fail1;
 	}
-	enable_mbox_irq(mbox, IRQ_RX);
 
 	spin_lock_init(&mbox->lock);
-	INIT_WORK(&mbox->msg_receive, mbox_msg_receiver, mbox);
+	INIT_WORK(&mbox->msg_receive, mbox_msg_receiver);
 	init_waitqueue_head(&mbox->tx_waitq);
 
 	ret = mbq_init(&mbox->mbq);
 	if (unlikely(ret))
 		goto fail2;
 
+	ret = request_irq(mbox->irq, mbox_interrupt, SA_INTERRUPT,
+			  mbox->name, mbox);
+	if (unlikely(ret)) {
+		printk(KERN_ERR
+		       "failed to register mailbox interrupt:%d\n", ret);
+		goto fail3;
+	}
+	disable_mbox_irq(mbox, IRQ_RX);
+	enable_mbox_irq(mbox, IRQ_RX);
+
 	return 0;
+
+ fail3:
+	kfree(mbox->mbq);
  fail2:
-	free_irq(mbox->irq, mbox);
 	class_remove_file(&omap_mbox_class, &class_attr_mbox);
-	class_unregister(&omap_mbox_class);
  fail1:
+	class_unregister(&omap_mbox_class);
 	if (unlikely(mbox->ops->shutdown))
 		mbox->ops->shutdown(mbox);
 
@@ -262,6 +274,7 @@ static int omap_mbox_init(struct omap_mbox *mbox)
 static void omap_mbox_shutdown(struct omap_mbox *mbox)
 {
 	free_irq(mbox->irq, mbox);
+	kfree(mbox->mbq);
 	class_remove_file(&omap_mbox_class, &class_attr_mbox);
 	class_unregister(&omap_mbox_class);
 
@@ -336,3 +349,5 @@ static void __exit omap_mbox_class_exit(void)
 
 subsys_initcall(omap_mbox_class_init);
 module_exit(omap_mbox_class_exit);
+
+MODULE_LICENSE("GPL");

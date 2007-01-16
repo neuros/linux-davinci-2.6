@@ -602,7 +602,7 @@ static void ipath_pe_init_hwerrors(struct ipath_devdata *dd)
  */
 static int ipath_pe_bringup_serdes(struct ipath_devdata *dd)
 {
-	u64 val, tmp, config1, prev_val;
+	u64 val, config1, prev_val;
 	int ret = 0;
 
 	ipath_dbg("Trying to bringup serdes\n");
@@ -633,7 +633,7 @@ static int ipath_pe_bringup_serdes(struct ipath_devdata *dd)
 		| INFINIPATH_SERDC0_L1PWR_DN;
 	ipath_write_kreg(dd, dd->ipath_kregs->kr_serdesconfig0, val);
 	/* be sure chip saw it */
-	tmp = ipath_read_kreg64(dd, dd->ipath_kregs->kr_scratch);
+	ipath_read_kreg64(dd, dd->ipath_kregs->kr_scratch);
 	udelay(5);		/* need pll reset set at least for a bit */
 	/*
 	 * after PLL is reset, set the per-lane Resets and TxIdle and
@@ -647,7 +647,7 @@ static int ipath_pe_bringup_serdes(struct ipath_devdata *dd)
 		   "and txidle (%llx)\n", (unsigned long long) val);
 	ipath_write_kreg(dd, dd->ipath_kregs->kr_serdesconfig0, val);
 	/* be sure chip saw it */
-	tmp = ipath_read_kreg64(dd, dd->ipath_kregs->kr_scratch);
+	ipath_read_kreg64(dd, dd->ipath_kregs->kr_scratch);
 	/* need PLL reset clear for at least 11 usec before lane
 	 * resets cleared; give it a few more to be sure */
 	udelay(15);
@@ -856,6 +856,7 @@ static int ipath_setup_pe_config(struct ipath_devdata *dd,
 		ipath_dev_err(dd, "pci_enable_msi failed: %d, "
 			      "interrupts may not work\n", ret);
 	/* continue even if it fails, we may still be OK... */
+	dd->ipath_irq = pdev->irq;
 
 	if ((pos = pci_find_capability(dd->pcidev, PCI_CAP_ID_MSI))) {
 		u16 control;
@@ -1323,6 +1324,12 @@ done:
 	return 0;
 }
 
+static void ipath_pe_free_irq(struct ipath_devdata *dd)
+{
+	free_irq(dd->ipath_irq, dd);
+	dd->ipath_irq = 0;
+}
+
 /**
  * ipath_init_iba6120_funcs - set up the chip-specific function pointers
  * @dd: the infinipath device
@@ -1349,6 +1356,7 @@ void ipath_init_iba6120_funcs(struct ipath_devdata *dd)
 	dd->ipath_f_cleanup = ipath_setup_pe_cleanup;
 	dd->ipath_f_setextled = ipath_setup_pe_setextled;
 	dd->ipath_f_get_base_info = ipath_pe_get_base_info;
+	dd->ipath_f_free_irq = ipath_pe_free_irq;
 
 	/* initialize chip-specific variables */
 	dd->ipath_f_tidtemplate = ipath_pe_tidtemplate;

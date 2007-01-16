@@ -177,7 +177,7 @@ iscsi_iser_mtask_xmit(struct iscsi_conn *conn,
 	 * - if yes, the mtask is recycled at iscsi_complete_pdu
 	 * - if no,  the mtask is recycled at iser_snd_completion
 	 */
-	if (error && error != -EAGAIN)
+	if (error && error != -ENOBUFS)
 		iscsi_conn_failure(conn, ISCSI_ERR_CONN_FAILED);
 
 	return error;
@@ -241,7 +241,7 @@ iscsi_iser_ctask_xmit(struct iscsi_conn *conn,
 		error = iscsi_iser_ctask_xmit_unsol_data(conn, ctask);
 
  iscsi_iser_ctask_xmit_exit:
-	if (error && error != -EAGAIN)
+	if (error && error != -ENOBUFS)
 		iscsi_conn_failure(conn, ISCSI_ERR_CONN_FAILED);
 	return error;
 }
@@ -363,11 +363,11 @@ iscsi_iser_conn_start(struct iscsi_cls_conn *cls_conn)
 	struct iscsi_conn *conn = cls_conn->dd_data;
 	int err;
 
-	err = iscsi_conn_start(cls_conn);
+	err = iser_conn_set_full_featured_mode(conn);
 	if (err)
 		return err;
 
-	return iser_conn_set_full_featured_mode(conn);
+	return iscsi_conn_start(cls_conn);
 }
 
 static struct iscsi_transport iscsi_iser_transport;

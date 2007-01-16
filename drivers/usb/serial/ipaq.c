@@ -320,6 +320,7 @@ static struct usb_device_id ipaq_id_table [] = {
 	{ USB_DEVICE(0x0B05, 0x9200) }, /* ASUS USB Sync */
 	{ USB_DEVICE(0x0B05, 0x9202) }, /* ASUS USB Sync */
 	{ USB_DEVICE(0x0BB4, 0x00CE) }, /* HTC USB Sync */
+	{ USB_DEVICE(0x0BB4, 0x00CF) }, /* HTC USB Modem */
 	{ USB_DEVICE(0x0BB4, 0x0A01) }, /* PocketPC USB Sync */
 	{ USB_DEVICE(0x0BB4, 0x0A02) }, /* PocketPC USB Sync */
 	{ USB_DEVICE(0x0BB4, 0x0A03) }, /* PocketPC USB Sync */
@@ -594,7 +595,7 @@ static int ipaq_open(struct usb_serial_port *port, struct file *filp)
 
 	bytes_in = 0;
 	bytes_out = 0;
-	priv = (struct ipaq_private *)kmalloc(sizeof(struct ipaq_private), GFP_KERNEL);
+	priv = kmalloc(sizeof(struct ipaq_private), GFP_KERNEL);
 	if (priv == NULL) {
 		err("%s - Out of memory", __FUNCTION__);
 		return -ENOMEM;

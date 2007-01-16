@@ -998,6 +998,7 @@ static inline void complete_buffers(struct bio *bio, int ok)
  */
 static inline void complete_command(cmdlist_t *cmd, int timeout)
 {
+	struct request *rq = cmd->rq;
 	int ok=1;
 	int i, ddir;
 
@@ -1029,12 +1030,18 @@ static inline void complete_command(cmdlist_t *cmd, int timeout)
                 pci_unmap_page(hba[cmd->ctlr]->pci_dev, cmd->req.sg[i].addr,
 				cmd->req.sg[i].size, ddir);
 
-	complete_buffers(cmd->rq->bio, ok);
+	complete_buffers(rq->bio, ok);
 
-	add_disk_randomness(cmd->rq->rq_disk);
+	if (blk_fs_request(rq)) {
+		const int rw = rq_data_dir(rq);
 
-        DBGPX(printk("Done with %p\n", cmd->rq););
-	end_that_request_last(cmd->rq, ok ? 1 : -EIO);
+		disk_stat_add(rq->rq_disk, sectors[rw], rq->nr_sectors);
+	}
+
+	add_disk_randomness(rq->rq_disk);
+
+	DBGPX(printk("Done with %p\n", rq););
+	end_that_request_last(rq, ok ? 1 : -EIO);
 }
 
 /*
@@ -1618,7 +1625,7 @@ static void start_fwbk(int ctlr)
 		" processing\n");
 	/* Command does not return anything, but idasend command needs a 
 		buffer */
-	id_ctlr_buf = (id_ctlr_t *)kmalloc(sizeof(id_ctlr_t), GFP_KERNEL);
+	id_ctlr_buf = kmalloc(sizeof(id_ctlr_t), GFP_KERNEL);
 	if(id_ctlr_buf==NULL)
 	{
 		printk(KERN_WARNING "cpqarray: Out of memory. "
@@ -1653,14 +1660,14 @@ static void getgeometry(int ctlr)
 
 	info_p->log_drv_map = 0;	
 	
-	id_ldrive = (id_log_drv_t *)kmalloc(sizeof(id_log_drv_t), GFP_KERNEL);
+	id_ldrive = kmalloc(sizeof(id_log_drv_t), GFP_KERNEL);
 	if(id_ldrive == NULL)
 	{
 		printk( KERN_ERR "cpqarray:  out of memory.\n");
 		return;
 	}
 
-	id_ctlr_buf = (id_ctlr_t *)kmalloc(sizeof(id_ctlr_t), GFP_KERNEL);
+	id_ctlr_buf = kmalloc(sizeof(id_ctlr_t), GFP_KERNEL);
 	if(id_ctlr_buf == NULL)
 	{
 		kfree(id_ldrive);
@@ -1668,7 +1675,7 @@ static void getgeometry(int ctlr)
 		return;
 	}
 
-	id_lstatus_buf = (sense_log_drv_stat_t *)kmalloc(sizeof(sense_log_drv_stat_t), GFP_KERNEL);
+	id_lstatus_buf = kmalloc(sizeof(sense_log_drv_stat_t), GFP_KERNEL);
 	if(id_lstatus_buf == NULL)
 	{
 		kfree(id_ctlr_buf);
@@ -1677,7 +1684,7 @@ static void getgeometry(int ctlr)
 		return;
 	}
 
-	sense_config_buf = (config_t *)kmalloc(sizeof(config_t), GFP_KERNEL);
+	sense_config_buf = kmalloc(sizeof(config_t), GFP_KERNEL);
 	if(sense_config_buf == NULL)
 	{
 		kfree(id_lstatus_buf);

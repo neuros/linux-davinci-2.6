@@ -598,10 +598,9 @@ static int handle_errors(struct ipath_devdata *dd, ipath_err_t errs)
 	 * on close
 	 */
 	if (errs & INFINIPATH_E_RRCVHDRFULL) {
-		int any;
 		u32 hd, tl;
 		ipath_stats.sps_hdrqfull++;
-		for (any = i = 0; i < dd->ipath_cfgports; i++) {
+		for (i = 0; i < dd->ipath_cfgports; i++) {
 			struct ipath_portdata *pd = dd->ipath_pd[i];
 			if (i == 0) {
 				hd = dd->ipath_port0head;
@@ -710,14 +709,14 @@ static void ipath_bad_intr(struct ipath_devdata *dd, u32 * unexpectp)
 			 * linuxbios development work, and it may happen in
 			 * the future again.
 			 */
-			if (dd->pcidev && dd->pcidev->irq) {
+			if (dd->pcidev && dd->ipath_irq) {
 				ipath_dev_err(dd, "Now %u unexpected "
 					      "interrupts, unregistering "
 					      "interrupt handler\n",
 					      *unexpectp);
-				ipath_dbg("free_irq of irq %x\n",
-					  dd->pcidev->irq);
-				free_irq(dd->pcidev->irq, dd);
+				ipath_dbg("free_irq of irq %d\n",
+					  dd->ipath_irq);
+				dd->ipath_f_free_irq(dd);
 			}
 		}
 		if (ipath_read_kreg32(dd, dd->ipath_kregs->kr_intmask)) {
@@ -753,7 +752,7 @@ static void ipath_bad_regread(struct ipath_devdata *dd)
 		if (allbits == 2) {
 			ipath_dev_err(dd, "Still bad interrupt status, "
 				      "unregistering interrupt\n");
-			free_irq(dd->pcidev->irq, dd);
+			dd->ipath_f_free_irq(dd);
 		} else if (allbits > 2) {
 			if ((allbits % 10000) == 0)
 				printk(".");

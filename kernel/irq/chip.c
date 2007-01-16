@@ -233,6 +233,8 @@ void irq_chip_set_defaults(struct irq_chip *chip)
 		chip->shutdown = chip->disable;
 	if (!chip->name)
 		chip->name = chip->typename;
+	if (!chip->end)
+		chip->end = dummy_irq_chip.end;
 }
 
 static inline void mask_ack_irq(struct irq_desc *desc, int irq)
@@ -515,10 +517,9 @@ __set_irq_handler(unsigned int irq, irq_flow_handler_t handle, int is_chained,
 
 	if (!handle)
 		handle = handle_bad_irq;
-
-	if (desc->chip == &no_irq_chip) {
+	else if (desc->chip == &no_irq_chip) {
 		printk(KERN_WARNING "Trying to install %sinterrupt handler "
-		       "for IRQ%d\n", is_chained ? "chained " : " ", irq);
+		       "for IRQ%d\n", is_chained ? "chained " : "", irq);
 		/*
 		 * Some ARM implementations install a handler for really dumb
 		 * interrupt hardware without setting an irq_chip. This worked

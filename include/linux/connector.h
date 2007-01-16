@@ -36,9 +36,13 @@
 #define CN_VAL_CIFS                     0x1
 #define CN_W1_IDX			0x3	/* w1 communication */
 #define CN_W1_VAL			0x1
+#define CN_IDX_SX1SND			0x4
+#define CN_VAL_SX1SND			0x1
+#define CN_IDX_SX1PM			0x5
+#define CN_VAL_SX1PM			0x1
 
 
-#define CN_NETLINK_USERS		4
+#define CN_NETLINK_USERS		6
 
 /*
  * Maximum connector's message size.
@@ -170,7 +174,7 @@ void cn_queue_free_dev(struct cn_queue_dev *dev);
 
 int cn_cb_equal(struct cb_id *, struct cb_id *);
 
-void cn_queue_wrapper(void *data);
+void cn_queue_wrapper(struct work_struct *work);
 
 extern int cn_already_initialized;
 

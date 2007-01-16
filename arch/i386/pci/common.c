@@ -20,7 +20,7 @@
 unsigned int pci_probe = PCI_PROBE_BIOS | PCI_PROBE_CONF1 | PCI_PROBE_CONF2 |
 				PCI_PROBE_MMCONF;
 
-int pci_bf_sort;
+static int pci_bf_sort;
 int pci_routeirq;
 int pcibios_last_bus = -1;
 unsigned long pirq_table_addr;
@@ -343,7 +343,6 @@ int pcibios_enable_device(struct pci_dev *dev, int mask)
 
 void pcibios_disable_device (struct pci_dev *dev)
 {
-	pcibios_disable_resources(dev);
 	if (pcibios_disable_irq)
 		pcibios_disable_irq(dev);
 }

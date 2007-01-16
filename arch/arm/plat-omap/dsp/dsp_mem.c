@@ -507,7 +507,7 @@ exmap_alloc_pte(unsigned long virt, unsigned long phys, pgprot_t prot)
 	}
 
 	pte = pte_offset_kernel(pmd, virt);
-	set_pte(pte, pfn_pte(phys >> PAGE_SHIFT, prot));
+	set_pte_ext(pte, pfn_pte(phys >> PAGE_SHIFT, prot), 0);
 }
 
 #if 0
@@ -1495,7 +1495,7 @@ static int dsp_fbexport(dsp_long_t *dspadr)
 #endif
 
 #ifdef CONFIG_FB_OMAP_LCDC_EXTERNAL
-	omapfb_nb = kmalloc(sizeof(struct omapfb_notifier_block), GFP_KERNEL);
+	omapfb_nb = kzalloc(sizeof(struct omapfb_notifier_block), GFP_KERNEL);
 	if (omapfb_nb == NULL) {
 		printk(KERN_ERR
 		       "omapdsp: failed to allocate memory for omapfb_nb!\n");
@@ -1647,6 +1647,8 @@ static int dsp_mmu_itack(void)
 	 DSP_MMU_IRQ_TLBMISS)
 #endif
 
+static int is_mmu_init;
+
 static void dsp_mmu_init(void)
 {
 	struct tlb_lock tlb_lock;
@@ -1682,13 +1684,17 @@ static void dsp_mmu_init(void)
 	omap_dsp_release_mem();
 	clk_disable(dsp_ck_handle);
 #endif
+
+	is_mmu_init = 1;
 }
 
 static void dsp_mmu_shutdown(void)
 {
-	exmap_flush();
-	exmap_clear_preserved_entries();
-	dsp_mmu_disable();
+	if (is_mmu_init) {
+		exmap_flush();
+		exmap_clear_preserved_entries();
+		dsp_mmu_disable();
+	}
 }
 
 #ifdef CONFIG_ARCH_OMAP1
@@ -2003,7 +2009,7 @@ static int dsp_mem_open(struct inode *inode, struct file *file)
  * fbupd_cb() is called when fb update is done, in interrupt context.
  * mbox_fbupd() is called when KFUNC:FBCTL:UPD is received from DSP.
  */
-static void fbupd_response(void *arg)
+static void fbupd_response(struct work_struct *unused)
 {
 	int status;
 
@@ -2016,8 +2022,7 @@ static void fbupd_response(void *arg)
 	}
 }
 
-static DECLARE_WORK(fbupd_response_work, (void (*)(void *))fbupd_response,
-		    NULL);
+static DECLARE_WORK(fbupd_response_work, fbupd_response);
 
 static void fbupd_cb(void *arg)
 {
@@ -2277,7 +2282,7 @@ static ssize_t mempool_show(struct device *dev, struct device_attribute *attr,
 	 DSP_MMU_FAULT_ST_TRANS)
 #endif /* CONFIG_ARCH_OMAP1 */
 
-static void do_mmu_int(void)
+static void do_mmu_int(struct work_struct *unused)
 {
 #if defined(CONFIG_ARCH_OMAP1)
 
@@ -2411,7 +2416,7 @@ static void do_mmu_int(void)
 	enable_irq(omap_dsp->mmu_irq);
 }
 
-static DECLARE_WORK(mmu_int_work, (void (*)(void *))do_mmu_int, NULL);
+static DECLARE_WORK(mmu_int_work, do_mmu_int);
 
 /*
  * DSP MMU interrupt handler
@@ -2504,9 +2509,11 @@ int __init dsp_mem_init(void)
 	/* MMU interrupt is not enabled until DSP runs */
 	disable_irq(omap_dsp->mmu_irq);
 
-	device_create_file(omap_dsp->dev, &dev_attr_mmu);
-	device_create_file(omap_dsp->dev, &dev_attr_exmap);
-	device_create_file(omap_dsp->dev, &dev_attr_mempool);
+	ret = device_create_file(omap_dsp->dev, &dev_attr_mmu);
+	ret |= device_create_file(omap_dsp->dev, &dev_attr_exmap);
+	ret |= device_create_file(omap_dsp->dev, &dev_attr_mempool);
+	if (ret)
+		printk(KERN_ERR "device_create_file failed: %d\n", ret);
 
 	return 0;
 }

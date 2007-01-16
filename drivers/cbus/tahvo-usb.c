@@ -36,7 +36,7 @@
 #include <linux/usb_ch9.h>
 #include <linux/usb_gadget.h>
 #include <linux/usb.h>
-#include <linux/usb_otg.h>
+#include <linux/usb/otg.h>
 #include <linux/i2c.h>
 #include <linux/workqueue.h>
 #include <linux/kobject.h>
@@ -535,9 +535,9 @@ static int tahvo_usb_set_peripheral(struct otg_transceiver *otg, struct usb_gadg
 	return 0;
 }
 
-static void tahvo_usb_irq_work(void *data)
+static void tahvo_usb_irq_work(struct work_struct *work)
 {
-	struct tahvo_usb *tu = (struct tahvo_usb *)data;
+	struct tahvo_usb *tu = container_of(work, struct tahvo_usb, irq_work);
 
 	mutex_lock(&tu->serialize);
 	check_vbus_state(tu);
@@ -631,7 +631,7 @@ static int tahvo_usb_probe(struct device *dev)
 #endif
 #endif
 
-	INIT_WORK(&tu->irq_work, tahvo_usb_irq_work, tu);
+	INIT_WORK(&tu->irq_work, tahvo_usb_irq_work);
 	mutex_init(&tu->serialize);
 
 	/* Set initial state, so that we generate kevents only on
@@ -648,10 +648,12 @@ static int tahvo_usb_probe(struct device *dev)
 	}
 
 	/* Attributes */
-	device_create_file(dev, &dev_attr_vbus_state);
+	ret = device_create_file(dev, &dev_attr_vbus_state);
 #ifdef CONFIG_USB_OTG
-	device_create_file(dev, &dev_attr_otg_mode);
+	ret |= device_create_file(dev, &dev_attr_otg_mode);
 #endif
+	if (ret)
+		printk(KERN_ERR "attribute creation failed: %d\n", ret);
 
 	/* Create OTG interface */
 	tahvo_usb_power_off(tu);

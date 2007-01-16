@@ -45,13 +45,7 @@ SECTIONS
 			*(.early_param.init)
 		__early_end = .;
 		__initcall_start = .;
-			*(.initcall1.init)
-			*(.initcall2.init)
-			*(.initcall3.init)
-			*(.initcall4.init)
-			*(.initcall5.init)
-			*(.initcall6.init)
-			*(.initcall7.init)
+			INITCALLS
 		__initcall_end = .;
 		__con_initcall_start = .;
 			*(.con_initcall.init)
@@ -176,3 +170,11 @@ SECTIONS
 	.stab.indexstr 0 : { *(.stab.indexstr) }
 	.comment 0 : { *(.comment) }
 }
+
+/*
+ * These must never be empty
+ * If you have to comment these two assert statements out, your
+ * binutils is too old (for other reasons as well)
+ */
+ASSERT((__proc_info_end - __proc_info_begin), "missing CPU support")
+ASSERT((__arch_info_end - __arch_info_begin), "no machine record defined")

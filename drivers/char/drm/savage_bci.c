@@ -728,6 +728,7 @@ static int savage_do_init_bci(drm_device_t * dev, drm_savage_init_t * init)
 		dev_priv->status = NULL;
 	}
 	if (dev_priv->dma_type == SAVAGE_DMA_AGP && init->buffers_offset) {
+		dev->agp_buffer_token = init->buffers_offset;
 		dev->agp_buffer_map = drm_core_findmap(dev,
 						       init->buffers_offset);
 		if (!dev->agp_buffer_map) {
@@ -962,8 +963,8 @@ static int savage_bci_event_emit(DRM_IOCTL_ARGS)
 
 	event.count = savage_bci_emit_event(dev_priv, event.flags);
 	event.count |= dev_priv->event_wrap << 16;
-	DRM_COPY_TO_USER_IOCTL(&((drm_savage_event_emit_t __user *) data)->
-			       count, event.count, sizeof(event.count));
+	DRM_COPY_TO_USER_IOCTL((drm_savage_event_emit_t __user *) data,
+			       event, sizeof(event));
 	return 0;
 }
 

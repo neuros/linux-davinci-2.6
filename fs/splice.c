@@ -42,7 +42,7 @@ struct splice_pipe_desc {
 	struct partial_page *partial;	/* pages[] may not be contig */
 	int nr_pages;			/* number of pages in map */
 	unsigned int flags;		/* splice flags */
-	struct pipe_buf_operations *ops;/* ops associated with output pipe */
+	const struct pipe_buf_operations *ops;/* ops associated with output pipe */
 };
 
 /*
@@ -74,7 +74,7 @@ static int page_cache_pipe_buf_steal(struct pipe_inode_info *pipe,
 		wait_on_page_writeback(page);
 
 		if (PagePrivate(page))
-			try_to_release_page(page, mapping_gfp_mask(mapping));
+			try_to_release_page(page, GFP_KERNEL);
 
 		/*
 		 * If we succeeded in removing the mapping, set LRU flag
@@ -139,7 +139,7 @@ error:
 	return err;
 }
 
-static struct pipe_buf_operations page_cache_pipe_buf_ops = {
+static const struct pipe_buf_operations page_cache_pipe_buf_ops = {
 	.can_merge = 0,
 	.map = generic_pipe_buf_map,
 	.unmap = generic_pipe_buf_unmap,
@@ -159,7 +159,7 @@ static int user_page_pipe_buf_steal(struct pipe_inode_info *pipe,
 	return generic_pipe_buf_steal(pipe, buf);
 }
 
-static struct pipe_buf_operations user_page_pipe_buf_ops = {
+static const struct pipe_buf_operations user_page_pipe_buf_ops = {
 	.can_merge = 0,
 	.map = generic_pipe_buf_map,
 	.unmap = generic_pipe_buf_unmap,
@@ -333,7 +333,7 @@ __generic_file_splice_read(struct file *in, loff_t *ppos,
 				break;
 
 			error = add_to_page_cache_lru(page, mapping, index,
-					      mapping_gfp_mask(mapping));
+					      GFP_KERNEL);
 			if (unlikely(error)) {
 				page_cache_release(page);
 				if (error == -EEXIST)
@@ -557,7 +557,6 @@ static int pipe_to_file(struct pipe_inode_info *pipe, struct pipe_buffer *buf,
 {
 	struct file *file = sd->file;
 	struct address_space *mapping = file->f_mapping;
-	gfp_t gfp_mask = mapping_gfp_mask(mapping);
 	unsigned int offset, this_len;
 	struct page *page;
 	pgoff_t index;
@@ -591,7 +590,7 @@ static int pipe_to_file(struct pipe_inode_info *pipe, struct pipe_buffer *buf,
 			goto find_page;
 
 		page = buf->page;
-		if (add_to_page_cache(page, mapping, index, gfp_mask)) {
+		if (add_to_page_cache(page, mapping, index, GFP_KERNEL)) {
 			unlock_page(page);
 			goto find_page;
 		}
@@ -613,7 +612,7 @@ find_page:
 			 * This will also lock the page
 			 */
 			ret = add_to_page_cache_lru(page, mapping, index,
-						    gfp_mask);
+						    GFP_KERNEL);
 			if (unlikely(ret))
 				goto out;
 		}
@@ -725,7 +724,7 @@ static ssize_t __splice_from_pipe(struct pipe_inode_info *pipe,
 	for (;;) {
 		if (pipe->nrbufs) {
 			struct pipe_buffer *buf = pipe->bufs + pipe->curbuf;
-			struct pipe_buf_operations *ops = buf->ops;
+			const struct pipe_buf_operations *ops = buf->ops;
 
 			sd.len = buf->len;
 			if (sd.len > sd.total_len)
@@ -845,7 +844,7 @@ generic_file_splice_write_nolock(struct pipe_inode_info *pipe, struct file *out,
 	ssize_t ret;
 	int err;
 
-	err = remove_suid(out->f_dentry);
+	err = remove_suid(out->f_path.dentry);
 	if (unlikely(err))
 		return err;
 
@@ -891,10 +890,10 @@ generic_file_splice_write(struct pipe_inode_info *pipe, struct file *out,
 	ssize_t ret;
 	int err;
 
-	err = should_remove_suid(out->f_dentry);
+	err = should_remove_suid(out->f_path.dentry);
 	if (unlikely(err)) {
 		mutex_lock(&inode->i_mutex);
-		err = __remove_suid(out->f_dentry, err);
+		err = __remove_suid(out->f_path.dentry, err);
 		mutex_unlock(&inode->i_mutex);
 		if (err)
 			return err;
@@ -1009,7 +1008,7 @@ long do_splice_direct(struct file *in, loff_t *ppos, struct file *out,
 	 * randomly drop data for eg socket -> socket splicing. Use the
 	 * piped splicing for that!
 	 */
-	i_mode = in->f_dentry->d_inode->i_mode;
+	i_mode = in->f_path.dentry->d_inode->i_mode;
 	if (unlikely(!S_ISREG(i_mode) && !S_ISBLK(i_mode)))
 		return -EINVAL;
 
@@ -1110,6 +1109,19 @@ out_release:
 EXPORT_SYMBOL(do_splice_direct);
 
 /*
+ * After the inode slimming patch, i_pipe/i_bdev/i_cdev share the same
+ * location, so checking ->i_pipe is not enough to verify that this is a
+ * pipe.
+ */
+static inline struct pipe_inode_info *pipe_info(struct inode *inode)
+{
+	if (S_ISFIFO(inode->i_mode))
+		return inode->i_pipe;
+
+	return NULL;
+}
+
+/*
  * Determine where to splice to/from.
  */
 static long do_splice(struct file *in, loff_t __user *off_in,
@@ -1120,7 +1132,7 @@ static long do_splice(struct file *in, loff_t __user *off_in,
 	loff_t offset, *off;
 	long ret;
 
-	pipe = in->f_dentry->d_inode->i_pipe;
+	pipe = pipe_info(in->f_path.dentry->d_inode);
 	if (pipe) {
 		if (off_in)
 			return -ESPIPE;
@@ -1141,7 +1153,7 @@ static long do_splice(struct file *in, loff_t __user *off_in,
 		return ret;
 	}
 
-	pipe = out->f_dentry->d_inode->i_pipe;
+	pipe = pipe_info(out->f_path.dentry->d_inode);
 	if (pipe) {
 		if (off_out)
 			return -ESPIPE;
@@ -1299,7 +1311,7 @@ static int get_iovec_page_array(const struct iovec __user *iov,
 static long do_vmsplice(struct file *file, const struct iovec __user *iov,
 			unsigned long nr_segs, unsigned int flags)
 {
-	struct pipe_inode_info *pipe = file->f_dentry->d_inode->i_pipe;
+	struct pipe_inode_info *pipe;
 	struct page *pages[PIPE_BUFFERS];
 	struct partial_page partial[PIPE_BUFFERS];
 	struct splice_pipe_desc spd = {
@@ -1309,7 +1321,8 @@ static long do_vmsplice(struct file *file, const struct iovec __user *iov,
 		.ops = &user_page_pipe_buf_ops,
 	};
 
-	if (unlikely(!pipe))
+	pipe = pipe_info(file->f_path.dentry->d_inode);
+	if (!pipe)
 		return -EBADF;
 	if (unlikely(nr_segs > UIO_MAXIOV))
 		return -EINVAL;
@@ -1536,8 +1549,8 @@ static int link_pipe(struct pipe_inode_info *ipipe,
 static long do_tee(struct file *in, struct file *out, size_t len,
 		   unsigned int flags)
 {
-	struct pipe_inode_info *ipipe = in->f_dentry->d_inode->i_pipe;
-	struct pipe_inode_info *opipe = out->f_dentry->d_inode->i_pipe;
+	struct pipe_inode_info *ipipe = pipe_info(in->f_path.dentry->d_inode);
+	struct pipe_inode_info *opipe = pipe_info(out->f_path.dentry->d_inode);
 	int ret = -EINVAL;
 
 	/*

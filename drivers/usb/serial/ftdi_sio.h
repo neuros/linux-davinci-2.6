@@ -55,6 +55,9 @@
 /* iPlus device */
 #define FTDI_IPLUS_PID 0xD070 /* Product Id */
 
+/* DMX4ALL DMX Interfaces */
+#define FTDI_DMX4ALL 0xC850
+
 /* www.crystalfontz.com devices - thanx for providing free devices for evaluation ! */
 /* they use the ftdi chipset for the USB interface and the vendor id is the same */
 #define FTDI_XF_632_PID 0xFC08	/* 632: 16x2 Character Display */
@@ -175,9 +178,15 @@
 #define FTDI_ASK_RDR400_PID	0xC991	/* ASK RDR 400 series card reader */
 
 /*
+ * FTDI USB UART chips used in construction projects from the
+ * Elektor Electronics magazine (http://elektor-electronics.co.uk)
+ */
+#define ELEKTOR_VID		0x0C7D
+#define ELEKTOR_FT323R_PID	0x0005	/* RFID-Reader, issue 09-2006 */
+
+/*
  * DSS-20 Sync Station for Sony Ericsson P800
  */
- 
 #define FTDI_DSS20_PID          0xFC82  
 
 /*
@@ -303,8 +312,9 @@
 
 /* CCS Inc. ICDU/ICDU40 product ID - the FT232BM is used in an in-circuit-debugger */
 /* unit for PIC16's/PIC18's */
-#define FTDI_CCSICDU20_0_PID    0xF9D0     
-#define FTDI_CCSICDU40_1_PID    0xF9D1     
+#define FTDI_CCSICDU20_0_PID    0xF9D0
+#define FTDI_CCSICDU40_1_PID    0xF9D1
+#define FTDI_CCSMACHX_2_PID     0xF9D2
 
 /* Inside Accesso contactless reader (http://www.insidefr.com) */
 #define INSIDE_ACCESSO		0xFAD0

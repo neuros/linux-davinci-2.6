@@ -168,7 +168,7 @@ config USB_GADGET_MUSB_HDRC
 config USB_GADGET_OMAP
 	boolean "OMAP USB Device Controller"
 	depends on ARCH_OMAP
-	select ISP1301_OMAP if MACH_OMAP_H2 || MACH_OMAP_H3
+	select ISP1301_OMAP if MACH_OMAP_H2 || MACH_OMAP_H3 || MACH_OMAP_H4_OTG
 	help
 	   Many Texas Instruments OMAP processors have flexible full
 	   speed USB device controllers, with support for up to 30
@@ -199,7 +199,7 @@ config USB_OTG
 
 config USB_GADGET_AT91
 	boolean "AT91 USB Device Port"
-	depends on ARCH_AT91RM9200
+	depends on ARCH_AT91
 	select USB_GADGET_SELECTED
 	help
 	   Many Atmel AT91 processors (such as the AT91RM2000) have a

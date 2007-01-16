@@ -153,6 +153,13 @@ UNUSUAL_DEV(  0x0421, 0x042e, 0x0100, 0x0100,
 		US_SC_DEVICE, US_PR_DEVICE, NULL,
 		US_FL_IGNORE_RESIDUE | US_FL_FIX_CAPACITY ),
 
+/* Reported by <honkkis@gmail.com> */
+UNUSUAL_DEV(  0x0421, 0x0433, 0x0100, 0x0100,
+		"Nokia",
+		"E70",
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
+		US_FL_IGNORE_RESIDUE | US_FL_FIX_CAPACITY ),
+
 /* Reported by Jon Hart <Jon.Hart@web.de> */
 UNUSUAL_DEV(  0x0421, 0x0434, 0x0100, 0x0100,
 		"Nokia",
@@ -721,7 +728,7 @@ UNUSUAL_DEV( 0x05ac, 0x1204, 0x0000, 0x9999,
 		"Apple",
 		"iPod",
 		US_SC_DEVICE, US_PR_DEVICE, NULL,
-		US_FL_FIX_CAPACITY ),
+		US_FL_FIX_CAPACITY | US_FL_NOT_LOCKABLE ),
 
 UNUSUAL_DEV( 0x05ac, 0x1205, 0x0000, 0x9999,
 		"Apple",
@@ -1236,7 +1243,7 @@ UNUSUAL_DEV( 0x0e21, 0x0520, 0x0100, 0x0100,
 		"Cowon Systems",
 		"iAUDIO M5",
 		US_SC_DEVICE, US_PR_BULK, NULL,
-		0 ),
+		US_FL_NEED_OVERRIDE ),
 
 /* Submitted by Antoine Mairesse <antoine.mairesse@free.fr> */
 UNUSUAL_DEV( 0x0ed1, 0x6660, 0x0100, 0x0300,
@@ -1306,22 +1313,36 @@ UNUSUAL_DEV(  0x0fce, 0xe030, 0x0000, 0x0000,
 		US_SC_DEVICE, US_PR_DEVICE, NULL,
 		US_FL_FIX_CAPACITY ),
 
-/* Reported by Jan Mate <mate@fiit.stuba.sk> */
-UNUSUAL_DEV(  0x0fce, 0xe030, 0x0000, 0x0000,
-		"Sony Ericsson",
-		"P990i",
-		US_SC_DEVICE, US_PR_DEVICE, NULL,
-		US_FL_FIX_CAPACITY ),
-
 /* Reported by Kevin Cernekee <kpc-usbdev@gelato.uiuc.edu>
  * Tested on hardware version 1.10.
  * Entry is needed only for the initializer function override.
+ * Devices with bcd > 110 seem to not need it while those
+ * with bcd < 110 appear to need it.
  */
-UNUSUAL_DEV(  0x1019, 0x0c55, 0x0110, 0x0110,
+UNUSUAL_DEV(  0x1019, 0x0c55, 0x0000, 0x0110,
 		"Desknote",
 		"UCR-61S2B",
 		US_SC_DEVICE, US_PR_DEVICE, usb_stor_ucr61s2b_init,
 		0 ),
+
+/* Reported by Jaco Kroon <jaco@kroon.co.za>
+ * The usb-storage module found on the Digitech GNX4 (and supposedly other
+ * devices) misbehaves and causes a bunch of invalid I/O errors.
+ */
+UNUSUAL_DEV(  0x1210, 0x0003, 0x0100, 0x0100,
+		"Digitech HMG",
+		"DigiTech Mass Storage",
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
+		US_FL_IGNORE_RESIDUE ),
+
+/* This prevents the kernel from detecting the virtual cd-drive with the
+ * Windows drivers.  <johann.wilhelm@student.tugraz.at>
+*/
+UNUSUAL_DEV( 0x12d1, 0x1003, 0x0000, 0xffff,
+		"HUAWEI",
+		"E220 USB-UMTS Install",
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
+		US_FL_IGNORE_DEVICE),
 
 /* Reported by Vilius Bilinkevicius <vilisas AT xxx DOT lt) */
 UNUSUAL_DEV(  0x132b, 0x000b, 0x0001, 0x0001,
@@ -1334,6 +1355,21 @@ UNUSUAL_DEV(  0x132b, 0x000b, 0x0001, 0x0001,
 UNUSUAL_DEV(  0x1370, 0x6828, 0x0110, 0x0110,
 		"SWISSBIT",
 		"Black Silver",
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
+		US_FL_IGNORE_RESIDUE ),
+
+/* Reported by Francesco Foresti <frafore@tiscali.it> */
+UNUSUAL_DEV(  0x14cd, 0x6600, 0x0201, 0x0201,
+		"Super Top",
+		"IDE DEVICE",
+		US_SC_DEVICE, US_PR_DEVICE, NULL,
+		US_FL_IGNORE_RESIDUE ),
+
+/* Reported by Robert Schedel <r.schedel@yahoo.de>
+ * Note: this is a 'super top' device like the above 14cd/6600 device */
+UNUSUAL_DEV(  0x1652, 0x6600, 0x0201, 0x0201,
+		"Teac",
+		"HD-35PUK-B",
 		US_SC_DEVICE, US_PR_DEVICE, NULL,
 		US_FL_IGNORE_RESIDUE ),
 

@@ -259,7 +259,7 @@ nfsd4_remove_clid_file(struct dentry *dir, struct dentry *dentry)
 		printk("nfsd4: non-file found in client recovery directory\n");
 		return -EINVAL;
 	}
-	mutex_lock(&dir->d_inode->i_mutex);
+	mutex_lock_nested(&dir->d_inode->i_mutex, I_MUTEX_PARENT);
 	status = vfs_unlink(dir->d_inode, dentry);
 	mutex_unlock(&dir->d_inode->i_mutex);
 	return status;
@@ -274,7 +274,7 @@ nfsd4_clear_clid_dir(struct dentry *dir, struct dentry *dentry)
 	 * any regular files anyway, just in case the directory was created by
 	 * a kernel from the future.... */
 	nfsd4_list_rec_dir(dentry, nfsd4_remove_clid_file);
-	mutex_lock(&dir->d_inode->i_mutex);
+	mutex_lock_nested(&dir->d_inode->i_mutex, I_MUTEX_PARENT);
 	status = vfs_rmdir(dir->d_inode, dentry);
 	mutex_unlock(&dir->d_inode->i_mutex);
 	return status;

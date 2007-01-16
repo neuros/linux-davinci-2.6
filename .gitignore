@@ -20,6 +20,7 @@
 # Top-level generic files
 #
 tags
+TAGS
 vmlinux*
 System.map
 Module.symvers
@@ -41,3 +42,6 @@ patches-*
 # quilt's files
 patches
 series
+
+# cscope files
+cscope.*

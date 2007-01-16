@@ -72,7 +72,6 @@ struct musb_ep;
 #include "musb_gadget.h"
 #include "../core/hcd.h"
 #include "musb_host.h"
-#include "otg.h"
 
 
 
@@ -255,24 +254,14 @@ enum musb_g_ep0_state {
 /****************************** FUNCTIONS ********************************/
 
 #define MUSB_HST_MODE(_pthis)\
-	{ (_pthis)->bIsHost=TRUE; (_pthis)->bIsDevice=FALSE; }
+	{ (_pthis)->bIsHost=TRUE; }
 #define MUSB_DEV_MODE(_pthis) \
-	{ (_pthis)->bIsHost=FALSE; (_pthis)->bIsDevice=TRUE; }
-#define MUSB_OTG_MODE(_pthis) \
-	{ (_pthis)->bIsHost=FALSE; (_pthis)->bIsDevice=FALSE; }
-
-#define MUSB_IS_HST(_x) ((_x)->bIsHost && !(_x)->bIsDevice)
-#define MUSB_IS_DEV(_x) (!(_x)->bIsHost && (_x)->bIsDevice)
-#define MUSB_IS_OTG(_x) (!(_x)->bIsHost && !(_x)->bIsDevice)
+	{ (_pthis)->bIsHost=FALSE; }
 
 #define test_devctl_hst_mode(_x) \
 	(musb_readb((_x)->pRegs, MGC_O_HDRC_DEVCTL)&MGC_M_DEVCTL_HM)
 
-/* REVISIT OTG isn't a third non-error mode... */
-#define MUSB_MODE(_x) ( MUSB_IS_HST(_x)?"HOST" \
-		:(MUSB_IS_DEV(_x)?"PERIPHERAL" \
-		:(MUSB_IS_OTG(_x)?"UNCONNECTED" \
-		:"ERROR")) )
+#define MUSB_MODE(musb) ((musb)->bIsHost ? "Host" : "Peripheral")
 
 /************************** Ep Configuration ********************************/
 
@@ -376,6 +365,9 @@ struct musb {
 
 #ifdef CONFIG_USB_MUSB_HDRC_HCD
 
+/* this hub status bit is reserved by USB 2.0 and not seen by usbcore */
+#define MUSB_PORT_STAT_RESUME	(1 << 31)
+
 	u32			port1_status;
 	unsigned long		rh_timer;
 
@@ -423,6 +415,7 @@ struct musb {
 	struct musb_hw_ep	 aLocalEnd[MUSB_C_NUM_EPS];
 #define control_ep		aLocalEnd
 
+#define VBUSERR_RETRY_COUNT	3
 	u16			vbuserr_retry;
 	u16 wEndMask;
 	u8 bEndCount;
@@ -436,7 +429,6 @@ struct musb {
 	unsigned is_active:1;
 
 	unsigned bIsMultipoint:1;
-	unsigned bIsDevice:1;
 	unsigned bIsHost:1;
 	unsigned bIgnoreDisconnect:1;	/* during bus resets */
 
@@ -477,7 +469,7 @@ struct musb {
 #endif
 
 #ifdef CONFIG_USB_MUSB_OTG
-	struct otg_machine	OtgMachine;
+	/* FIXME this can't be OTG-specific ... ? */
 	u8 bDelayPortPowerOff;
 #endif
 
@@ -496,6 +488,13 @@ static inline struct musb *gadget_to_musb(struct usb_gadget *g)
 {
 	return container_of(g, struct musb, g);
 }
+#endif
+
+#ifdef CONFIG_USB_MUSB_OTG
+/* sysfs flag to seletively force peripheral-only operation */
+extern int musb_otg;
+#else
+#define musb_otg 0
 #endif
 
 

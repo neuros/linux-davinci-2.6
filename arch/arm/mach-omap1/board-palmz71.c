@@ -76,6 +76,7 @@ static struct omap_kp_platform_data palmz71_kp_data = {
 	.cols	= 8,
 	.keymap	= palmz71_keymap,
 	.rep	= 1,
+	.delay	= 80,
 };
 
 static struct resource palmz71_kp_resources[] = {
@@ -192,8 +193,7 @@ static struct omap_mcbsp_reg_cfg mcbsp_regs = {
 	.xcr1	= XFRLEN1(OMAP_MCBSP_WORD_8) | XWDLEN1(OMAP_MCBSP_WORD_16),
 	.srgr1	= FWID(DEFAULT_BITPERSAMPLE - 1),
 	.srgr2	= GSYNC | CLKSP | FSGM | FPER(DEFAULT_BITPERSAMPLE * 2 - 1),
-	/*.pcr0	= FSXM | FSRM | CLKXM | CLKRM | CLKXP | CLKRP, *//* mcbsp: master */
-	.pcr0 = CLKXP | CLKRP,	/* mcbsp: slave */
+	.pcr0	= CLKXP | CLKRP,	/* mcbsp: slave */
 };
 
 static struct omap_alsa_codec_config alsa_config = {
@@ -240,7 +240,7 @@ static struct platform_device *devices[] __initdata = {
 static int
 palmz71_get_pendown_state(void)
 {
-	return !omap_get_gpio_datain(6);
+	return !omap_get_gpio_datain(PALMZ71_PENIRQ_GPIO);
 }
 
 static const struct ads7846_platform_data palmz71_ts_info = {
@@ -252,13 +252,12 @@ static const struct ads7846_platform_data palmz71_ts_info = {
 };
 
 static struct spi_board_info __initdata palmz71_boardinfo[] = { {
-{
 	/* MicroWire (bus 2) CS0 has an ads7846e */
 	.modalias	= "ads7846",
 	.platform_data	= &palmz71_ts_info,
-	.irq		= OMAP_GPIO_IRQ(6),
-	.max_speed_hz	= 120000 /* max sample rate at 3V */
-				* 26 /* command + data + overhead */,
+	.irq		= OMAP_GPIO_IRQ(PALMZ71_PENIRQ_GPIO),
+	.max_speed_hz	= 120000	/* max sample rate at 3V */
+				* 26	/* command + data + overhead */,
 	.bus_num	= 2,
 	.chip_select	= 0,
 } };
@@ -288,14 +287,14 @@ static struct omap_uart_config palmz71_uart_config __initdata = {
 };
 
 static struct omap_board_config_kernel palmz71_config[] = {
-	{OMAP_TAG_USB, &palmz71_usb_config},
-	{OMAP_TAG_MMC, &palmz71_mmc_config},
-	{OMAP_TAG_LCD, &palmz71_lcd_config},
-	{OMAP_TAG_UART, &palmz71_uart_config},
+	{OMAP_TAG_USB,	&palmz71_usb_config},
+	{OMAP_TAG_MMC,	&palmz71_mmc_config},
+	{OMAP_TAG_LCD,	&palmz71_lcd_config},
+	{OMAP_TAG_UART,	&palmz71_uart_config},
 };
 
 static irqreturn_t
-palmz71_powercable(int irq, void *dev_id, struct pt_regs *regs)
+palmz71_powercable(int irq, void *dev_id)
 {
 	if (omap_get_gpio_datain(PALMZ71_USBDETECT_GPIO)) {
 		printk(KERN_INFO "PM: Power cable connected\n");
@@ -343,11 +342,11 @@ palmz71_gpio_setup(int early)
 		}
 		omap_set_gpio_direction(PALMZ71_USBDETECT_GPIO, 1);
 		if (request_irq(OMAP_GPIO_IRQ(PALMZ71_USBDETECT_GPIO),
-			palmz71_powercable, SA_SAMPLE_RANDOM,
-			"palmz71-cable", 0))
-				printk(KERN_ERR
-					"IRQ request for power cable failed!\n");
-		palmz71_powercable(OMAP_GPIO_IRQ(PALMZ71_USBDETECT_GPIO), 0, 0);
+				palmz71_powercable, SA_SAMPLE_RANDOM,
+				"palmz71-cable", 0))
+			printk(KERN_ERR
+			       "IRQ request for power cable failed!\n");
+		palmz71_powercable(OMAP_GPIO_IRQ(PALMZ71_USBDETECT_GPIO), 0);
 	}
 }
 

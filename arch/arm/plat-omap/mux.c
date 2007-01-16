@@ -94,9 +94,9 @@ int __init_or_module omap_cfg_reg(const unsigned long index)
 			warn = (orig != reg);
 			if (debug || warn)
 				printk("MUX: setup %s (0x%08x): 0x%02x -> 0x%02x\n",
-				       cfg->name,
-				       OMAP24XX_L4_BASE + cfg->mux_reg,
-				       orig, reg);
+						cfg->name,
+						OMAP24XX_L4_BASE + cfg->mux_reg,
+						orig, reg);
 		}
 #endif
 		omap_writeb(reg, OMAP24XX_L4_BASE + cfg->mux_reg);
@@ -127,7 +127,7 @@ int __init_or_module omap_cfg_reg(const unsigned long index)
 	}
 
 	/* Check for pull up or pull down selection on 1610 */
-	if (!cpu_is_omap1510()) {
+	if (!cpu_is_omap15xx()) {
 		if (cfg->pu_pd_reg && cfg->pull_val) {
 			spin_lock_irqsave(&mux_spin_lock, flags);
 			pu_pd_orig = omap_readl(cfg->pu_pd_reg);
@@ -183,7 +183,7 @@ int __init_or_module omap_cfg_reg(const unsigned long index)
 		printk("      %s (0x%08x) = 0x%08x -> 0x%08x\n",
 		       cfg->mux_reg_name, cfg->mux_reg, reg_orig, reg);
 
-		if (!cpu_is_omap1510()) {
+		if (!cpu_is_omap15xx()) {
 			if (cfg->pu_pd_reg && cfg->pull_val) {
 				printk("      %s (0x%08x) = 0x%08x -> 0x%08x\n",
 				       cfg->pu_pd_name, cfg->pu_pd_reg,

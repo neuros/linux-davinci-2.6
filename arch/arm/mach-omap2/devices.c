@@ -55,8 +55,10 @@ static void omap_init_i2c(void)
 	if (machine_is_omap_h4())
 		return;
 
-	omap_cfg_reg(J15_24XX_I2C2_SCL);
-	omap_cfg_reg(H19_24XX_I2C2_SDA);
+	if (!cpu_is_omap2430()) {
+		omap_cfg_reg(J15_24XX_I2C2_SCL);
+		omap_cfg_reg(H19_24XX_I2C2_SDA);
+	}
 	(void) platform_device_register(&omap_i2c_device2);
 }
 
@@ -66,7 +68,7 @@ static void omap_init_i2c(void) {}
 
 #endif
 
-#if defined(CONFIG_OMAP_DSP)
+#if defined(CONFIG_OMAP_DSP) || defined(CONFIG_OMAP_DSP_MODULE)
 #define OMAP2_MBOX_BASE		IO_ADDRESS(OMAP24XX_MAILBOX_BASE)
 
 static struct resource mbox_resources[] = {

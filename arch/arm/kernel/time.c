@@ -29,6 +29,8 @@
 #include <linux/timer.h>
 #include <linux/irq.h>
 
+#include <linux/mc146818rtc.h>
+
 #include <asm/leds.h>
 #include <asm/thread_info.h>
 #include <asm/mach/time.h>
@@ -83,6 +85,17 @@ static unsigned long dummy_gettimeoffset(void)
 unsigned long long __attribute__((weak)) sched_clock(void)
 {
 	return (unsigned long long)jiffies * (1000000000 / HZ);
+}
+
+/*
+ * An implementation of printk_clock() independent from
+ * sched_clock().  This avoids non-bootable kernels when
+ * printk_clock is enabled.
+ */
+unsigned long long printk_clock(void)
+{
+	return (unsigned long long)(jiffies - INITIAL_JIFFIES) *
+			(1000000000 / HZ);
 }
 
 static unsigned long next_rtc_update;
@@ -220,10 +233,10 @@ EXPORT_SYMBOL(leds_event);
 #ifdef CONFIG_LEDS_TIMER
 static inline void do_leds(void)
 {
-	static unsigned int count = 50;
+	static unsigned int count = HZ/2;
 
 	if (--count == 0) {
-		count = 50;
+		count = HZ/2;
 		leds_event(led_timer);
 	}
 }
@@ -327,13 +340,12 @@ EXPORT_SYMBOL(restore_time_delta);
  */
 void timer_tick(void)
 {
-	struct pt_regs *regs = get_irq_regs();
 	profile_tick(CPU_PROFILING);
 	do_leds();
 	do_set_rtc();
 	do_timer(1);
 #ifndef CONFIG_SMP
-	update_process_times(user_mode(regs));
+	update_process_times(user_mode(get_irq_regs()));
 #endif
 }
 

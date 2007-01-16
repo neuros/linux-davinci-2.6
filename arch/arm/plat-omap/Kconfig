@@ -19,6 +19,16 @@ endchoice
 
 comment "OMAP Feature Selections"
 
+config OMAP_DEBUG_DEVICES
+	bool
+	help
+	  For debug cards on TI reference boards.
+
+config OMAP_DEBUG_LEDS
+	bool
+	depends on OMAP_DEBUG_DEVICES
+	default y if LEDS || LEDS_OMAP_DEBUG
+
 config OMAP_RESET_CLOCKS
 	bool "Reset unused clocks during boot"
 	depends on ARCH_OMAP
@@ -165,7 +175,7 @@ endchoice
 
 config OMAP_SERIAL_WAKE
 	bool "Enable wake-up events for serial ports"
-	depends OMAP_MUX
+	depends on OMAP_MUX
 	default y
 	help
 	  Select this option if you want to have your system wake up

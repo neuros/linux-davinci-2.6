@@ -2565,7 +2565,7 @@ aic7xxx_allocate_scb(struct aic7xxx_host *p)
       }
     }
     scb_count = min( (i-1), p->scb_data->maxscbs - p->scb_data->numscbs);
-    scb_ap = (struct aic7xxx_scb *)kmalloc(sizeof (struct aic7xxx_scb) * scb_count
+    scb_ap = kmalloc(sizeof (struct aic7xxx_scb) * scb_count
 					   + sizeof(struct aic7xxx_scb_dma), GFP_ATOMIC);
     if (scb_ap == NULL)
       return(0);
@@ -2646,7 +2646,7 @@ static void aic7xxx_done_cmds_complete(struct aic7xxx_host *p)
 
 	while (p->completeq.head != NULL) {
 		cmd = p->completeq.head;
-		p->completeq.head = (struct scsi_Cmnd *) cmd->host_scribble;
+		p->completeq.head = (struct scsi_cmnd *) cmd->host_scribble;
 		cmd->host_scribble = NULL;
 		cmd->scsi_done(cmd);
 	}

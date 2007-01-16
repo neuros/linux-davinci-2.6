@@ -136,24 +136,6 @@ static struct platform_device h4_flash_device = {
 	.resource	= &h4_flash_resource,
 };
 
-static struct resource h4_smc91x_resources[] = {
-	[0] = {
-		.flags  = IORESOURCE_MEM,
-	},
-	[1] = {
-		.start  = OMAP_GPIO_IRQ(OMAP24XX_ETHR_GPIO_IRQ),
-		.end    = OMAP_GPIO_IRQ(OMAP24XX_ETHR_GPIO_IRQ),
-		.flags  = IORESOURCE_IRQ,
-	},
-};
-
-static struct platform_device h4_smc91x_device = {
-	.name		= "smc91x",
-	.id		= -1,
-	.num_resources	= ARRAY_SIZE(h4_smc91x_resources),
-	.resource	= h4_smc91x_resources,
-};
-
 /* Select between the IrDA and aGPS module
  */
 #if defined(CONFIG_OMAP_IR) || defined(CONFIG_OMAP_IR_MODULE)
@@ -182,9 +164,11 @@ static int h4_select_irda(struct device *dev, int state)
 	return err;
 }
 
-static void set_trans_mode(void *data)
+static void set_trans_mode(struct work_struct *work)
 {
-	int *mode = data;
+	struct omap_irda_config *irda_config =
+		container_of(work, struct omap_irda_config, gpio_expa.work);
+	int mode = irda_config->mode;
 	unsigned char expa;
 	int err = 0;
 
@@ -194,7 +178,7 @@ static void set_trans_mode(void *data)
 
 	expa &= ~0x01;
 
-	if (!(*mode & IR_SIRMODE)) { /* MIR/FIR */
+	if (!(mode & IR_SIRMODE)) { /* MIR/FIR */
 		expa |= 0x01;
 	}
 
@@ -207,9 +191,10 @@ static int h4_transceiver_mode(struct device *dev, int mode)
 {
 	struct omap_irda_config *irda_config = dev->platform_data;
 
+	irda_config->mode = mode;
 	cancel_delayed_work(&irda_config->gpio_expa);
-	PREPARE_WORK(&irda_config->gpio_expa, set_trans_mode, &mode);
-	schedule_work(&irda_config->gpio_expa);
+	PREPARE_DELAYED_WORK(&irda_config->gpio_expa, set_trans_mode);
+	schedule_delayed_work(&irda_config->gpio_expa, 0);
 
 	return 0;
 }
@@ -272,7 +257,6 @@ static struct platform_device h4_lcd_device = {
 };
 
 static struct platform_device *h4_devices[] __initdata = {
-	&h4_smc91x_device,
 	&h4_flash_device,
 	&h4_irda_device,
 	&h4_kp_device,
@@ -304,7 +288,7 @@ static u32 is_gpmc_muxed(void)
 		return 0;
 }
 
-static inline void __init h4_init_smc91x(void)
+static inline void __init h4_init_debug(void)
 {
 	int eth_cs;
 	unsigned long cs_mem_base;
@@ -352,19 +336,12 @@ static inline void __init h4_init_smc91x(void)
 		printk(KERN_ERR "Failed to request GPMC mem for smc91x\n");
 		return;
 	}
-	h4_smc91x_resources[0].start = cs_mem_base + 0x300;
-	h4_smc91x_resources[0].end   = cs_mem_base + 0x30f;
+
 	udelay(100);
 
 	omap_cfg_reg(M15_24XX_GPIO92);
-	if (omap_request_gpio(OMAP24XX_ETHR_GPIO_IRQ) < 0) {
-		printk(KERN_ERR "Failed to request GPIO%d for smc91x IRQ\n",
-			OMAP24XX_ETHR_GPIO_IRQ);
+	if (debug_card_init(cs_mem_base, OMAP24XX_ETHR_GPIO_IRQ) < 0)
 		gpmc_cs_free(eth_cs);
-		return;
-	}
-	omap_set_gpio_direction(OMAP24XX_ETHR_GPIO_IRQ, 1);
-
 }
 
 static void __init h4_init_flash(void)
@@ -384,12 +361,15 @@ static void __init omap_h4_init_irq(void)
 	omap2_init_common_hw();
 	omap_init_irq();
 	omap_gpio_init();
-	h4_init_smc91x();
 	h4_init_flash();
 }
 
 static struct omap_uart_config h4_uart_config __initdata = {
+#ifdef	CONFIG_MACH_OMAP2_H4_USB1
+	.enabled_uarts = ((1 << 0) | (1 << 1)),
+#else
 	.enabled_uarts = ((1 << 0) | (1 << 1) | (1 << 2)),
+#endif
 };
 
 static struct omap_mmc_config h4_mmc_config __initdata = {
@@ -406,10 +386,44 @@ static struct omap_lcd_config h4_lcd_config __initdata = {
 	.ctrl_name	= "internal",
 };
 
+static struct omap_usb_config h4_usb_config __initdata = {
+#ifdef	CONFIG_MACH_OMAP2_H4_USB1
+	/* NOTE:  usb1 could also be used with 3 wire signaling */
+	.pins[1]	= 4,
+#endif
+
+#ifdef	CONFIG_MACH_OMAP_H4_OTG
+	/* S1.10 ON -- USB OTG port
+	 * usb0 switched to Mini-AB port and isp1301 transceiver;
+	 * S2.POS3 = OFF, S2.POS4 = ON ... to allow battery charging
+	 */
+	.otg		= 1,
+	.pins[0]	= 4,
+#ifdef	CONFIG_USB_GADGET_OMAP
+	/* use OTG cable, or standard A-to-MiniB */
+	.hmc_mode	= 0x14,	/* 0:dev/otg 1:host 2:disable */
+#elif	defined(CONFIG_USB_OHCI_HCD) || defined(CONFIG_USB_OHCI_HCD_MODULE)
+	/* use OTG cable, or NONSTANDARD (B-to-MiniB) */
+	.hmc_mode	= 0x11,	/* 0:host 1:host 2:disable */
+#endif	/* XX */
+
+#else
+	/* S1.10 OFF -- usb "download port"
+	 * usb0 switched to Mini-B port and isp1105 transceiver;
+	 * S2.POS3 = ON, S2.POS4 = OFF ... to enable battery charging
+	 */
+	.register_dev	= 1,
+	.pins[0]	= 3,
+//	.hmc_mode	= 0x14,	/* 0:dev 1:host 2:disable */
+	.hmc_mode	= 0x00,	/* 0:dev|otg 1:disable 2:disable */
+#endif
+};
+
 static struct omap_board_config_kernel h4_config[] = {
 	{ OMAP_TAG_UART,	&h4_uart_config },
 	{ OMAP_TAG_MMC,		&h4_mmc_config },
 	{ OMAP_TAG_LCD,		&h4_lcd_config },
+	{ OMAP_TAG_USB,		&h4_usb_config },
 };
 
 #ifdef	CONFIG_MACH_OMAP_H4_TUSB
@@ -463,9 +477,10 @@ static void __init tusb_evm_setup(void)
 		 */
 		omap_cfg_reg(J15_24XX_GPIO99);
 		irq = 99;
-		omap_cfg_reg(AA10_242X_DMAREQ0);
-		omap_cfg_reg(AA6_242X_DMAREQ1);
 		dmachan = (1 << 1) | (1 << 0);
+#if !(defined(CONFIG_MTD_OMAP_NOR) || defined(CONFIG_MTD_OMAP_NOR_MODULE))
+		dmachan |= (1 << 5) | (1 << 4) (1 << 3) | (1 << 2);
+#endif
 		break;
 	}
 
@@ -498,10 +513,21 @@ static void __init omap_h4_init(void)
 	}
 #endif
 
+#ifdef	CONFIG_MACH_OMAP2_H4_USB1
+	/* S3.3 controls whether these pins are for UART2 or USB1 */
+	omap_cfg_reg(N14_24XX_USB1_SE0);
+	omap_cfg_reg(P15_24XX_USB1_DAT);
+	omap_cfg_reg(W20_24XX_USB1_TXEN);
+	omap_cfg_reg(V19_24XX_USB1_RCV);
+#endif
+
 	platform_add_devices(h4_devices, ARRAY_SIZE(h4_devices));
 	omap_board_config = h4_config;
 	omap_board_config_size = ARRAY_SIZE(h4_config);
 	omap_serial_init();
+
+	/* smc91x, debug leds, ps/2, extra uarts */
+	h4_init_debug();
 
 #ifdef	CONFIG_MACH_OMAP_H4_TUSB
 	tusb_evm_setup();

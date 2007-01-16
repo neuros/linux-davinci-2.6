@@ -17,11 +17,19 @@
 #include <linux/spinlock.h>
 
 #include <asm/io.h>
+#include <asm/mach-types.h>
 #include <asm/arch/gpmc.h>
 
 #undef DEBUG
 
+#ifdef CONFIG_ARCH_OMAP2420
 #define GPMC_BASE		0x6800a000
+#endif
+
+#ifdef CONFIG_ARCH_OMAP2430
+#define GPMC_BASE		0x6E000000
+#endif
+
 #define GPMC_REVISION		0x00
 #define GPMC_SYSCONFIG		0x10
 #define GPMC_SYSSTATUS		0x14
@@ -122,7 +130,7 @@ static int set_gpmc_timing_reg(int cs, int reg, int st_bit, int end_bit,
 	if (ticks >= 1 << nr_bits) {
 #ifdef DEBUG
 		printk(KERN_INFO "GPMC CS%d: %-10s* %3d ns, %3d ticks >= %d\n",
-		       cs, name, time, ticks, 1 << nr_bits);
+				cs, name, time, ticks, 1 << nr_bits);
 #endif
 		return -1;
 	}
@@ -133,7 +141,7 @@ static int set_gpmc_timing_reg(int cs, int reg, int st_bit, int end_bit,
 	printk(KERN_INFO
 		"GPMC CS%d: %-10s: %3d ticks, %3lu ns (was %3i ticks) %3d ns\n",
 	       cs, name, ticks, gpmc_get_fclk_period() * ticks / 1000,
-	       (l >> st_bit) & mask, time);
+			(l >> st_bit) & mask, time);
 #endif
 	l &= ~(mask << st_bit);
 	l |= ticks << st_bit;
@@ -203,7 +211,7 @@ int gpmc_cs_set_timings(int cs, const struct gpmc_timings *t)
 	if (l & (GPMC_CONFIG1_READTYPE_SYNC | GPMC_CONFIG1_WRITETYPE_SYNC)) {
 #ifdef DEBUG
 		printk(KERN_INFO "GPMC CS%d CLK period is %lu ns (div %d)\n",
-		       cs, (div * gpmc_get_fclk_period()) / 1000, div);
+				cs, (div * gpmc_get_fclk_period()) / 1000, div);
 #endif
 		l &= ~0x03;
 		l |= (div - 1);
@@ -256,14 +264,21 @@ static int gpmc_cs_mem_enabled(int cs)
 	return l & (1 << 6);
 }
 
-static void gpmc_cs_set_reserved(int cs, int reserved)
+int gpmc_cs_set_reserved(int cs, int reserved)
 {
+	if (cs > GPMC_CS_NUM)
+		return -ENODEV;
+
 	gpmc_cs_map &= ~(1 << cs);
 	gpmc_cs_map |= (reserved ? 1 : 0) << cs;
+	return 0;
 }
 
-static int gpmc_cs_reserved(int cs)
+int gpmc_cs_reserved(int cs)
 {
+	if (cs > GPMC_CS_NUM)
+		return -ENODEV;
+
 	return gpmc_cs_map & (1 << cs);
 }
 
@@ -353,6 +368,9 @@ void __init gpmc_mem_init(void)
 	 * even if we didn't boot from ROM.
 	 */
 	boot_rom_space = BOOT_ROM_SPACE;
+	/* In apollon the CS0 is mapped as 0x0000 0000 */
+	if (machine_is_omap_apollon())
+		boot_rom_space = 0;
 	gpmc_mem_root.start = GPMC_MEM_START + boot_rom_space;
 	gpmc_mem_root.end = GPMC_MEM_END;
 

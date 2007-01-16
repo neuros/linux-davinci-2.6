@@ -144,9 +144,12 @@ void __iomem *of_ioremap(struct resource *res, unsigned long offset, unsigned lo
 }
 EXPORT_SYMBOL(of_ioremap);
 
-void of_iounmap(void __iomem *base, unsigned long size)
+void of_iounmap(struct resource *res, void __iomem *base, unsigned long size)
 {
-	release_region((unsigned long) base, size);
+	if (res->flags & IORESOURCE_MEM)
+		release_mem_region((unsigned long) base, size);
+	else
+		release_region((unsigned long) base, size);
 }
 EXPORT_SYMBOL(of_iounmap);
 
@@ -402,16 +405,22 @@ static void of_bus_sbus_count_cells(struct device_node *child,
 		*sizec = 1;
 }
 
-static int of_bus_sbus_map(u32 *addr, const u32 *range, int na, int ns, int pna)
+/*
+ * FHC/Central bus specific translator.
+ *
+ * This is just needed to hard-code the address and size cell
+ * counts.  'fhc' and 'central' nodes lack the #address-cells and
+ * #size-cells properties, and if you walk to the root on such
+ * Enterprise boxes all you'll get is a #size-cells of 2 which is
+ * not what we want to use.
+ */
+static int of_bus_fhc_match(struct device_node *np)
 {
-	return of_bus_default_map(addr, range, na, ns, pna);
+	return !strcmp(np->name, "fhc") ||
+		!strcmp(np->name, "central");
 }
 
-static unsigned int of_bus_sbus_get_flags(u32 *addr)
-{
-	return IORESOURCE_MEM;
-}
-
+#define of_bus_fhc_count_cells of_bus_sbus_count_cells
 
 /*
  * Array of bus specific translators
@@ -433,8 +442,17 @@ static struct of_bus of_busses[] = {
 		.addr_prop_name = "reg",
 		.match = of_bus_sbus_match,
 		.count_cells = of_bus_sbus_count_cells,
-		.map = of_bus_sbus_map,
-		.get_flags = of_bus_sbus_get_flags,
+		.map = of_bus_default_map,
+		.get_flags = of_bus_default_get_flags,
+	},
+	/* FHC */
+	{
+		.name = "fhc",
+		.addr_prop_name = "reg",
+		.match = of_bus_fhc_match,
+		.count_cells = of_bus_fhc_count_cells,
+		.map = of_bus_default_map,
+		.get_flags = of_bus_default_get_flags,
 	},
 	/* Default */
 	{
@@ -846,7 +864,7 @@ static struct of_device * __init scan_one_device(struct device_node *dp,
 	if (!parent)
 		strcpy(op->dev.bus_id, "root");
 	else
-		sprintf(op->dev.bus_id, "%s@%08x", dp->name, dp->node);
+		sprintf(op->dev.bus_id, "%08x", dp->node);
 
 	if (of_device_register(op)) {
 		printk("%s: Could not register of device.\n",
@@ -992,10 +1010,9 @@ struct of_device* of_platform_device_create(struct device_node *np,
 {
 	struct of_device *dev;
 
-	dev = kmalloc(sizeof(*dev), GFP_KERNEL);
+	dev = kzalloc(sizeof(*dev), GFP_KERNEL);
 	if (!dev)
 		return NULL;
-	memset(dev, 0, sizeof(*dev));
 
 	dev->dev.parent = parent;
 	dev->dev.bus = bus;

@@ -227,7 +227,7 @@ static int ohci_omap_init(struct usb_hcd *hcd)
 
 	omap_ohci_clock_power(1);
 
-	if (cpu_is_omap1510()) {
+	if (cpu_is_omap15xx()) {
 		omap_1510_local_bus_power(1);
 		omap_1510_local_bus_init();
 	}
@@ -315,7 +315,7 @@ static int usb_hcd_omap_probe (const struct hc_driver *driver,
 	if (IS_ERR(usb_host_ck))
 		return PTR_ERR(usb_host_ck);
 
-	if (!cpu_is_omap1510())
+	if (!cpu_is_omap15xx())
 		usb_dc_ck = clk_get(0, "usb_dc_ck");
 	else
 		usb_dc_ck = clk_get(0, "lb_ck");
@@ -447,7 +447,7 @@ static const struct hc_driver ohci_omap_hc_driver = {
 	.reset =		ohci_omap_init,
 	.start =		ohci_omap_start,
 	.stop =			ohci_omap_stop,
-	.shutdown = 		ohci_shutdown,
+	.shutdown =		ohci_shutdown,
 
 	/*
 	 * managing i/o requests and associated device resources
@@ -533,7 +533,7 @@ static int ohci_omap_resume(struct platform_device *dev)
 static struct platform_driver ohci_hcd_omap_driver = {
 	.probe		= ohci_hcd_omap_drv_probe,
 	.remove		= ohci_hcd_omap_drv_remove,
-	.shutdown 	= usb_hcd_platform_shutdown,
+	.shutdown	= usb_hcd_platform_shutdown,
 #ifdef	CONFIG_PM
 	.suspend	= ohci_omap_suspend,
 	.resume		= ohci_omap_resume,

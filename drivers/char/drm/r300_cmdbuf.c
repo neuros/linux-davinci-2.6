@@ -242,26 +242,6 @@ static __inline__ int r300_check_range(unsigned reg, int count)
 	return 0;
 }
 
-/*
- * we expect offsets passed to the framebuffer to be either within video 
- * memory or within AGP space 
- */
-static __inline__ int r300_check_offset(drm_radeon_private_t *dev_priv,
-					u32 offset)
-{
-	/* we realy want to check against end of video aperture
-	   but this value is not being kept.
-	   This code is correct for now (does the same thing as the
-	   code that sets MC_FB_LOCATION) in radeon_cp.c */
-	if (offset >= dev_priv->fb_location &&
-	    offset < (dev_priv->fb_location + dev_priv->fb_size))
-		return 0;
-	if (offset >= dev_priv->gart_vm_start &&
-	    offset < (dev_priv->gart_vm_start + dev_priv->gart_size))
-		return 0;
-	return 1;
-}
-
 static __inline__ int r300_emit_carefully_checked_packet0(drm_radeon_private_t *
 							  dev_priv,
 							  drm_radeon_kcmd_buffer_t
@@ -290,7 +270,7 @@ static __inline__ int r300_emit_carefully_checked_packet0(drm_radeon_private_t *
 		case MARK_SAFE:
 			break;
 		case MARK_CHECK_OFFSET:
-			if (r300_check_offset(dev_priv, (u32) values[i])) {
+			if (!radeon_check_offset(dev_priv, (u32) values[i])) {
 				DRM_ERROR
 				    ("Offset failed range check (reg=%04x sz=%d)\n",
 				     reg, sz);
@@ -452,7 +432,7 @@ static __inline__ int r300_emit_3d_load_vbpntr(drm_radeon_private_t *dev_priv,
 	i = 1;
 	while ((k < narrays) && (i < (count + 1))) {
 		i++;		/* skip attribute field */
-		if (r300_check_offset(dev_priv, payload[i])) {
+		if (!radeon_check_offset(dev_priv, payload[i])) {
 			DRM_ERROR
 			    ("Offset failed range check (k=%d i=%d) while processing 3D_LOAD_VBPNTR packet.\n",
 			     k, i);
@@ -463,7 +443,7 @@ static __inline__ int r300_emit_3d_load_vbpntr(drm_radeon_private_t *dev_priv,
 		if (k == narrays)
 			break;
 		/* have one more to process, they come in pairs */
-		if (r300_check_offset(dev_priv, payload[i])) {
+		if (!radeon_check_offset(dev_priv, payload[i])) {
 			DRM_ERROR
 			    ("Offset failed range check (k=%d i=%d) while processing 3D_LOAD_VBPNTR packet.\n",
 			     k, i);
@@ -508,7 +488,7 @@ static __inline__ int r300_emit_bitblt_multi(drm_radeon_private_t *dev_priv,
 		if (cmd[1] & (RADEON_GMC_SRC_PITCH_OFFSET_CNTL 
 			      | RADEON_GMC_DST_PITCH_OFFSET_CNTL)) {
 			offset = cmd[2] << 10;
-			ret = r300_check_offset(dev_priv, offset);
+			ret = !radeon_check_offset(dev_priv, offset);
 			if (ret) {
 				DRM_ERROR("Invalid bitblt first offset is %08X\n", offset);
 				return DRM_ERR(EINVAL);
@@ -518,13 +498,43 @@ static __inline__ int r300_emit_bitblt_multi(drm_radeon_private_t *dev_priv,
 		if ((cmd[1] & RADEON_GMC_SRC_PITCH_OFFSET_CNTL) &&
 		    (cmd[1] & RADEON_GMC_DST_PITCH_OFFSET_CNTL)) {
 			offset = cmd[3] << 10;
-			ret = r300_check_offset(dev_priv, offset);
+			ret = !radeon_check_offset(dev_priv, offset);
 			if (ret) {
 				DRM_ERROR("Invalid bitblt second offset is %08X\n", offset);
 				return DRM_ERR(EINVAL);
 			}
 			
 		}
+	}
+
+	BEGIN_RING(count+2);
+	OUT_RING(cmd[0]);
+	OUT_RING_TABLE((int *)(cmdbuf->buf + 4), count + 1);
+	ADVANCE_RING();
+
+	cmdbuf->buf += (count+2)*4;
+	cmdbuf->bufsz -= (count+2)*4;
+
+	return 0;
+}
+
+static __inline__ int r300_emit_indx_buffer(drm_radeon_private_t *dev_priv,
+					     drm_radeon_kcmd_buffer_t *cmdbuf)
+{
+	u32 *cmd = (u32 *) cmdbuf->buf;
+	int count, ret;
+	RING_LOCALS;
+
+	count=(cmd[0]>>16) & 0x3fff;
+
+	if ((cmd[1] & 0x8000ffff) != 0x80000810) {
+		DRM_ERROR("Invalid indx_buffer reg address %08X\n", cmd[1]);
+		return DRM_ERR(EINVAL);
+	}
+	ret = !radeon_check_offset(dev_priv, cmd[2]);
+	if (ret) {
+		DRM_ERROR("Invalid indx_buffer offset is %08X\n", cmd[2]);
+		return DRM_ERR(EINVAL);
 	}
 
 	BEGIN_RING(count+2);
@@ -578,10 +588,11 @@ static __inline__ int r300_emit_raw_packet3(drm_radeon_private_t *dev_priv,
 	case RADEON_CNTL_BITBLT_MULTI:
 		return r300_emit_bitblt_multi(dev_priv, cmdbuf);
 
+	case RADEON_CP_INDX_BUFFER:	/* DRAW_INDX_2 without INDX_BUFFER seems to lock up the gpu */
+		return r300_emit_indx_buffer(dev_priv, cmdbuf);
 	case RADEON_CP_3D_DRAW_IMMD_2:	/* triggers drawing using in-packet vertex data */
 	case RADEON_CP_3D_DRAW_VBUF_2:	/* triggers drawing of vertex buffers setup elsewhere */
 	case RADEON_CP_3D_DRAW_INDX_2:	/* triggers drawing using indices to vertex buffer */
-	case RADEON_CP_INDX_BUFFER:	/* DRAW_INDX_2 without INDX_BUFFER seems to lock up the gpu */
 	case RADEON_WAIT_FOR_IDLE:
 	case RADEON_CP_NOP:
 		/* these packets are safe */

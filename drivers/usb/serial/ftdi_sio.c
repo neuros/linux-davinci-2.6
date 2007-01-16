@@ -311,6 +311,7 @@ static struct usb_device_id id_table_combined [] = {
 	{ USB_DEVICE(FTDI_VID, FTDI_ACTZWAVE_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_IRTRANS_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_IPLUS_PID) },
+	{ USB_DEVICE(FTDI_VID, FTDI_DMX4ALL) },
 	{ USB_DEVICE(FTDI_VID, FTDI_SIO_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_8U232AM_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_8U232AM_ALT_PID) },
@@ -451,6 +452,7 @@ static struct usb_device_id id_table_combined [] = {
 	{ USB_DEVICE(FTDI_VID, LINX_FUTURE_2_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_CCSICDU20_0_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_CCSICDU40_1_PID) },
+	{ USB_DEVICE(FTDI_VID, FTDI_CCSMACHX_2_PID) },
 	{ USB_DEVICE(FTDI_VID, INSIDE_ACCESSO) },
 	{ USB_DEVICE(INTREPID_VID, INTREPID_VALUECAN_PID) },
 	{ USB_DEVICE(INTREPID_VID, INTREPID_NEOVI_PID) },
@@ -511,6 +513,7 @@ static struct usb_device_id id_table_combined [] = {
 	{ USB_DEVICE(FTDI_VID, FTDI_TACTRIX_OPENPORT_13M_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_TACTRIX_OPENPORT_13S_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_TACTRIX_OPENPORT_13U_PID) },
+	{ USB_DEVICE(ELEKTOR_VID, ELEKTOR_FT323R_PID) },
 	{ },					/* Optional parameter entry */
 	{ }					/* Terminating entry */
 };
@@ -557,7 +560,8 @@ struct ftdi_private {
 	char prev_status, diff_status;        /* Used for TIOCMIWAIT */
 	__u8 rx_flags;		/* receive state flags (throttling) */
 	spinlock_t rx_lock;	/* spinlock for receive state */
-	struct work_struct rx_work;
+	struct delayed_work rx_work;
+	struct usb_serial_port *port;
 	int rx_processed;
 	unsigned long rx_bytes;
 
@@ -591,8 +595,8 @@ static int  ftdi_write_room		(struct usb_serial_port *port);
 static int  ftdi_chars_in_buffer	(struct usb_serial_port *port);
 static void ftdi_write_bulk_callback	(struct urb *urb);
 static void ftdi_read_bulk_callback	(struct urb *urb);
-static void ftdi_process_read		(void *param);
-static void ftdi_set_termios		(struct usb_serial_port *port, struct termios * old);
+static void ftdi_process_read		(struct work_struct *work);
+static void ftdi_set_termios		(struct usb_serial_port *port, struct ktermios * old);
 static int  ftdi_tiocmget               (struct usb_serial_port *port, struct file *file);
 static int  ftdi_tiocmset		(struct usb_serial_port *port, struct file * file, unsigned int set, unsigned int clear);
 static int  ftdi_ioctl			(struct usb_serial_port *port, struct file * file, unsigned int cmd, unsigned long arg);
@@ -1199,7 +1203,8 @@ static int ftdi_sio_attach (struct usb_serial *serial)
 		port->read_urb->transfer_buffer_length = BUFSZ;
 	}
 
-	INIT_WORK(&priv->rx_work, ftdi_process_read, port);
+	INIT_DELAYED_WORK(&priv->rx_work, ftdi_process_read);
+	priv->port = port;
 
 	/* Free port's existing write urb and transfer buffer. */
 	if (port->write_urb) {
@@ -1386,8 +1391,7 @@ static void ftdi_close (struct usb_serial_port *port, struct file *filp)
 	flush_scheduled_work();
 
 	/* shutdown our bulk read */
-	if (port->read_urb)
-		usb_kill_urb(port->read_urb);
+	usb_kill_urb(port->read_urb);
 } /* ftdi_close */
 
 
@@ -1639,17 +1643,18 @@ static void ftdi_read_bulk_callback (struct urb *urb)
 	priv->rx_bytes += countread;
 	spin_unlock_irqrestore(&priv->rx_lock, flags);
 
-	ftdi_process_read(port);
+	ftdi_process_read(&priv->rx_work.work);
 
 } /* ftdi_read_bulk_callback */
 
 
-static void ftdi_process_read (void *param)
+static void ftdi_process_read (struct work_struct *work)
 { /* ftdi_process_read */
-	struct usb_serial_port *port = (struct usb_serial_port*)param;
+	struct ftdi_private *priv =
+		container_of(work, struct ftdi_private, rx_work.work);
+	struct usb_serial_port *port = priv->port;
 	struct urb *urb;
 	struct tty_struct *tty;
-	struct ftdi_private *priv;
 	char error_flag;
 	unsigned char *data;
 
@@ -1876,7 +1881,7 @@ static void ftdi_break_ctl( struct usb_serial_port *port, int break_state )
  * WARNING: set_termios calls this with old_termios in kernel space
  */
 
-static void ftdi_set_termios (struct usb_serial_port *port, struct termios *old_termios)
+static void ftdi_set_termios (struct usb_serial_port *port, struct ktermios *old_termios)
 { /* ftdi_termios */
 	struct usb_device *dev = port->serial->dev;
 	unsigned int cflag = port->tty->termios->c_cflag;
@@ -2178,7 +2183,7 @@ static void ftdi_unthrottle (struct usb_serial_port *port)
 	spin_unlock_irqrestore(&priv->rx_lock, flags);
 
 	if (actually_throttled)
-		schedule_work(&priv->rx_work);
+		schedule_delayed_work(&priv->rx_work, 0);
 }
 
 static int __init ftdi_init (void)

@@ -136,8 +136,10 @@ static void omap_init_i2c(void)
 	 * it can include clocking and address info, maybe more.
 	 */
 	if (cpu_is_omap24xx()) {
-		omap_cfg_reg(M19_24XX_I2C1_SCL);
-		omap_cfg_reg(L15_24XX_I2C1_SDA);
+		if (machine_is_omap_h4()) {
+			omap_cfg_reg(M19_24XX_I2C1_SCL);
+			omap_cfg_reg(L15_24XX_I2C1_SDA);
+		}
 	} else {
 		omap_cfg_reg(I2C_SCL);
 		omap_cfg_reg(I2C_SDA);
@@ -440,7 +442,7 @@ static inline void omap_init_wdt(void) {}
 
 /*-------------------------------------------------------------------------*/
 
-#if	defined(CONFIG_OMAP_RNG) || defined(CONFIG_OMAP_RNG_MODULE)
+#if defined(CONFIG_HW_RANDOM_OMAP) || defined(CONFIG_HW_RANDOM_OMAP_MODULE)
 
 #ifdef CONFIG_ARCH_OMAP24XX
 #define	OMAP_RNG_BASE		0x480A0000
@@ -493,17 +495,21 @@ static inline void omap_init_rng(void) {}
  */
 static int __init omap_init_devices(void)
 {
+/*
+ * Need to enable relevant once for 2430 SDP
+ */
+#ifndef CONFIG_MACH_OMAP_2430SDP
 	/* please keep these calls, and their implementations above,
 	 * in alphabetical order so they're easier to sort through.
 	 */
 	omap_init_dsp();
-	omap_init_i2c();
 	omap_init_kp();
 	omap_init_mmc();
 	omap_init_uwire();
 	omap_init_wdt();
 	omap_init_rng();
-
+#endif
+	omap_init_i2c();
 	return 0;
 }
 arch_initcall(omap_init_devices);
