@@ -58,7 +58,7 @@ static DEFINE_SPINLOCK(lock);
 
 #define	EVM_I2C_ADDR	0x38
 
-static void pcf_work(void *unused)
+static void pcf_work(struct work_struct *unused)
 {
 	struct i2c_adapter	*adap;
 	int			err;
@@ -91,7 +91,7 @@ static void pcf_work(void *unused)
 
 }
 
-static DECLARE_WORK(work, pcf_work, NULL);
+static DECLARE_WORK(work, pcf_work);
 
 static void evm_leds_event(led_event_t evt)
 {

@@ -32,7 +32,6 @@
  **************************************************************************/
 
 #include <asm/sizes.h>
-#include <asm/memory.h>
 #include <asm/arch/io.h>
 
 /*

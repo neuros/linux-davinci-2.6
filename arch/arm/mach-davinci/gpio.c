@@ -6,6 +6,7 @@
 #include <linux/err.h>
 
 #include <asm/io.h>
+#include <asm/irq.h>
 #include <asm/arch/irqs.h>
 #include <asm/arch/hardware.h>
 #include <asm/arch/gpio.h>
@@ -102,7 +103,7 @@ EXPORT_SYMBOL(gpio_set_direction);
 
 static void gpio_irq_disable(unsigned irq)
 {
-	struct gpio_controller	*__iomem g = get_irq_chipdata(irq);
+	struct gpio_controller	*__iomem g = get_irq_chip_data(irq);
 	u32			mask = gpio_mask(irq2gpio(irq));
 
 	__raw_writel(mask, &g->clr_falling);
@@ -111,7 +112,7 @@ static void gpio_irq_disable(unsigned irq)
 
 static void gpio_irq_enable(unsigned irq)
 {
-	struct gpio_controller	*__iomem g = get_irq_chipdata(irq);
+	struct gpio_controller	*__iomem g = get_irq_chip_data(irq);
 	u32			mask = gpio_mask(irq2gpio(irq));
 
 	if (irq_desc[irq].status & IRQ_TYPE_EDGE_FALLING)
@@ -122,7 +123,7 @@ static void gpio_irq_enable(unsigned irq)
 
 static int gpio_irq_type(unsigned irq, unsigned trigger)
 {
-	struct gpio_controller	*__iomem g = get_irq_chipdata(irq);
+	struct gpio_controller	*__iomem g = get_irq_chip_data(irq);
 	unsigned		mask = gpio_mask(irq2gpio(irq));
 
 	if (trigger & ~(IRQ_TYPE_EDGE_FALLING|IRQ_TYPE_EDGE_RISING))
@@ -147,9 +148,9 @@ static struct irq_chip gpio_irqchip = {
 };
 
 static void
-gpio_irq_handler(unsigned irq, struct irqdesc *desc)
+gpio_irq_handler(unsigned irq, struct irq_desc *desc)
 {
-	struct gpio_controller	*__iomem g = get_irq_chipdata(irq);
+	struct gpio_controller	*__iomem g = get_irq_chip_data(irq);
 	u32			mask = 0xffff;
 
 	/* we only care about one bank */
@@ -160,7 +161,7 @@ gpio_irq_handler(unsigned irq, struct irqdesc *desc)
 	desc->chip->ack(irq);
 	for (;;) {
 		u32		status;
-		struct irqdesc	*gpio;
+		struct irq_desc	*gpio;
 		int		n;
 
 		/* ack any irqs */
@@ -222,15 +223,15 @@ static int __init davinci_gpio_irq_setup(void)
 
 		/* set up all irqs in this bank */
 		set_irq_chained_handler(bank, gpio_irq_handler);
-		set_irq_chipdata(bank, g);
+		set_irq_chip_data(bank, g);
 		set_irq_data(bank, (void *) irq);
 
 		for (i = 0;
 				i < 16 && gpio < DAVINCI_N_GPIO;
 				i++, irq++, gpio++) {
 			set_irq_chip(irq, &gpio_irqchip);
-			set_irq_chipdata(irq, g);
-			set_irq_handler(irq, do_simple_IRQ);
+			set_irq_chip_data(irq, g);
+			set_irq_handler(irq, handle_simple_irq);
 			set_irq_flags(irq, IRQF_VALID);
 		}
 	}

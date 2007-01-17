@@ -11,12 +11,13 @@
  * kind, whether express or implied.
  */
 
+#include <linux/types.h>
 #include <linux/serial_reg.h>
 #include <asm/hardware.h>
 
 /* PORT_16C550A, in polled non-fifo mode */
 
-static void putc(const char c)
+static void putc(int c)
 {
 	volatile u32	*uart = (volatile void *) DAVINCI_UART0_BASE;
 
