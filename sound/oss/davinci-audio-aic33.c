@@ -315,6 +315,9 @@ static int aic33_update(int flag, int val)
 		break;
 
 	case SET_RECSRC:
+		if (hweight32(val) > 1)
+			val &= ~aic33_local.recsrc;
+
 		if (val == SOUND_MASK_MIC) {
 			/* enable the mic input*/
 			DPRINTK("Enabling mic\n");
@@ -477,9 +480,6 @@ mixer_ioctl(struct inode *inode, struct file *file, uint cmd, ulong arg)
 			break;
 
 		case SOUND_MIXER_RECSRC:
-			if (hweight32(val) > 1)
-				ret = -EINVAL;
-
 			if ((val & SOUND_MASK_LINE) ||
 			    (val & SOUND_MASK_MIC)) {
 				if (aic33_local.recsrc != val) {
@@ -647,7 +647,6 @@ int davinci_set_samplerate(long sample_rate)
 		audio_aic33_write(4, 0x14);	/* J-value */
 		audio_aic33_write(5, 0x7D);	/* D-value 8-MSB's */
 		audio_aic33_write(6, 0x04);	/* D-value 6-LSB's */
-		//audio_aic33_write (11, 0x01); /* R-value, Default is 0x01 */
 
 	}
 
@@ -663,37 +662,34 @@ int davinci_set_samplerate(long sample_rate)
 		audio_aic33_write(4, 0x14);	/* J-value */
 		audio_aic33_write(5, 0x34);	/* D-value 8-MSB's */
 		audio_aic33_write(6, 0x14);	/* D-value 6-LSB's */
-		//audio_aic33_write(11, 0x01); /* R-value, Default is 0x01 */
 	}
 #elif(MCLK==22)
 
 	if ((reg_info[count].Fsref == 96000) | (reg_info[count].Fsref == 48000)) {
-		/* For MCLK = 22.5 MHz and to get Fsref = 48kHz
+		/* For MCLK = 22.5792 MHz and to get Fsref = 48kHz
 		   Fsref = (MCLK * k * R)/(2048 * p);
-		   Select P = 2, R= 1, K = 8.7381, which results in J = 8, D = 7381 */
+		   Select P = 2, R= 1, K = 8.7075, which results in J = 8, D = 7075 */
 
 		/*Enable the PLL | Q-value | P-value */
 		audio_aic33_write(3, PLL_ENABLE | 0x10 | 0x02);
 		audio_aic33_write(4, (8 << 2));	/* J-value */
-		audio_aic33_write(5, (unsigned char)(7381 >> 6));	/* D-value 8-MSB's */
-		audio_aic33_write(6, (unsigned char)(7381 << 2));	/* D-value 6-LSB's */
-		//audio_aic33_write (11, 0x01); /* R-value, Default is 0x01 */
+		audio_aic33_write(5, (unsigned char)(7075 >> 6));	/* D-value 8-MSB's */
+		audio_aic33_write(6, (unsigned char)(7075 << 2));	/* D-value 6-LSB's */
 
 	}
 
 	else if ((reg_info[count].Fsref == 88200) | (reg_info[count].Fsref ==
 						     44100)) {
 
-		/* MCLK = 22.5 MHz and to get Fsref = 44.1kHz
+		/* MCLK = 22.5792 MHz and to get Fsref = 44.1kHz
 		   Fsref = (MCLK * k * R)/(2048 * p);
-		   Select P = 2, R =1, K = 8.0281, which results in J = 8, D = 0281 */
+		   Select P = 2, R =1, K = 8.0000, which results in J = 8, D = 0000 */
 
 		/*Enable the PLL | Q-value | P-value */
 		audio_aic33_write(3, PLL_ENABLE | 0x10 | 0x02);
 		audio_aic33_write(4, (8 << 2));	/* J-value */
-		audio_aic33_write(5, (unsigned char)(281 >> 6));	/* D-value 8-MSB's */
-		audio_aic33_write(6, (unsigned char)(281 << 2));	/* D-value 6-LSB's */
-		//audio_aic33_write(11, 0x01); /* R-value, Default is 0x01*/
+		audio_aic33_write(5, 0x00);	/* D-value 8-MSB's */
+		audio_aic33_write(6, 0x00);	/* D-value 6-LSB's */
 	}
 #else
 #error "unknown audio codec frequency"
@@ -789,9 +785,8 @@ static void davinci_set_mono_stereo(int mode)
 		/* MONO_LOP/M Output level control register */
 		audio_aic33_write(79, 0x99);
 #else
-		/* HPLOUT/HPROUT output level control */
-		audio_aic33_write(51, 0x99);
-		audio_aic33_write(65, 0x99);
+		/* Driver power ON pop control */
+		audio_aic33_write(42, 0x6C);
 
 		/* LEFT_LOP/M, RIGHT_LOP/M output level control */
 		audio_aic33_write(86, 0x99);
@@ -800,6 +795,8 @@ static void davinci_set_mono_stereo(int mode)
 		/* Left DAC power up, Right DAC power down */
 		audio_aic33_write(37, 0xa0);
 	} else if (mode == STEREO) {
+		/* Driver power ON pop control */
+		audio_aic33_write(42, 0x6C);
 
 		/* HPLOUT/HPROUT output level control */
 		audio_aic33_write(51, 0x99);
@@ -853,9 +850,6 @@ static void davinci_aic33_initialize(void *dummy)
 
 	/* if configured, then stop mcbsp */
 	davinci_mcbsp_stop(AUDIO_MCBSP);
-
-	/* configure aic33 with default params */
-	aic33_configure();
 
 	/* set initial (default) sample rate */
 	davinci_set_samplerate(audio_samplerate);
@@ -1031,11 +1025,15 @@ static int __init audio_aic33_init(void)
 		DPRINTK("codec driver register success\n");
 	}
 
+	/* configure aic33 with default params */
+	aic33_configure();
+
 	return err;
 }
 
 static void __exit audio_aic33_exit(void)
 {
+	davinci_aic33_shutdown(NULL);
 	(void)audio_unregister_codec(&aic33_state);
 	return;
 }
@@ -1044,9 +1042,7 @@ static void __exit audio_aic33_exit(void)
 static int codec_start(char *buf, char **start, off_t offset, int count,
 		       int *eof, void *data)
 {
-	void *foo = NULL;
-
-	davinci_aic33_initialize(foo);
+	davinci_aic33_initialize(NULL);
 
 	DPRINTK("AIC33 codec initialization done.\n");
 	return 0;
@@ -1055,9 +1051,7 @@ static int codec_start(char *buf, char **start, off_t offset, int count,
 static int codec_stop(char *buf, char **start, off_t offset, int count,
 		      int *eof, void *data)
 {
-	void *foo = NULL;
-
-	davinci_aic33_shutdown(foo);
+	davinci_aic33_shutdown(NULL);
 
 	DPRINTK("AIC33 codec shutdown.\n");
 	return 0;

@@ -87,7 +87,7 @@ static unsigned long edma_channels_arm[] = {
   availability  on arm side events
 */
 static unsigned char qdma_channels_arm[] = {
-	0xff
+	0x00
 };
 
 /*
@@ -95,7 +95,7 @@ static unsigned char qdma_channels_arm[] = {
    availibility on arm side events
 */
 static unsigned long param_entry_arm[] = {
-	0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
+	0xffffffff, 0xffffffff, 0x0000ffff, 0xffffffff,
 	0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
 	0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,
 	0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff

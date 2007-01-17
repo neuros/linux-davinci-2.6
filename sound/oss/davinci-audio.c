@@ -961,7 +961,7 @@ audio_ioctl(struct inode *inode, struct file *file, uint cmd, ulong arg)
 			audio_buf_info inf = { 0, };
 			audio_stream_t *s =
 			    (cmd == SNDCTL_DSP_GETOSPACE) ? os : is;
-			audio_buf_t *b = &s->buffers[s->usr_head];
+			audio_buf_t *b = NULL;
 
 			if ((s == is && !(file->f_mode & FMODE_READ)) ||
 			    (s == os && !(file->f_mode & FMODE_WRITE))) {
@@ -972,6 +972,7 @@ audio_ioctl(struct inode *inode, struct file *file, uint cmd, ulong arg)
 				FN_OUT(19);
 				return -ENOMEM;
 			}
+			b = &s->buffers[s->usr_head];
 			inf.bytes = s->wfc.done * s->fragsize;
 			inf.bytes -= b->offset;
 			if(inf.bytes < 0)
@@ -1161,11 +1162,6 @@ static int audio_release(struct inode *inode, struct file *file)
 			os->dma_spinref = 0;
 		}
 		state->wr_ref = 0;
-	}
-
-	if (!AUDIO_ACTIVE(state)) {
-		if (state->hw_shutdown)
-			state->hw_shutdown(state->data);
 	}
 
 	up(&state->sem);

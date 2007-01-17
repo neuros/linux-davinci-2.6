@@ -49,6 +49,7 @@
 #include <linux/interrupt.h>
 #include <linux/dma-mapping.h>
 #include <linux/completion.h>
+#include <linux/delay.h>
 
 #include <asm/uaccess.h>
 #include <asm/io.h>
@@ -532,6 +533,7 @@ int audio_sync(struct file *file)
 	 * a full sample count.
 	 */
 	b = &s->buffers[s->usr_head];
+	mdelay(20);
 	if (b->offset &= ~3) {
 		/*wait for a buffer to become free */
 		if (wait_for_completion_interruptible(&s->wfc))
@@ -601,8 +603,8 @@ void audio_stop_dma(audio_stream_t * s)
 
 	local_irq_save(flags);
 
-	davinci_mcbsp_stop(0);
-	s->started = 0;
+	davinci_stop_dma(s->master_ch);
+	s->dma_started = 0;
 
 	if (s->spin_idle) {
 #if 0
@@ -661,6 +663,8 @@ void audio_reset(audio_stream_t * s)
 	FN_IN;
 	if (s->buffers) {
 
+		davinci_mcbsp_stop(0);
+		s->started = 0;
 		audio_stop_dma(s);
 		/* back up pointers to be ready to restart from the same spot */
 		while (s->dma_head != s->dma_tail) {
@@ -690,10 +694,7 @@ void audio_reset(audio_stream_t * s)
 	AUDIO_QUEUE_INIT(s);
 	s->active = 0;
 	s->stopped = 0;
-	s->started = 0;
-	s->dma_started = 0;
 
-	davinci_stop_dma(s->master_ch);
 	FN_OUT(0);
 	return;
 }
@@ -757,17 +758,18 @@ static int audio_start_dma_chain(audio_stream_t * s)
 	int channel = s->lch[s->dma_q_head];
 	FN_IN;
 
-	if (!s->started) {
+	if (!s->dma_started) {
 		edmacc_paramentry_regs temp;
 		davinci_get_dma_params(channel, &temp);
 		davinci_set_dma_params(s->master_ch, &temp);
-		s->started = 1;
 
-		if (!s->dma_started) {
-			davinci_start_dma(s->master_ch);
-			s->dma_started = 1;
-		}
+		davinci_start_dma(s->master_ch);
+		s->dma_started = 1;
+	}
+
+	if (!s->started) {
 		davinci_mcbsp_start(0);
+		s->started = 1;
 	}
 
 	/* else the dma itself will progress forward with out our help */
