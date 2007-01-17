@@ -289,7 +289,7 @@ static int davincifb_venc_check_mode(const struct dm_win_info *w,
 }
 
 static void set_sdram_params(char *id, u32 addr, u32 line_length);
-static irqreturn_t davincifb_isr(int irq, void *arg, struct pt_regs *regs)
+static irqreturn_t davincifb_isr(int irq, void *arg)
 {
 	struct dm_info *dm = (struct dm_info *)arg;
 	unsigned long addr=0;
@@ -1232,7 +1232,7 @@ static struct fb_info *init_fb_info(struct dm_win_info *w,
 	info->fix.visual = (info->var.bits_per_pixel <= 8) ?
 	    FB_VISUAL_PSEUDOCOLOR : FB_VISUAL_TRUECOLOR;
 	info->fix.xpanstep = 0;
-	info->fix.ypanstep = 0;
+	info->fix.ypanstep = 1;
 	info->fix.ywrapstep = 0;
 	info->fix.type_aux = 0;
 	info->fix.mmio_start = dm->mmio_base_phys;
