@@ -490,13 +490,6 @@ static inline struct musb *gadget_to_musb(struct usb_gadget *g)
 }
 #endif
 
-#ifdef CONFIG_USB_MUSB_OTG
-/* sysfs flag to seletively force peripheral-only operation */
-extern int musb_otg;
-#else
-#define musb_otg 0
-#endif
-
 
 /***************************** Glue it together *****************************/
 
@@ -525,7 +518,7 @@ extern int musb_platform_get_vbus_status(struct musb *musb);
 #define musb_platform_get_vbus_status(x)	0
 #endif
 
-extern int __devinit musb_platform_init(struct musb *musb);
+extern int __init musb_platform_init(struct musb *musb);
 extern int musb_platform_exit(struct musb *musb);
 
 /*-------------------------- ProcFS definitions ---------------------*/
