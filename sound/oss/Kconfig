@@ -754,7 +754,6 @@ config SOUND_SH_DAC_AUDIO_CHANNEL
 config SOUND_DAVINCI
 	tristate "DaVinci Sound Driver"
 	depends on ARCH_DAVINCI && SOUND_PRIME!=n && SOUND
-	select DAVINCI_MCBSP
 	---help---
 	DaVinci Sound driver
 

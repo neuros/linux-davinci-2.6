@@ -27,8 +27,10 @@ config DAVINCI_I2C_EXPANDER
 	  has I2C exapnder with ATA, USB, CF.
 
 config DAVINCI_MCBSP
-	bool "DaVinci McBSP Driver"
+	bool
+        prompt "DaVinci McBSP Driver" if SOUND_DAVINCI=n
 	depends on ARCH_DAVINCI
+	default SOUND_DAVINCI
 	---help---
 	DaVinci McBSP driver.  Auto-enabled by DaVinci sound driver.
 
