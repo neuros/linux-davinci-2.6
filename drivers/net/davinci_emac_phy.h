@@ -25,8 +25,10 @@
  * Modifications:
  *  HISTORY:
  *  Date      Modifier         Ver    Notes
+ *  01Jan01 Denis, Bill             Original
  *  27Mar02 Michael Hanrahan Original (modified from emacmdio.h)
- *  04Apr02 Michael Hanrahan Added Interrupt Support *  01Jan01 Denis, Bill             Original
+ *  04Apr02 Michael Hanrahan Added Interrupt Support
+ *  07Dec06 Paul Bartholomew Added PHY_DUPLEX_* defines
  */
 #ifndef _DAVINCI_EMAC_PHY_H_
 #define _DAVINCI_EMAC_PHY_H_
@@ -42,6 +44,12 @@
 #define NWAY_FD10           (1<<6)
 #define NWAY_HD10           (1<<5)
 #define NWAY_AUTO           (1<<0)
+
+/* phy duplex values */
+#define	PHY_DUPLEX_AUTO		0	/* Auto Negotiate */
+#define	PHY_DUPLEX_UNKNOWN	1	/* Unknown */
+#define	PHY_DUPLEX_HALF		2	/* Half Duplex */
+#define	PHY_DUPLEX_FULL		3	/* Full Duplex */
 
 /*
  *    Tic() return values

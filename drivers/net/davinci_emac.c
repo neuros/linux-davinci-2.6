@@ -25,6 +25,11 @@
       2.0 Suraj Iyer, Sharath Kumar, Ajay Singh - Completed for TI BCG
       3.0 Anant Gole - Modified and ported for DaVinci
       4.0 Kevin Hilman, Anant Gole - Linuxification of the driver
+      4.? Paul Bartholomew - Use PHY_DUPLEX_* constants instead
+                             of hard-coded numbers.  Also, fixed
+                             EMAC_IOCTL_READ_PHY_REG in emac_control() -
+                             the phy_num and reg_addr args were swapped
+                             in call to emac_mdio_read().
  */
 
 /*
@@ -80,6 +85,8 @@
 #include <asm/page.h>
 #include <asm/arch/memory.h>
 #include <asm/arch/hardware.h>
+
+#include "davinci_emac_phy.h"
 
 /* ---------------------------------------------------------------
  * linux module options
@@ -1220,7 +1227,7 @@ typedef struct {
 	u32 hw_status;
 	u32 hw_err_info;
 	u32 phy_linked;		/* link status: 1=linked, 0=no link */
-	u32 phy_duplex;		/* duplex status: 1=full duplex, 0=half duplex */
+	u32 phy_duplex;		/* duplex status: 3=full duplex, 2=half duplex */
 
 	u32 phy_speed;		/* link speed = 10, 100, 1000 */
 	u32 phy_num;		/* phy number - useful if phy number is discovered */
@@ -1967,7 +1974,8 @@ static int emac_control_cb(emac_dev_t * dev, int cmd,
 				    ((status->
 				      phy_speed == 100) ? 100000000 : 10000000);
 				dev->link_mode =
-				    ((status->phy_duplex == 3) ? 3 : 2);
+				    ((status->phy_duplex == PHY_DUPLEX_FULL) ?
+					PHY_DUPLEX_FULL : PHY_DUPLEX_HALF);
 
 				/* reactivate the transmit queue if it
 				 * is stopped */
@@ -1996,7 +2004,7 @@ static int emac_control_cb(emac_dev_t * dev, int cmd,
 				DBG("%s, PhyNum %d,  %s, %s, %s\n",
 				    ((struct net_device *)dev->owner)->name,
 				    status->phy_num,
-				    ((status->phy_duplex == 3) ?
+				    ((status->phy_duplex == PHY_DUPLEX_FULL) ?
 				     "Full Duplex" : "Half Duplex"),
 				    ((status->phy_speed == 100) ?
 				     "100 Mbps" : "10 Mbps"),
@@ -2198,26 +2206,26 @@ static int emac_net_get_config(emac_dev_t * dev)
 	if (speed == CONFIG_EMAC_NOPHY) {
 		i_cfg->phy_mode = SNWAY_NOPHY;
 	} else {
-		if ((speed == 0) && (duplex == 0)) {
+		if ((speed == 0) && (duplex == PHY_DUPLEX_AUTO)) {
 			i_cfg->phy_mode = SNWAY_AUTOALL;
 		} else if (speed == 10) {
-			if (duplex == 2) {
+			if (duplex == PHY_DUPLEX_HALF) {
 				i_cfg->phy_mode = SNWAY_HD10;
-			} else if (duplex == 3) {
+			} else if (duplex == PHY_DUPLEX_FULL) {
 				i_cfg->phy_mode = SNWAY_FD10;
 			} else {
 				i_cfg->phy_mode = SNWAY_HD10 | SNWAY_FD10;
 			}
 		} else if (speed == 100) {
-			if (duplex == 2) {
+			if (duplex == PHY_DUPLEX_HALF) {
 				i_cfg->phy_mode = SNWAY_HD100;
-			} else if (duplex == 3) {
+			} else if (duplex == PHY_DUPLEX_FULL) {
 				i_cfg->phy_mode = SNWAY_FD100;
 			} else {
 				i_cfg->phy_mode = SNWAY_HD100 | SNWAY_FD100;
 			}
 		} else {
-			if (duplex == 3) {
+			if (duplex == PHY_DUPLEX_FULL) {
 				i_cfg->phy_mode = SNWAY_FD10 | SNWAY_FD100;
 			} else {
 				i_cfg->phy_mode = SNWAY_HD10 | SNWAY_HD100;
@@ -3773,7 +3781,8 @@ static int emac_ioctl(struct net_device *netdev, struct ifreq *rq, int cmd)
 
 				local_params.eth_duplex_status =
 				    ((dev->link_mode ==
-				      3) ? MIB2_FULL_DUPLEX : MIB2_HALF_DUPLEX);
+				      PHY_DUPLEX_FULL) ?
+					MIB2_FULL_DUPLEX : MIB2_HALF_DUPLEX);
 
 				/* now copy the counters to the user data */
 				if (copy_to_user
@@ -3972,7 +3981,7 @@ static int emac_update_phy_status(emac_dev_t * _dev)
 		/*  no phy condition, always linked */
 		dev->status.phy_linked = 1;
 		dev->status.phy_speed = 100;
-		dev->status.phy_duplex = 1;
+		dev->status.phy_duplex = PHY_DUPLEX_FULL;
 		dev->status.phy_num = 0xFFFFFFFF;	/* no phy */
 		dev->mac_control |= (1 << EMAC_MACCONTROL_FULLDUPLEXEN_SHIFT);
 
@@ -3995,7 +4004,7 @@ static int emac_update_phy_status(emac_dev_t * _dev)
 	if (dev->status.phy_linked) {
 		/*  retreive duplex and speed and the phy number  */
 		if (set_phy_mode & SNWAY_LPBK) {
-			dev->status.phy_duplex = 1;
+			dev->status.phy_duplex = PHY_DUPLEX_FULL;
 		} else {
 			dev->status.phy_duplex = emac_mdio_get_duplex();
 		}
@@ -4003,7 +4012,7 @@ static int emac_update_phy_status(emac_dev_t * _dev)
 		dev->status.phy_num = emac_mdio_get_phy_num();
 
 		/* set the duplex bit in maccontrol */
-		if (dev->status.phy_duplex) {
+		if (dev->status.phy_duplex == PHY_DUPLEX_FULL) {
 			dev->mac_control |=
 			    (1 << EMAC_MACCONTROL_FULLDUPLEXEN_SHIFT);
 		} else {
@@ -4021,7 +4030,7 @@ static int emac_update_phy_status(emac_dev_t * _dev)
 	       "MacControl=%08X, Status: Phy=%d, Speed=%s, Duplex=%s",
 	       dev->mac_control, dev->status.phy_num,
 	       (dev->status.phy_speed == 100) ? "100" : "10",
-	       (dev->status.phy_duplex == 3) ? "Full" : "Half");
+	       (dev->status.phy_duplex == PHY_DUPLEX_FULL) ? "Full" : "Half");
 	LOGMSG(EMAC_DEBUG_BUSY_FUNCTION_EXIT, "");
 
 	return (EMAC_SUCCESS);
@@ -4667,8 +4676,8 @@ static int emac_control(emac_dev_t * _dev, int cmd, void *cmd_arg, void *param)
 			emac_phy_params *phy_params =
 			    (emac_phy_params *) cmd_arg;
 
-			phy_params->data = emac_mdio_read(phy_params->reg_addr,
-							  phy_params->phy_num);
+			phy_params->data = emac_mdio_read(phy_params->phy_num,
+							  phy_params->reg_addr);
 		}
 		break;
 

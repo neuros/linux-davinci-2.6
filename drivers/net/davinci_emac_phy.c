@@ -24,8 +24,10 @@
  Modifications:
  *  HISTORY:
  *  Date      	Modifier         		Notes
- *  2001/02 	Denis, Bill, Michael    Original
- *  14Feb2006	Anant Gole 				Re-written for linux
+ *  2001/02 	Denis, Bill, Michael		Original
+ *  14Feb2006	Anant Gole 			Re-written for linux
+ *  07Dec2006	Paul Bartholomew		Fix half-duplex,
+ *           					use PHY_DUPLEX_* constants
  */
 #include <linux/kernel.h>
 
@@ -184,7 +186,7 @@ int emac_mdio_init(unsigned int mdio_base,
 	emac_phy->state = PHY_INIT;
 	emac_phy->debug_mode = verbose;
 	emac_phy->speed = 10;
-	emac_phy->duplex = 2;	/* Half duplex */
+	emac_phy->duplex = PHY_DUPLEX_HALF;	/* Half duplex */
 
 	if (mdio_clock_freq & mdio_bus_freq) {
 		clk_div = ((mdio_bus_freq / mdio_clock_freq) - 1);
@@ -574,7 +576,8 @@ void emac_mdio_nwaywait_state(void)
 		emac_phy->speed =
 		    (neg_mode & (MII_NWAY_FD100 | MII_NWAY_HD100)) ? 100 : 10;
 		emac_phy->duplex =
-		    (neg_mode & (MII_NWAY_FD100 | MII_NWAY_FD10)) ? 3 : 2;
+		    (neg_mode & (MII_NWAY_FD100 | MII_NWAY_FD10)) ?
+				PHY_DUPLEX_FULL : PHY_DUPLEX_HALF;
 
 	} else {
 
