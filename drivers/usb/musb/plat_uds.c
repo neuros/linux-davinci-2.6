@@ -122,6 +122,15 @@ module_param(debug, uint, 0);
 MODULE_PARM_DESC(debug, "initial debug message level");
 
 #define MUSB_VERSION_SUFFIX	"/dbg"
+#else
+
+const char *otg_state_string(struct musb *musb)
+{
+	static char buf[8];
+
+	snprintf(buf, sizeof buf, "otg-%d", musb->xceiv.state);
+	return buf;
+}
 #endif
 
 #define DRIVER_AUTHOR "Mentor Graphics, Texas Instruments, Nokia"
@@ -463,9 +472,11 @@ static irqreturn_t musb_stage0_irq(struct musb * pThis, u8 bIntrUSB,
 	}
 
 	if (bIntrUSB & MGC_M_INTR_CONNECT) {
+		struct usb_hcd *hcd = musb_to_hcd(pThis);
+
 		handled = IRQ_HANDLED;
 		pThis->is_active = 1;
-		set_bit(HCD_FLAG_SAW_IRQ, &musb_to_hcd(pThis)->flags);
+		set_bit(HCD_FLAG_SAW_IRQ, &hcd->flags);
 
 		pThis->bEnd0Stage = MGC_END0_START;
 
@@ -487,7 +498,10 @@ static irqreturn_t musb_stage0_irq(struct musb * pThis, u8 bIntrUSB,
 		if (devctl & MGC_M_DEVCTL_LSDEV)
 			pThis->port1_status |= USB_PORT_STAT_LOW_SPEED;
 
-		usb_hcd_poll_rh_status(musb_to_hcd(pThis));
+		if (hcd->status_urb)
+			usb_hcd_poll_rh_status(hcd);
+		else
+			usb_hcd_resume_root_hub(hcd);
 
 		MUSB_HST_MODE(pThis);
 
@@ -1616,7 +1630,7 @@ static void musb_free(struct musb *musb)
 		struct dma_controller	*c = musb->pDmaController;
 
 		(void) c->stop(c->pPrivateData);
-		dma_controller_factory.destroy(c);
+		dma_controller_destroy(c);
 	}
 
 	musb_writeb(musb->pRegs, MGC_O_HDRC_DEVCTL, 0);
@@ -1710,10 +1724,7 @@ musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl)
 	if (use_dma && dev->dma_mask) {
 		struct dma_controller	*c;
 
-// FIXME get rid of dma_controller_factory and just call the methods
-// directly ... then create() can be in the init section, etc
-
-		c = dma_controller_factory.create(pThis, pThis->pRegs);
+		c = dma_controller_create(pThis, pThis->pRegs);
 		pThis->pDmaController = c;
 		if (c)
 			(void) c->start(c->pPrivateData);
