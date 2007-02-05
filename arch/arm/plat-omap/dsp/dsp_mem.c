@@ -2052,7 +2052,7 @@ void mbox_fbctl_upd(void)
 		return;
 	}
 	//printk("calling omapfb_update_window_async()\n");
-	omapfb_update_window_async(registered_fb[1], &win, fbupd_cb, NULL);
+	omapfb_update_window_async(registered_fb[0], &win, fbupd_cb, NULL);
 }
 
 #else /* CONFIG_FB_OMAP_LCDC_EXTERNAL */
@@ -2498,7 +2498,7 @@ int __init dsp_mem_init(void)
 	/*
 	 * DSP MMU interrupt setup
 	 */
-	ret = request_irq(omap_dsp->mmu_irq, dsp_mmu_interrupt, SA_INTERRUPT,
+	ret = request_irq(omap_dsp->mmu_irq, dsp_mmu_interrupt, IRQF_DISABLED,
 			  "dsp_mmu",  &devid_mmu);
 	if (ret) {
 		printk(KERN_ERR
