@@ -31,6 +31,8 @@
 #ifndef __ASM_ARCH_MEMORY_H
 #define __ASM_ARCH_MEMORY_H
 
+#ifdef __KERNEL__
+
 /**************************************************************************
  * Included Files
  **************************************************************************/
@@ -91,5 +93,7 @@ __arch_adjust_zones(int node, unsigned long *size, unsigned long *holes)
  */
 #define __virt_to_bus(x)	__virt_to_phys(x)
 #define __bus_to_virt(x)	__phys_to_virt(x)
+
+#endif // __KERNEL__
 
 #endif /* __ASM_ARCH_MEMORY_H */

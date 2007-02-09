@@ -27,6 +27,8 @@
 #include <asm/arch/memory.h>
 #include <asm/sizes.h>
 
+#ifdef __KERNEL__
+
 #ifdef CONFIG_MMU
 
 #ifndef TASK_SIZE
@@ -327,5 +329,7 @@ static inline __deprecated void *bus_to_virt(unsigned long x)
 #endif
 
 #include <asm-generic/memory_model.h>
+
+#endif // __KERNEL__
 
 #endif

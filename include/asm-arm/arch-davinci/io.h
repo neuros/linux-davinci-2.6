@@ -28,6 +28,8 @@
 #ifndef __ASM_ARCH_IO_H
 #define __ASM_ARCH_IO_H
 
+#ifdef __KERNEL__
+
 #define IO_SPACE_LIMIT 0xffffffff
 
 /*
@@ -95,5 +97,7 @@ extern void davinci_init_common_hw(void);
 #define __REG(x)	(*((volatile unsigned long *)io_p2v(x)))
 
 #endif
+
+#endif // __KERNEL__
 
 #endif /* __ASM_ARCH_IO_H */
