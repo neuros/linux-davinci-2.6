@@ -23,12 +23,15 @@
 #include <asm/arch/board.h>
 #include <asm/arch/mux.h>
 #include <asm/arch/gpio.h>
+#include <asm/arch/eac.h>
 
+#if	!defined(CONFIG_ARCH_OMAP243X)
 #if	defined(CONFIG_I2C_OMAP) || defined(CONFIG_I2C_OMAP_MODULE)
 
 #define OMAP2_I2C_BASE2		0x48072000
 #define OMAP2_I2C_INT2		57
 
+static u32 omap2_i2c2_clkrate	= 100;
 static struct resource i2c_resources2[] = {
 	{
 		.start		= OMAP2_I2C_BASE2,
@@ -46,6 +49,9 @@ static struct platform_device omap_i2c_device2 = {
 	.id             = 2,
 	.num_resources	= ARRAY_SIZE(i2c_resources2),
 	.resource	= i2c_resources2,
+	.dev		= {
+		.platform_data	= &omap2_i2c2_clkrate,
+	},
 };
 
 /* See also arch/arm/plat-omap/devices.c for first I2C on 24xx */
@@ -55,10 +61,9 @@ static void omap_init_i2c(void)
 	if (machine_is_omap_h4())
 		return;
 
-	if (!cpu_is_omap2430()) {
-		omap_cfg_reg(J15_24XX_I2C2_SCL);
-		omap_cfg_reg(H19_24XX_I2C2_SDA);
-	}
+	omap_cfg_reg(J15_24XX_I2C2_SCL);
+	omap_cfg_reg(H19_24XX_I2C2_SDA);
+
 	(void) platform_device_register(&omap_i2c_device2);
 }
 
@@ -66,6 +71,7 @@ static void omap_init_i2c(void)
 
 static void omap_init_i2c(void) {}
 
+#endif
 #endif
 
 #if defined(CONFIG_OMAP_DSP) || defined(CONFIG_OMAP_DSP_MODULE)
@@ -201,6 +207,38 @@ static void omap_init_mcspi(void)
 static inline void omap_init_mcspi(void) {}
 #endif
 
+#ifdef CONFIG_SND_OMAP24XX_EAC
+
+#define OMAP2_EAC_BASE			0x48090000
+
+static struct resource omap2_eac_resources[] = {
+	{
+		.start		= OMAP2_EAC_BASE,
+		.end		= OMAP2_EAC_BASE + 0x109,
+		.flags		= IORESOURCE_MEM,
+	},
+};
+
+static struct platform_device omap2_eac_device = {
+	.name		= "omap24xx-eac",
+	.id		= -1,
+	.num_resources	= ARRAY_SIZE(omap2_eac_resources),
+	.resource	= omap2_eac_resources,
+	.dev = {
+		.platform_data = NULL,
+	},
+};
+
+void omap_init_eac(struct eac_platform_data *pdata)
+{
+	omap2_eac_device.dev.platform_data = pdata;
+	platform_device_register(&omap2_eac_device);
+}
+
+#else
+void omap_init_eac(struct eac_platform_data *pdata) {}
+#endif
+
 /*-------------------------------------------------------------------------*/
 
 static int __init omap2_init_devices(void)
@@ -208,7 +246,9 @@ static int __init omap2_init_devices(void)
 	/* please keep these calls, and their implementations above,
 	 * in alphabetical order so they're easier to sort through.
 	 */
-	omap_init_i2c();
+	if (!cpu_is_omap2430()) {
+		omap_init_i2c();
+	}
 	omap_init_mbox();
 	omap_init_mcspi();
 	omap_init_sti();

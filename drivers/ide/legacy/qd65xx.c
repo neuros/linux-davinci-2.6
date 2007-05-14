@@ -16,16 +16,14 @@
  * Please set local bus speed using kernel parameter idebus
  * 	for example, "idebus=33" stands for 33Mhz VLbus
  * To activate controller support, use "ide0=qd65xx"
- * To enable tuning, use "ide0=autotune"
- * To enable second channel tuning (qd6580 only), use "ide1=autotune"
+ * To enable tuning, use "hda=autotune hdb=autotune"
+ * To enable 2nd channel tuning (qd6580 only), use "hdc=autotune hdd=autotune"
  */
 
 /*
  * Rewritten from the work of Colten Edwards <pje120@cs.usask.ca> by
  * Samuel Thibault <samuel.thibault@fnac.net>
  */
-
-#undef REALLY_SLOW_IO		/* most systems can safely undef this */
 
 #include <linux/module.h>
 #include <linux/types.h>
@@ -429,7 +427,7 @@ static int __init qd_probe(int base)
 		qd_setup(hwif, base, config, QD6500_DEF_DATA, QD6500_DEF_DATA,
 			 &qd6500_tune_drive);
 
-		create_proc_ide_interfaces();
+		ide_proc_register_port(hwif);
 
 		return 1;
 	}
@@ -461,7 +459,7 @@ static int __init qd_probe(int base)
 				 &qd6580_tune_drive);
 			qd_write_reg(QD_DEF_CONTR,QD_CONTROL_PORT);
 
-			create_proc_ide_interfaces();
+			ide_proc_register_port(hwif);
 
 			return 1;
 		} else {
@@ -481,7 +479,8 @@ static int __init qd_probe(int base)
 				 &qd6580_tune_drive);
 			qd_write_reg(QD_DEF_CONTR,QD_CONTROL_PORT);
 
-			create_proc_ide_interfaces();
+			ide_proc_register_port(hwif);
+			ide_proc_register_port(mate);
 
 			return 0; /* no other qd65xx possible */
 		}
@@ -490,9 +489,17 @@ static int __init qd_probe(int base)
 	return 1;
 }
 
+int probe_qd65xx = 0;
+
+module_param_named(probe, probe_qd65xx, bool, 0);
+MODULE_PARM_DESC(probe, "probe for QD65xx chipsets");
+
 /* Can be called directly from ide.c. */
 int __init qd65xx_init(void)
 {
+	if (probe_qd65xx == 0)
+		return -ENODEV;
+
 	if (qd_probe(0x30))
 		qd_probe(0xb0);
 	if (ide_hwifs[0].chipset != ide_qd65xx &&

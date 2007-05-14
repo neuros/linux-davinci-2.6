@@ -69,9 +69,8 @@ static void smb_destroy_inode(struct inode *inode)
 static void init_once(void * foo, struct kmem_cache * cachep, unsigned long flags)
 {
 	struct smb_inode_info *ei = (struct smb_inode_info *) foo;
-	unsigned long flagmask = SLAB_CTOR_VERIFY|SLAB_CTOR_CONSTRUCTOR;
 
-	if ((flags & flagmask) == SLAB_CTOR_CONSTRUCTOR)
+	if (flags & SLAB_CTOR_CONSTRUCTOR)
 		inode_init_once(&ei->vfs_inode);
 }
  
@@ -98,7 +97,7 @@ static int smb_remount(struct super_block *sb, int *flags, char *data)
 	return 0;
 }
 
-static struct super_operations smb_sops =
+static const struct super_operations smb_sops =
 {
 	.alloc_inode	= smb_alloc_inode,
 	.destroy_inode	= smb_destroy_inode,

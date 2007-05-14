@@ -825,7 +825,16 @@ static int onyx_resume(struct codec_info_item *cii)
 	int err = -ENXIO;
 
 	mutex_lock(&onyx->mutex);
-	/* take codec out of suspend */
+
+	/* reset codec */
+	onyx->codec.gpio->methods->set_hw_reset(onyx->codec.gpio, 0);
+	msleep(1);
+	onyx->codec.gpio->methods->set_hw_reset(onyx->codec.gpio, 1);
+	msleep(1);
+	onyx->codec.gpio->methods->set_hw_reset(onyx->codec.gpio, 0);
+	msleep(1);
+
+	/* take codec out of suspend (if it still is after reset) */
 	if (onyx_read_register(onyx, ONYX_REG_CONTROL, &v))
 		goto out_unlock;
 	onyx_write_register(onyx, ONYX_REG_CONTROL, v & ~(ONYX_ADPSV | ONYX_DAPSV));
@@ -1052,10 +1061,10 @@ static int onyx_i2c_attach(struct i2c_adapter *adapter)
 	busnode = pmac_i2c_get_bus_node(bus);
 
 	while ((dev = of_get_next_child(busnode, dev)) != NULL) {
-		if (device_is_compatible(dev, "pcm3052")) {
-			u32 *addr;
+		if (of_device_is_compatible(dev, "pcm3052")) {
+			const u32 *addr;
 			printk(KERN_DEBUG PFX "found pcm3052\n");
-			addr = (u32 *) get_property(dev, "reg", NULL);
+			addr = of_get_property(dev, "reg", NULL);
 			if (!addr)
 				return -ENODEV;
 			return onyx_create(adapter, dev, (*addr)>>1);
@@ -1065,7 +1074,7 @@ static int onyx_i2c_attach(struct i2c_adapter *adapter)
 	/* if that didn't work, try desperate mode for older
 	 * machines that have stuff missing from the device tree */
 	
-	if (!device_is_compatible(busnode, "k2-i2c"))
+	if (!of_device_is_compatible(busnode, "k2-i2c"))
 		return -ENODEV;
 
 	printk(KERN_DEBUG PFX "found k2-i2c, checking if onyx chip is on it\n");

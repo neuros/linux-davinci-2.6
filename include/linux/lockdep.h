@@ -8,6 +8,8 @@
 #ifndef __LINUX_LOCKDEP_H
 #define __LINUX_LOCKDEP_H
 
+struct task_struct;
+
 #ifdef CONFIG_LOCKDEP
 
 #include <linux/linkage.h>
@@ -132,6 +134,7 @@ struct lock_list {
 	struct list_head		entry;
 	struct lock_class		*class;
 	struct stack_trace		trace;
+	int				distance;
 };
 
 /*
@@ -242,7 +245,7 @@ extern void lock_release(struct lockdep_map *lock, int nested,
 
 # define INIT_LOCKDEP				.lockdep_recursion = 0,
 
-#define lockdep_depth(tsk)	((tsk)->lockdep_depth)
+#define lockdep_depth(tsk)	(debug_locks ? (tsk)->lockdep_depth : 0)
 
 #else /* !LOCKDEP */
 

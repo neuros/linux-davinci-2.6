@@ -243,6 +243,10 @@ extern struct boot_mem_map boot_mem_map;
 extern void add_memory_region(phys_t start, phys_t size, long type);
 
 extern void prom_init(void);
+extern void prom_free_prom_memory(void);
+
+extern void free_init_pages(const char *what,
+			    unsigned long begin, unsigned long end);
 
 /*
  * Initial kernel command line, usually setup by prom_init()
@@ -250,7 +254,7 @@ extern void prom_init(void);
 extern char arcs_cmdline[CL_SIZE];
 
 /*
- * Registers a0, a1, a3 and a4 as passed to the kenrel entry by firmware
+ * Registers a0, a1, a3 and a4 as passed to the kernel entry by firmware
  */
 extern unsigned long fw_arg0, fw_arg1, fw_arg2, fw_arg3;
 

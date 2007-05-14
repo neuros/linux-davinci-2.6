@@ -11,6 +11,7 @@
 
 #include <linux/wait.h>
 #include <linux/vt.h>
+#include <linux/workqueue.h>
 
 struct vt_struct;
 
@@ -36,6 +37,7 @@ struct vc_data {
 	unsigned char	vc_color;		/* Foreground & background */
 	unsigned char	vc_s_color;		/* Saved foreground & background */
 	unsigned char	vc_ulcolor;		/* Color for underline mode */
+	unsigned char   vc_itcolor;
 	unsigned char	vc_halfcolor;		/* Color for half intensity mode */
 	/* cursor */
 	unsigned int	vc_cursor_type;
@@ -70,10 +72,12 @@ struct vc_data {
 	unsigned int	vc_deccolm	: 1;	/* 80/132 Column Mode */
 	/* attribute flags */
 	unsigned int	vc_intensity	: 2;	/* 0=half-bright, 1=normal, 2=bold */
+	unsigned int    vc_italic:1;
 	unsigned int	vc_underline	: 1;
 	unsigned int	vc_blink	: 1;
 	unsigned int	vc_reverse	: 1;
 	unsigned int	vc_s_intensity	: 2;	/* saved rendition */
+	unsigned int    vc_s_italic:1;
 	unsigned int	vc_s_underline	: 1;
 	unsigned int	vc_s_blink	: 1;
 	unsigned int	vc_s_reverse	: 1;
@@ -103,6 +107,7 @@ struct vc_data {
 
 struct vc {
 	struct vc_data *d;
+	struct work_struct SAK_work;
 
 	/* might add  scrmem, vt_struct, kbd  at some time,
 	   to have everything in one place - the disadvantage
@@ -110,6 +115,7 @@ struct vc {
 };
 
 extern struct vc vc_cons [MAX_NR_CONSOLES];
+extern void vc_SAK(struct work_struct *work);
 
 #define CUR_DEF		0
 #define CUR_NONE	1

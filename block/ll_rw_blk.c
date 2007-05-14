@@ -1221,7 +1221,7 @@ void blk_recount_segments(request_queue_t *q, struct bio *bio)
 		 * considered part of another segment, since that might
 		 * change with the bounce page.
 		 */
-		high = page_to_pfn(bv->bv_page) >= q->bounce_pfn;
+		high = page_to_pfn(bv->bv_page) > q->bounce_pfn;
 		if (high || highprv)
 			goto new_hw_segment;
 		if (cluster) {
@@ -1264,7 +1264,7 @@ new_hw_segment:
 	bio->bi_hw_segments = nr_hw_segs;
 	bio->bi_flags |= (1 << BIO_SEG_VALID);
 }
-
+EXPORT_SYMBOL(blk_recount_segments);
 
 static int blk_phys_contig_segment(request_queue_t *q, struct bio *bio,
 				   struct bio *nxt)
@@ -1704,7 +1704,7 @@ EXPORT_SYMBOL(blk_stop_queue);
  *     on a queue, such as calling the unplug function after a timeout.
  *     A block device may call blk_sync_queue to ensure that any
  *     such activity is cancelled, thus allowing it to release resources
- *     the the callbacks might use. The caller must already have made sure
+ *     that the callbacks might use. The caller must already have made sure
  *     that its ->make_request_fn will not re-add plugging prior to calling
  *     this function.
  *
@@ -1712,7 +1712,6 @@ EXPORT_SYMBOL(blk_stop_queue);
 void blk_sync_queue(struct request_queue *q)
 {
 	del_timer_sync(&q->unplug_timer);
-	kblockd_flush();
 }
 EXPORT_SYMBOL(blk_sync_queue);
 
@@ -1924,6 +1923,8 @@ blk_init_queue_node(request_fn_proc *rfn, spinlock_t *lock, int node_id)
 
 	blk_queue_max_hw_segments(q, MAX_HW_SEGMENTS);
 	blk_queue_max_phys_segments(q, MAX_PHYS_SEGMENTS);
+
+	q->sg_reserved_size = INT_MAX;
 
 	/*
 	 * all done
@@ -2556,6 +2557,7 @@ int blk_rq_map_kern(request_queue_t *q, struct request *rq, void *kbuf,
 		bio->bi_rw |= (1 << BIO_RW);
 
 	blk_rq_bio_prep(q, rq, bio);
+	blk_queue_bounce(q, &rq->bio);
 	rq->buffer = rq->data = NULL;
 	return 0;
 }
@@ -3505,7 +3507,7 @@ static int blk_cpu_notify(struct notifier_block *self, unsigned long action,
 	 * If a CPU goes away, splice its entries to the current CPU
 	 * and trigger a run of the softirq
 	 */
-	if (action == CPU_DEAD) {
+	if (action == CPU_DEAD || action == CPU_DEAD_FROZEN) {
 		int cpu = (unsigned long) hcpu;
 
 		local_irq_disable();
@@ -3629,11 +3631,11 @@ int kblockd_schedule_work(struct work_struct *work)
 
 EXPORT_SYMBOL(kblockd_schedule_work);
 
-void kblockd_flush(void)
+void kblockd_flush_work(struct work_struct *work)
 {
-	flush_workqueue(kblockd_workqueue);
+	cancel_work_sync(work);
 }
-EXPORT_SYMBOL(kblockd_flush);
+EXPORT_SYMBOL(kblockd_flush_work);
 
 int __init blk_dev_init(void)
 {
@@ -3658,8 +3660,8 @@ int __init blk_dev_init(void)
 	open_softirq(BLOCK_SOFTIRQ, blk_done_softirq, NULL);
 	register_hotcpu_notifier(&blk_cpu_notifier);
 
-	blk_max_low_pfn = max_low_pfn;
-	blk_max_pfn = max_pfn;
+	blk_max_low_pfn = max_low_pfn - 1;
+	blk_max_pfn = max_pfn - 1;
 
 	return 0;
 }
@@ -3741,6 +3743,7 @@ static struct io_context *current_io_context(gfp_t gfp_flags, int node)
 		ret->nr_batch_requests = 0; /* because this is 0 */
 		ret->aic = NULL;
 		ret->cic_root.rb_node = NULL;
+		ret->ioc_data = NULL;
 		/* make sure set_task_ioprio() sees the settings above */
 		smp_wmb();
 		tsk->io_context = ret;

@@ -56,8 +56,8 @@ static struct
 		/* PRE_ROUTING */
 		{
 			.entry = {
-	    			.target_offset = sizeof(struct ipt_entry),
-	    			.next_offset = sizeof(struct ipt_standard),
+				.target_offset = sizeof(struct ipt_entry),
+				.next_offset = sizeof(struct ipt_standard),
 			},
 			.target = {
 				.target = {
@@ -71,8 +71,8 @@ static struct
 		/* POST_ROUTING */
 		{
 			.entry = {
-	    			.target_offset = sizeof(struct ipt_entry),
-	    			.next_offset = sizeof(struct ipt_standard),
+				.target_offset = sizeof(struct ipt_entry),
+				.next_offset = sizeof(struct ipt_standard),
 			},
 			.target = {
 				.target = {
@@ -86,8 +86,8 @@ static struct
 		/* LOCAL_OUT */
 		{
 			.entry = {
-	    			.target_offset = sizeof(struct ipt_entry),
-	    			.next_offset = sizeof(struct ipt_standard),
+				.target_offset = sizeof(struct ipt_entry),
+				.next_offset = sizeof(struct ipt_standard),
 			},
 			.target = {
 				.target = {
@@ -119,7 +119,7 @@ static struct
 	}
 };
 
-static struct ipt_table nat_table = {
+static struct xt_table nat_table = {
 	.name		= "nat",
 	.valid_hooks	= NAT_VALID_HOOKS,
 	.lock		= RW_LOCK_UNLOCKED,
@@ -145,7 +145,7 @@ static unsigned int ipt_snat_target(struct sk_buff **pskb,
 
 	/* Connection must be valid and new. */
 	NF_CT_ASSERT(ct && (ctinfo == IP_CT_NEW || ctinfo == IP_CT_RELATED ||
-	                    ctinfo == IP_CT_RELATED + IP_CT_IS_REPLY));
+			    ctinfo == IP_CT_RELATED + IP_CT_IS_REPLY));
 	NF_CT_ASSERT(out);
 
 	return nf_nat_setup_info(ct, &mr->range[0], hooknum);
@@ -191,7 +191,7 @@ static unsigned int ipt_dnat_target(struct sk_buff **pskb,
 
 	if (hooknum == NF_IP_LOCAL_OUT &&
 	    mr->range[0].flags & IP_NAT_RANGE_MAP_IPS)
-		warn_if_extra_mangle((*pskb)->nh.iph->daddr,
+		warn_if_extra_mangle(ip_hdr(*pskb)->daddr,
 				     mr->range[0].min_ip);
 
 	return nf_nat_setup_info(ct, &mr->range[0], hooknum);
@@ -252,8 +252,8 @@ alloc_null_binding(struct nf_conn *ct,
 
 unsigned int
 alloc_null_binding_confirmed(struct nf_conn *ct,
-                             struct nf_nat_info *info,
-                             unsigned int hooknum)
+			     struct nf_nat_info *info,
+			     unsigned int hooknum)
 {
 	__be32 ip
 		= (HOOK2MANIP(hooknum) == IP_NAT_MANIP_SRC
@@ -290,7 +290,7 @@ int nf_nat_rule_find(struct sk_buff **pskb,
 	return ret;
 }
 
-static struct ipt_target ipt_snat_reg = {
+static struct xt_target ipt_snat_reg = {
 	.name		= "SNAT",
 	.target		= ipt_snat_target,
 	.targetsize	= sizeof(struct nf_nat_multi_range_compat),

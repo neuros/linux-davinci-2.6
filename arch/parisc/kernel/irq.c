@@ -336,11 +336,7 @@ unsigned int txn_alloc_data(unsigned int virt_irq)
 
 static inline int eirr_to_irq(unsigned long eirr)
 {
-#ifdef CONFIG_64BIT
-	int bit = fls64(eirr);
-#else
-	int bit = fls(eirr);
-#endif
+	int bit = fls_long(eirr);
 	return (BITS_PER_LONG - bit) + TIMER_IRQ;
 }
 
@@ -392,7 +388,7 @@ void do_cpu_irq_mask(struct pt_regs *regs)
 static struct irqaction timer_action = {
 	.handler = timer_interrupt,
 	.name = "timer",
-	.flags = IRQF_DISABLED | IRQF_TIMER | IRQF_PERCPU,
+	.flags = IRQF_DISABLED | IRQF_TIMER | IRQF_PERCPU | IRQF_IRQPOLL,
 };
 
 #ifdef CONFIG_SMP

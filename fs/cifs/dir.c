@@ -31,7 +31,7 @@
 #include "cifs_debug.h"
 #include "cifs_fs_sb.h"
 
-void
+static void
 renew_parental_timestamps(struct dentry *direntry)
 {
 	/* BB check if there is a way to get the kernel to do this or if we really need this */
@@ -274,7 +274,7 @@ cifs_create(struct inode *inode, struct dentry *direntry, int mode,
 			pCifsFile->invalidHandle = FALSE;
 			pCifsFile->closePend     = FALSE;
 			init_MUTEX(&pCifsFile->fh_sem);
-			init_MUTEX(&pCifsFile->lock_sem);
+			mutex_init(&pCifsFile->lock_mutex);
 			INIT_LIST_HEAD(&pCifsFile->llist);
 			atomic_set(&pCifsFile->wrtPending,0);
 

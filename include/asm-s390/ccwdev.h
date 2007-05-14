@@ -110,7 +110,9 @@ extern void ccw_driver_unregister (struct ccw_driver *driver);
 
 struct ccw1;
 
+extern int ccw_device_set_options_mask(struct ccw_device *, unsigned long);
 extern int ccw_device_set_options(struct ccw_device *, unsigned long);
+extern void ccw_device_clear_options(struct ccw_device *, unsigned long);
 
 /* Allow for i/o completion notification after primary interrupt status. */
 #define CCWDEV_EARLY_NOTIFICATION	0x0001
@@ -162,9 +164,9 @@ extern int ccw_device_resume(struct ccw_device *);
 extern int ccw_device_halt(struct ccw_device *, unsigned long);
 extern int ccw_device_clear(struct ccw_device *, unsigned long);
 
-extern int read_dev_chars(struct ccw_device *cdev, void **buffer, int length);
-extern int read_conf_data(struct ccw_device *cdev, void **buffer, int *length);
-extern int read_conf_data_lpm(struct ccw_device *cdev, void **buffer,
+extern int __deprecated read_dev_chars(struct ccw_device *cdev, void **buffer, int length);
+extern int __deprecated read_conf_data(struct ccw_device *cdev, void **buffer, int *length);
+extern int __deprecated read_conf_data_lpm(struct ccw_device *cdev, void **buffer,
 			      int *length, __u8 lpm);
 
 extern int ccw_device_set_online(struct ccw_device *cdev);

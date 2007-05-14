@@ -29,7 +29,6 @@
 #include <linux/file.h>
 #include <linux/stat.h>
 #include <linux/string.h>
-#include <linux/smp_lock.h>
 #include <linux/inet.h>
 #include <linux/pagemap.h>
 #include <linux/idr.h>
@@ -62,6 +61,8 @@ static int v9fs_vfs_readpage(struct file *filp, struct page *page)
 	int fid = v9f->fid;
 	int total = 0;
 	int result = 0;
+
+	dprintk(DEBUG_VFS, "\n");
 
 	buffer = kmap(page);
 	do {

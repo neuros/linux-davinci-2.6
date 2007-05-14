@@ -46,7 +46,7 @@ rapide_locate_hwif(void __iomem *base, void __iomem *ctrl, unsigned int sz, int 
 	hwif->hw.io_ports[IDE_CONTROL_OFFSET] = (unsigned long)ctrl;
 	hwif->io_ports[IDE_CONTROL_OFFSET] = (unsigned long)ctrl;
 	hwif->hw.irq = hwif->irq = irq;
-	hwif->mmio = 2;
+	hwif->mmio = 1;
 	default_hwif_mmiops(hwif);
 
 	return hwif;
@@ -76,7 +76,7 @@ rapide_probe(struct expansion_card *ec, const struct ecard_id *id)
 		hwif->gendev.parent = &ec->dev;
 		hwif->noprobe = 0;
 		probe_hwif_init(hwif);
-		create_proc_ide_interfaces();
+		ide_proc_register_port(hwif);
 		ecard_set_drvdata(ec, hwif);
 		goto out;
 	}

@@ -6,6 +6,10 @@ config FRV
 	bool
 	default y
 
+config ZONE_DMA
+	bool
+	default y
+
 config RWSEM_GENERIC_SPINLOCK
 	bool
 	default y
@@ -38,6 +42,10 @@ config GENERIC_TIME
 	default y
 
 config TIME_LOW_RES
+	bool
+	default y
+
+config QUICKLIST
 	bool
 	default y
 

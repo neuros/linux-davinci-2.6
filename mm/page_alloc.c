@@ -73,7 +73,9 @@ static void __free_pages_ok(struct page *page, unsigned int order);
  * don't need any ZONE_NORMAL reservation
  */
 int sysctl_lowmem_reserve_ratio[MAX_NR_ZONES-1] = {
+#ifdef CONFIG_ZONE_DMA
 	 256,
+#endif
 #ifdef CONFIG_ZONE_DMA32
 	 256,
 #endif
@@ -85,7 +87,9 @@ int sysctl_lowmem_reserve_ratio[MAX_NR_ZONES-1] = {
 EXPORT_SYMBOL(totalram_pages);
 
 static char * const zone_names[MAX_NR_ZONES] = {
+#ifdef CONFIG_ZONE_DMA
 	 "DMA",
+#endif
 #ifdef CONFIG_ZONE_DMA32
 	 "DMA32",
 #endif
@@ -99,7 +103,7 @@ int min_free_kbytes = 1024;
 
 unsigned long __meminitdata nr_kernel_pages;
 unsigned long __meminitdata nr_all_pages;
-static unsigned long __initdata dma_reserve;
+static unsigned long __meminitdata dma_reserve;
 
 #ifdef CONFIG_ARCH_POPULATES_NODE_MAP
   /*
@@ -122,10 +126,10 @@ static unsigned long __initdata dma_reserve;
     #endif
   #endif
 
-  struct node_active_region __initdata early_node_map[MAX_ACTIVE_REGIONS];
-  int __initdata nr_nodemap_entries;
-  unsigned long __initdata arch_zone_lowest_possible_pfn[MAX_NR_ZONES];
-  unsigned long __initdata arch_zone_highest_possible_pfn[MAX_NR_ZONES];
+  struct node_active_region __meminitdata early_node_map[MAX_ACTIVE_REGIONS];
+  int __meminitdata nr_nodemap_entries;
+  unsigned long __meminitdata arch_zone_lowest_possible_pfn[MAX_NR_ZONES];
+  unsigned long __meminitdata arch_zone_highest_possible_pfn[MAX_NR_ZONES];
 #ifdef CONFIG_MEMORY_HOTPLUG_RESERVE
   unsigned long __initdata node_boundary_start_pfn[MAX_NUMNODES];
   unsigned long __initdata node_boundary_end_pfn[MAX_NUMNODES];
@@ -152,10 +156,8 @@ static int page_outside_zone_boundaries(struct zone *zone, struct page *page)
 
 static int page_is_consistent(struct zone *zone, struct page *page)
 {
-#ifdef CONFIG_HOLES_IN_ZONE
-	if (!pfn_valid(page_to_pfn(page)))
+	if (!pfn_valid_within(page_to_pfn(page)))
 		return 0;
-#endif
 	if (zone != page_zone(page))
 		return 0;
 
@@ -223,7 +225,7 @@ static void bad_page(struct page *page)
 
 static void free_compound_page(struct page *page)
 {
-	__free_pages_ok(page, (unsigned long)page[1].lru.prev);
+	__free_pages_ok(page, compound_order(page));
 }
 
 static void prep_compound_page(struct page *page, unsigned long order)
@@ -232,12 +234,13 @@ static void prep_compound_page(struct page *page, unsigned long order)
 	int nr_pages = 1 << order;
 
 	set_compound_page_dtor(page, free_compound_page);
-	page[1].lru.prev = (void *)order;
-	for (i = 0; i < nr_pages; i++) {
+	set_compound_order(page, order);
+	__SetPageHead(page);
+	for (i = 1; i < nr_pages; i++) {
 		struct page *p = page + i;
 
-		__SetPageCompound(p);
-		set_page_private(p, (unsigned long)page);
+		__SetPageTail(p);
+		p->first_page = page;
 	}
 }
 
@@ -246,16 +249,19 @@ static void destroy_compound_page(struct page *page, unsigned long order)
 	int i;
 	int nr_pages = 1 << order;
 
-	if (unlikely((unsigned long)page[1].lru.prev != order))
+	if (unlikely(compound_order(page) != order))
 		bad_page(page);
 
-	for (i = 0; i < nr_pages; i++) {
+	if (unlikely(!PageHead(page)))
+			bad_page(page);
+	__ClearPageHead(page);
+	for (i = 1; i < nr_pages; i++) {
 		struct page *p = page + i;
 
-		if (unlikely(!PageCompound(p) |
-				(page_private(p) != (unsigned long)page)))
+		if (unlikely(!PageTail(p) |
+				(p->first_page != page)))
 			bad_page(page);
-		__ClearPageCompound(p);
+		__ClearPageTail(p);
 	}
 }
 
@@ -342,10 +348,8 @@ __find_combined_index(unsigned long page_idx, unsigned int order)
 static inline int page_is_buddy(struct page *page, struct page *buddy,
 								int order)
 {
-#ifdef CONFIG_HOLES_IN_ZONE
-	if (!pfn_valid(page_to_pfn(buddy)))
+	if (!pfn_valid_within(page_to_pfn(buddy)))
 		return 0;
-#endif
 
 	if (page_zone_id(page) != page_zone_id(buddy))
 		return 0;
@@ -395,7 +399,7 @@ static inline void __free_one_page(struct page *page,
 	VM_BUG_ON(page_idx & (order_size - 1));
 	VM_BUG_ON(bad_range(zone, page));
 
-	zone->free_pages += order_size;
+	__mod_zone_page_state(zone, NR_FREE_PAGES, order_size);
 	while (order < MAX_ORDER-1) {
 		unsigned long combined_idx;
 		struct free_area *area;
@@ -429,12 +433,17 @@ static inline int free_pages_check(struct page *page)
 			1 << PG_private |
 			1 << PG_locked	|
 			1 << PG_active	|
-			1 << PG_reclaim	|
 			1 << PG_slab	|
 			1 << PG_swapcache |
 			1 << PG_writeback |
 			1 << PG_reserved |
 			1 << PG_buddy ))))
+		bad_page(page);
+	/*
+	 * PageReclaim == PageTail. It is only an error
+	 * for PageReclaim to be set if PageCompound is clear.
+	 */
+	if (unlikely(!PageCompound(page) && PageReclaim(page)))
 		bad_page(page);
 	if (PageDirty(page))
 		__ClearPageDirty(page);
@@ -596,7 +605,7 @@ static int prep_new_page(struct page *page, int order, gfp_t gfp_flags)
 
 	page->flags &= ~(1 << PG_uptodate | 1 << PG_error |
 			1 << PG_referenced | 1 << PG_arch_1 |
-			1 << PG_checked | 1 << PG_mappedtodisk);
+			1 << PG_owner_priv_1 | 1 << PG_mappedtodisk);
 	set_page_private(page, 0);
 	set_page_refcounted(page);
 
@@ -631,7 +640,7 @@ static struct page *__rmqueue(struct zone *zone, unsigned int order)
 		list_del(&page->lru);
 		rmv_page_order(page);
 		area->nr_free--;
-		zone->free_pages -= 1UL << order;
+		__mod_zone_page_state(zone, NR_FREE_PAGES, - (1UL << order));
 		expand(zone, page, order, current_order, area);
 		return page;
 	}
@@ -660,45 +669,48 @@ static int rmqueue_bulk(struct zone *zone, unsigned int order,
 	return i;
 }
 
+#if MAX_NUMNODES > 1
+int nr_node_ids __read_mostly = MAX_NUMNODES;
+EXPORT_SYMBOL(nr_node_ids);
+
+/*
+ * Figure out the number of possible node ids.
+ */
+static void __init setup_nr_node_ids(void)
+{
+	unsigned int node;
+	unsigned int highest = 0;
+
+	for_each_node_mask(node, node_possible_map)
+		highest = node;
+	nr_node_ids = highest + 1;
+}
+#else
+static void __init setup_nr_node_ids(void) {}
+#endif
+
 #ifdef CONFIG_NUMA
 /*
- * Called from the slab reaper to drain pagesets on a particular node that
- * belongs to the currently executing processor.
+ * Called from the vmstat counter updater to drain pagesets of this
+ * currently executing processor on remote nodes after they have
+ * expired.
+ *
  * Note that this function must be called with the thread pinned to
  * a single processor.
  */
-void drain_node_pages(int nodeid)
+void drain_zone_pages(struct zone *zone, struct per_cpu_pages *pcp)
 {
-	int i;
-	enum zone_type z;
 	unsigned long flags;
+	int to_drain;
 
-	for (z = 0; z < MAX_NR_ZONES; z++) {
-		struct zone *zone = NODE_DATA(nodeid)->node_zones + z;
-		struct per_cpu_pageset *pset;
-
-		if (!populated_zone(zone))
-			continue;
-
-		pset = zone_pcp(zone, smp_processor_id());
-		for (i = 0; i < ARRAY_SIZE(pset->pcp); i++) {
-			struct per_cpu_pages *pcp;
-
-			pcp = &pset->pcp[i];
-			if (pcp->count) {
-				int to_drain;
-
-				local_irq_save(flags);
-				if (pcp->count >= pcp->batch)
-					to_drain = pcp->batch;
-				else
-					to_drain = pcp->count;
-				free_pages_bulk(zone, to_drain, &pcp->list, 0);
-				pcp->count -= to_drain;
-				local_irq_restore(flags);
-			}
-		}
-	}
+	local_irq_save(flags);
+	if (pcp->count >= pcp->batch)
+		to_drain = pcp->batch;
+	else
+		to_drain = pcp->count;
+	free_pages_bulk(zone, to_drain, &pcp->list, 0);
+	pcp->count -= to_drain;
+	local_irq_restore(flags);
 }
 #endif
 
@@ -746,8 +758,8 @@ void mark_free_pages(struct zone *zone)
 		if (pfn_valid(pfn)) {
 			struct page *page = pfn_to_page(pfn);
 
-			if (!PageNosave(page))
-				ClearPageNosaveFree(page);
+			if (!swsusp_page_is_forbidden(page))
+				swsusp_unset_page_free(page);
 		}
 
 	for (order = MAX_ORDER - 1; order >= 0; --order)
@@ -756,7 +768,7 @@ void mark_free_pages(struct zone *zone)
 
 			pfn = page_to_pfn(list_entry(curr, struct page, lru));
 			for (i = 0; i < (1UL << order); i++)
-				SetPageNosaveFree(pfn_to_page(pfn + i));
+				swsusp_set_page_free(pfn_to_page(pfn + i));
 		}
 
 	spin_unlock_irqrestore(&zone->lock, flags);
@@ -989,7 +1001,8 @@ int zone_watermark_ok(struct zone *z, int order, unsigned long mark,
 		      int classzone_idx, int alloc_flags)
 {
 	/* free_pages my go negative - that's OK */
-	long min = mark, free_pages = z->free_pages - (1 << order) + 1;
+	long min = mark;
+	long free_pages = zone_page_state(z, NR_FREE_PAGES) - (1 << order) + 1;
 	int o;
 
 	if (alloc_flags & ALLOC_HIGH)
@@ -1439,35 +1452,6 @@ fastcall void free_pages(unsigned long addr, unsigned int order)
 
 EXPORT_SYMBOL(free_pages);
 
-/*
- * Total amount of free (allocatable) RAM:
- */
-unsigned int nr_free_pages(void)
-{
-	unsigned int sum = 0;
-	struct zone *zone;
-
-	for_each_zone(zone)
-		sum += zone->free_pages;
-
-	return sum;
-}
-
-EXPORT_SYMBOL(nr_free_pages);
-
-#ifdef CONFIG_NUMA
-unsigned int nr_free_pages_pgdat(pg_data_t *pgdat)
-{
-	unsigned int sum = 0;
-	enum zone_type i;
-
-	for (i = 0; i < MAX_NR_ZONES; i++)
-		sum += pgdat->node_zones[i].free_pages;
-
-	return sum;
-}
-#endif
-
 static unsigned int nr_free_zone_pages(int offset)
 {
 	/* Just pick one node, since fallback list is circular */
@@ -1514,7 +1498,7 @@ void si_meminfo(struct sysinfo *val)
 {
 	val->totalram = totalram_pages;
 	val->sharedram = 0;
-	val->freeram = nr_free_pages();
+	val->freeram = global_page_state(NR_FREE_PAGES);
 	val->bufferram = nr_blockdev_pages();
 	val->totalhigh = totalhigh_pages;
 	val->freehigh = nr_free_highpages();
@@ -1529,10 +1513,11 @@ void si_meminfo_node(struct sysinfo *val, int nid)
 	pg_data_t *pgdat = NODE_DATA(nid);
 
 	val->totalram = pgdat->node_present_pages;
-	val->freeram = nr_free_pages_pgdat(pgdat);
+	val->freeram = node_page_state(nid, NR_FREE_PAGES);
 #ifdef CONFIG_HIGHMEM
 	val->totalhigh = pgdat->node_zones[ZONE_HIGHMEM].present_pages;
-	val->freehigh = pgdat->node_zones[ZONE_HIGHMEM].free_pages;
+	val->freehigh = zone_page_state(&pgdat->node_zones[ZONE_HIGHMEM],
+			NR_FREE_PAGES);
 #else
 	val->totalhigh = 0;
 	val->freehigh = 0;
@@ -1551,9 +1536,6 @@ void si_meminfo_node(struct sysinfo *val, int nid)
 void show_free_areas(void)
 {
 	int cpu;
-	unsigned long active;
-	unsigned long inactive;
-	unsigned long free;
 	struct zone *zone;
 
 	for_each_zone(zone) {
@@ -1577,20 +1559,19 @@ void show_free_areas(void)
 		}
 	}
 
-	get_zone_counts(&active, &inactive, &free);
-
-	printk("Active:%lu inactive:%lu dirty:%lu writeback:%lu "
-		"unstable:%lu free:%u slab:%lu mapped:%lu pagetables:%lu\n",
-		active,
-		inactive,
+	printk("Active:%lu inactive:%lu dirty:%lu writeback:%lu unstable:%lu\n"
+		" free:%lu slab:%lu mapped:%lu pagetables:%lu bounce:%lu\n",
+		global_page_state(NR_ACTIVE),
+		global_page_state(NR_INACTIVE),
 		global_page_state(NR_FILE_DIRTY),
 		global_page_state(NR_WRITEBACK),
 		global_page_state(NR_UNSTABLE_NFS),
-		nr_free_pages(),
+		global_page_state(NR_FREE_PAGES),
 		global_page_state(NR_SLAB_RECLAIMABLE) +
 			global_page_state(NR_SLAB_UNRECLAIMABLE),
 		global_page_state(NR_FILE_MAPPED),
-		global_page_state(NR_PAGETABLE));
+		global_page_state(NR_PAGETABLE),
+		global_page_state(NR_BOUNCE));
 
 	for_each_zone(zone) {
 		int i;
@@ -1611,12 +1592,12 @@ void show_free_areas(void)
 			" all_unreclaimable? %s"
 			"\n",
 			zone->name,
-			K(zone->free_pages),
+			K(zone_page_state(zone, NR_FREE_PAGES)),
 			K(zone->pages_min),
 			K(zone->pages_low),
 			K(zone->pages_high),
-			K(zone->nr_active),
-			K(zone->nr_inactive),
+			K(zone_page_state(zone, NR_ACTIVE)),
+			K(zone_page_state(zone, NR_INACTIVE)),
 			K(zone->present_pages),
 			zone->pages_scanned,
 			(zone->all_unreclaimable ? "yes" : "no")
@@ -2150,11 +2131,14 @@ static int __cpuinit pageset_cpuup_callback(struct notifier_block *nfb,
 
 	switch (action) {
 	case CPU_UP_PREPARE:
+	case CPU_UP_PREPARE_FROZEN:
 		if (process_zones(cpu))
 			ret = NOTIFY_BAD;
 		break;
 	case CPU_UP_CANCELED:
+	case CPU_UP_CANCELED_FROZEN:
 	case CPU_DEAD:
+	case CPU_DEAD_FROZEN:
 		free_zone_pagesets(cpu);
 		break;
 	default:
@@ -2181,7 +2165,7 @@ void __init setup_per_cpu_pageset(void)
 
 #endif
 
-static __meminit
+static __meminit noinline
 int zone_wait_table_init(struct zone *zone, unsigned long zone_size_pages)
 {
 	int i;
@@ -2269,7 +2253,7 @@ __meminit int init_currently_empty_zone(struct zone *zone,
  * Basic iterator support. Return the first range of PFNs for a node
  * Note: nid == MAX_NUMNODES returns first region regardless of node
  */
-static int __init first_active_region_index_in_nid(int nid)
+static int __meminit first_active_region_index_in_nid(int nid)
 {
 	int i;
 
@@ -2284,7 +2268,7 @@ static int __init first_active_region_index_in_nid(int nid)
  * Basic iterator support. Return the next active range of PFNs for a node
  * Note: nid == MAX_NUMNODES returns next region regardles of node
  */
-static int __init next_active_region_index_in_nid(int index, int nid)
+static int __meminit next_active_region_index_in_nid(int index, int nid)
 {
 	for (index = index + 1; index < nr_nodemap_entries; index++)
 		if (nid == MAX_NUMNODES || early_node_map[index].nid == nid)
@@ -2437,7 +2421,7 @@ static void __init account_node_boundary(unsigned int nid,
  * with no available memory, a warning is printed and the start and end
  * PFNs will be 0.
  */
-void __init get_pfn_range_for_nid(unsigned int nid,
+void __meminit get_pfn_range_for_nid(unsigned int nid,
 			unsigned long *start_pfn, unsigned long *end_pfn)
 {
 	int i;
@@ -2462,7 +2446,7 @@ void __init get_pfn_range_for_nid(unsigned int nid,
  * Return the number of pages a zone spans in a node, including holes
  * present_pages = zone_spanned_pages_in_node() - zone_absent_pages_in_node()
  */
-unsigned long __init zone_spanned_pages_in_node(int nid,
+unsigned long __meminit zone_spanned_pages_in_node(int nid,
 					unsigned long zone_type,
 					unsigned long *ignored)
 {
@@ -2490,7 +2474,7 @@ unsigned long __init zone_spanned_pages_in_node(int nid,
  * Return the number of holes in a range on a node. If nid is MAX_NUMNODES,
  * then all holes in the requested range will be accounted for.
  */
-unsigned long __init __absent_pages_in_range(int nid,
+unsigned long __meminit __absent_pages_in_range(int nid,
 				unsigned long range_start_pfn,
 				unsigned long range_end_pfn)
 {
@@ -2550,7 +2534,7 @@ unsigned long __init absent_pages_in_range(unsigned long start_pfn,
 }
 
 /* Return the number of page frames in holes in a zone on a node */
-unsigned long __init zone_absent_pages_in_node(int nid,
+unsigned long __meminit zone_absent_pages_in_node(int nid,
 					unsigned long zone_type,
 					unsigned long *ignored)
 {
@@ -2586,7 +2570,7 @@ static inline unsigned long zone_absent_pages_in_node(int nid,
 
 #endif
 
-static void __init calculate_node_totalpages(struct pglist_data *pgdat,
+static void __meminit calculate_node_totalpages(struct pglist_data *pgdat,
 		unsigned long *zones_size, unsigned long *zholes_size)
 {
 	unsigned long realtotalpages, totalpages = 0;
@@ -2650,11 +2634,11 @@ static void __meminit free_area_init_core(struct pglist_data *pgdat,
 				"  %s zone: %lu pages exceeds realsize %lu\n",
 				zone_names[j], memmap_pages, realsize);
 
-		/* Account for reserved DMA pages */
-		if (j == ZONE_DMA && realsize > dma_reserve) {
+		/* Account for reserved pages */
+		if (j == 0 && realsize > dma_reserve) {
 			realsize -= dma_reserve;
-			printk(KERN_DEBUG "  DMA zone: %lu pages reserved\n",
-								dma_reserve);
+			printk(KERN_DEBUG "  %s zone: %lu pages reserved\n",
+					zone_names[0], dma_reserve);
 		}
 
 		if (!is_highmem_idx(j))
@@ -2674,7 +2658,6 @@ static void __meminit free_area_init_core(struct pglist_data *pgdat,
 		spin_lock_init(&zone->lru_lock);
 		zone_seqlock_init(zone);
 		zone->zone_pgdat = pgdat;
-		zone->free_pages = 0;
 
 		zone->prev_priority = DEF_PRIORITY;
 
@@ -2683,8 +2666,6 @@ static void __meminit free_area_init_core(struct pglist_data *pgdat,
 		INIT_LIST_HEAD(&zone->inactive_list);
 		zone->nr_scan_active = 0;
 		zone->nr_scan_inactive = 0;
-		zone->nr_active = 0;
-		zone->nr_inactive = 0;
 		zap_zone_vm_stats(zone);
 		atomic_set(&zone->reclaim_in_progress, 0);
 		if (!size)
@@ -2697,7 +2678,7 @@ static void __meminit free_area_init_core(struct pglist_data *pgdat,
 	}
 }
 
-static void __init alloc_node_mem_map(struct pglist_data *pgdat)
+static void __meminit alloc_node_mem_map(struct pglist_data *pgdat)
 {
 	/* Skip empty nodes */
 	if (!pgdat->node_spanned_pages)
@@ -2876,20 +2857,23 @@ static void __init sort_node_map(void)
 			cmp_node_active_region, NULL);
 }
 
-/* Find the lowest pfn for a node. This depends on a sorted early_node_map */
+/* Find the lowest pfn for a node */
 unsigned long __init find_min_pfn_for_node(unsigned long nid)
 {
 	int i;
-
-	/* Regions in the early_node_map can be in any order */
-	sort_node_map();
+	unsigned long min_pfn = ULONG_MAX;
 
 	/* Assuming a sorted map, the first range found has the starting pfn */
 	for_each_active_range_index_in_nid(i, nid)
-		return early_node_map[i].start_pfn;
+		min_pfn = min(min_pfn, early_node_map[i].start_pfn);
 
-	printk(KERN_WARNING "Could not find start_pfn for node %lu\n", nid);
-	return 0;
+	if (min_pfn == ULONG_MAX) {
+		printk(KERN_WARNING
+			"Could not find start_pfn for node %lu\n", nid);
+		return 0;
+	}
+
+	return min_pfn;
 }
 
 /**
@@ -2938,6 +2922,9 @@ void __init free_area_init_nodes(unsigned long *max_zone_pfn)
 	unsigned long nid;
 	enum zone_type i;
 
+	/* Sort early_node_map as initialisation assumes it is sorted */
+	sort_node_map();
+
 	/* Record where the zone boundaries are */
 	memset(arch_zone_lowest_possible_pfn, 0,
 				sizeof(arch_zone_lowest_possible_pfn));
@@ -2968,6 +2955,7 @@ void __init free_area_init_nodes(unsigned long *max_zone_pfn)
 						early_node_map[i].end_pfn);
 
 	/* Initialise every node */
+	setup_nr_node_ids();
 	for_each_online_node(nid) {
 		pg_data_t *pgdat = NODE_DATA(nid);
 		free_area_init_node(nid, pgdat, NULL,
@@ -3010,7 +2998,7 @@ static int page_alloc_cpu_notify(struct notifier_block *self,
 {
 	int cpu = (unsigned long)hcpu;
 
-	if (action == CPU_DEAD) {
+	if (action == CPU_DEAD || action == CPU_DEAD_FROZEN) {
 		local_irq_disable();
 		__drain_pages(cpu);
 		vm_events_fold_cpu(cpu);
@@ -3206,7 +3194,8 @@ int min_free_kbytes_sysctl_handler(ctl_table *table, int write,
 	struct file *file, void __user *buffer, size_t *length, loff_t *ppos)
 {
 	proc_dointvec(table, write, file, buffer, length, ppos);
-	setup_per_zone_pages_min();
+	if (write)
+		setup_per_zone_pages_min();
 	return 0;
 }
 
@@ -3394,18 +3383,4 @@ EXPORT_SYMBOL(pfn_to_page);
 EXPORT_SYMBOL(page_to_pfn);
 #endif /* CONFIG_OUT_OF_LINE_PFN_TO_PAGE */
 
-#if MAX_NUMNODES > 1
-/*
- * Find the highest possible node id.
- */
-int highest_possible_node_id(void)
-{
-	unsigned int node;
-	unsigned int highest = 0;
 
-	for_each_node_mask(node, node_possible_map)
-		highest = node;
-	return highest;
-}
-EXPORT_SYMBOL(highest_possible_node_id);
-#endif

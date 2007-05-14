@@ -19,10 +19,8 @@
 #include <linux/slab.h>
 #include "base.h"
 
-extern struct subsystem devices_subsys;
-
 #define to_class_attr(_attr) container_of(_attr, struct class_attribute, attr)
-#define to_class(obj) container_of(obj, struct class, subsys.kset.kobj)
+#define to_class(obj) container_of(obj, struct class, subsys.kobj)
 
 static ssize_t
 class_attr_show(struct kobject * kobj, struct attribute * attr, char * buf)
@@ -80,7 +78,7 @@ int class_create_file(struct class * cls, const struct class_attribute * attr)
 {
 	int error;
 	if (cls) {
-		error = sysfs_create_file(&cls->subsys.kset.kobj, &attr->attr);
+		error = sysfs_create_file(&cls->subsys.kobj, &attr->attr);
 	} else
 		error = -EINVAL;
 	return error;
@@ -89,7 +87,7 @@ int class_create_file(struct class * cls, const struct class_attribute * attr)
 void class_remove_file(struct class * cls, const struct class_attribute * attr)
 {
 	if (cls)
-		sysfs_remove_file(&cls->subsys.kset.kobj, &attr->attr);
+		sysfs_remove_file(&cls->subsys.kobj, &attr->attr);
 }
 
 static struct class *class_get(struct class *cls)
@@ -145,8 +143,9 @@ int class_register(struct class * cls)
 	INIT_LIST_HEAD(&cls->children);
 	INIT_LIST_HEAD(&cls->devices);
 	INIT_LIST_HEAD(&cls->interfaces);
+	kset_init(&cls->class_dirs);
 	init_MUTEX(&cls->sem);
-	error = kobject_set_name(&cls->subsys.kset.kobj, "%s", cls->name);
+	error = kobject_set_name(&cls->subsys.kobj, "%s", cls->name);
 	if (error)
 		return error;
 
@@ -163,8 +162,6 @@ int class_register(struct class * cls)
 void class_unregister(struct class * cls)
 {
 	pr_debug("device class '%s': unregistering\n", cls->name);
-	if (cls->virtual_dir)
-		kobject_unregister(cls->virtual_dir);
 	remove_class_attrs(cls);
 	subsystem_unregister(&cls->subsys);
 }
@@ -364,7 +361,7 @@ char *make_class_name(const char *name, struct kobject *kobj)
 
 	class_name = kmalloc(size, GFP_KERNEL);
 	if (!class_name)
-		return ERR_PTR(-ENOMEM);
+		return NULL;
 
 	strcpy(class_name, name);
 	strcat(class_name, ":");
@@ -411,8 +408,11 @@ static int make_deprecated_class_device_links(struct class_device *class_dev)
 		return 0;
 
 	class_name = make_class_name(class_dev->class->name, &class_dev->kobj);
-	error = sysfs_create_link(&class_dev->dev->kobj, &class_dev->kobj,
-				  class_name);
+	if (class_name)
+		error = sysfs_create_link(&class_dev->dev->kobj,
+					  &class_dev->kobj, class_name);
+	else
+		error = -ENOMEM;
 	kfree(class_name);
 	return error;
 }
@@ -425,7 +425,8 @@ static void remove_deprecated_class_device_links(struct class_device *class_dev)
 		return;
 
 	class_name = make_class_name(class_dev->class->name, &class_dev->kobj);
-	sysfs_remove_link(&class_dev->dev->kobj, class_name);
+	if (class_name)
+		sysfs_remove_link(&class_dev->dev->kobj, class_name);
 	kfree(class_name);
 }
 #else
@@ -608,7 +609,7 @@ int class_device_add(struct class_device *class_dev)
 	if (parent_class_dev)
 		class_dev->kobj.parent = &parent_class_dev->kobj;
 	else
-		class_dev->kobj.parent = &parent_class->subsys.kset.kobj;
+		class_dev->kobj.parent = &parent_class->subsys.kobj;
 
 	error = kobject_add(&class_dev->kobj);
 	if (error)
@@ -616,7 +617,7 @@ int class_device_add(struct class_device *class_dev)
 
 	/* add the needed attributes to this device */
 	error = sysfs_create_link(&class_dev->kobj,
-				  &parent_class->subsys.kset.kobj, "subsystem");
+				  &parent_class->subsys.kobj, "subsystem");
 	if (error)
 		goto out3;
 	class_dev->uevent_attr.attr.name = "uevent";
@@ -837,45 +838,6 @@ void class_device_destroy(struct class *cls, dev_t devt)
 		class_device_unregister(class_dev);
 }
 
-int class_device_rename(struct class_device *class_dev, char *new_name)
-{
-	int error = 0;
-	char *old_class_name = NULL, *new_class_name = NULL;
-
-	class_dev = class_device_get(class_dev);
-	if (!class_dev)
-		return -EINVAL;
-
-	pr_debug("CLASS: renaming '%s' to '%s'\n", class_dev->class_id,
-		 new_name);
-
-#ifdef CONFIG_SYSFS_DEPRECATED
-	if (class_dev->dev)
-		old_class_name = make_class_name(class_dev->class->name,
-						 &class_dev->kobj);
-#endif
-
-	strlcpy(class_dev->class_id, new_name, KOBJ_NAME_LEN);
-
-	error = kobject_rename(&class_dev->kobj, new_name);
-
-#ifdef CONFIG_SYSFS_DEPRECATED
-	if (class_dev->dev) {
-		new_class_name = make_class_name(class_dev->class->name,
-						 &class_dev->kobj);
-		sysfs_create_link(&class_dev->dev->kobj, &class_dev->kobj,
-				  new_class_name);
-		sysfs_remove_link(&class_dev->dev->kobj, old_class_name);
-	}
-#endif
-	class_device_put(class_dev);
-
-	kfree(old_class_name);
-	kfree(new_class_name);
-
-	return error;
-}
-
 struct class_device * class_device_get(struct class_device *class_dev)
 {
 	if (class_dev)
@@ -953,8 +915,8 @@ int __init classes_init(void)
 	/* ick, this is ugly, the things we go through to keep from showing up
 	 * in sysfs... */
 	subsystem_init(&class_obj_subsys);
-	if (!class_obj_subsys.kset.subsys)
-			class_obj_subsys.kset.subsys = &class_obj_subsys;
+	if (!class_obj_subsys.kobj.parent)
+		class_obj_subsys.kobj.parent = &class_obj_subsys.kobj;
 	return 0;
 }
 

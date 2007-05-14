@@ -79,7 +79,6 @@
 #include <linux/videodev2.h>
 #include <media/v4l2-common.h>
 #include <linux/usb.h>
-#include <linux/smp_lock.h>
 
 /*
  * Version Information
@@ -144,7 +143,7 @@ struct dsbr100_device {
 
 
 /* File system interface */
-static struct file_operations usb_dsbr100_fops = {
+static const struct file_operations usb_dsbr100_fops = {
 	.owner =	THIS_MODULE,
 	.open =		usb_dsbr100_open,
 	.release =     	usb_dsbr100_close,

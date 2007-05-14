@@ -11,7 +11,7 @@
  *	as published by the Free Software Foundation; either version
  *	2 of the License, or (at your option) any later version.
  *
- * Author:	Bill Dirks <bdirks@pacbell.net>
+ * Author:	Bill Dirks <bill@thedirks.org>
  *		et al.
  *
  */
@@ -23,7 +23,6 @@
 #include <linux/types.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
-#include <linux/smp_lock.h>
 #include <linux/mm.h>
 #include <linux/fs.h>
 #include <linux/file.h>

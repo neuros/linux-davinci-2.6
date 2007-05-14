@@ -29,6 +29,8 @@ static void omap2_sys_clk_recalc(struct clk * clk);
 static u32 omap2_clksel_to_divisor(u32 div_sel, u32 field_val);
 static u32 omap2_clksel_get_divisor(struct clk *clk);
 
+/* REVISIT: should use a clock flag for this, not a magic number */
+#define PARENT_CONTROLS_CLOCK	0xff
 
 #define RATE_IN_242X	(1 << 0)
 #define RATE_IN_243X	(1 << 1)
@@ -174,13 +176,34 @@ struct prcm_config {
 #define RII_CLKSEL_DSP			(3 << 0)	/* c5x - 200MHz */
 #define RII_CLKSEL_DSP_IF		(2 << 5)	/* c5x - 100MHz */
 #define RII_SYNC_DSP			(0 << 7)	/* Bypass sync */
-#define RII_CLKSEL_IVA			(6 << 8)	/* iva1 - 200MHz */
+#define RII_CLKSEL_IVA			(3 << 8)	/* iva1 - 200MHz */
 #define RII_SYNC_IVA			(0 << 13)	/* Bypass sync */
 #define RII_CM_CLKSEL_DSP_VAL		RII_SYNC_IVA | RII_CLKSEL_IVA | \
 					RII_SYNC_DSP | RII_CLKSEL_DSP_IF | \
 					RII_CLKSEL_DSP
 #define RII_CLKSEL_GFX			(2 << 0)	/* 50MHz */
 #define RII_CM_CLKSEL_GFX_VAL		RII_CLKSEL_GFX
+
+/* 2420-PRCM I 660MHz core */
+#define RI_CLKSEL_L3			(4 << 0)	/* 165MHz */
+#define RI_CLKSEL_L4			(2 << 5)	/* 82.5MHz */
+#define RI_CLKSEL_USB			(4 << 25)	/* 41.25MHz */
+#define RI_CM_CLKSEL1_CORE_VAL		RI_CLKSEL_USB | \
+					RXX_CLKSEL_SSI | RXX_CLKSEL_VLYNQ | \
+					RX_CLKSEL_DSS2 | RX_CLKSEL_DSS1 | \
+					RI_CLKSEL_L4 | RI_CLKSEL_L3
+#define RI_CLKSEL_MPU			(2 << 0)	/* 330MHz */
+#define RI_CM_CLKSEL_MPU_VAL		RI_CLKSEL_MPU
+#define RI_CLKSEL_DSP			(3 << 0)	/* c5x - 220MHz */
+#define RI_CLKSEL_DSP_IF		(2 << 5)	/* c5x - 110MHz */
+#define RI_SYNC_DSP			(1 << 7)	/* Activate sync */
+#define RI_CLKSEL_IVA			(4 << 8)	/* iva1 - 165MHz */
+#define RI_SYNC_IVA			(0 << 13)	/* Bypass sync */
+#define RI_CM_CLKSEL_DSP_VAL		RI_SYNC_IVA | RI_CLKSEL_IVA | \
+					RI_SYNC_DSP | RI_CLKSEL_DSP_IF | \
+					RI_CLKSEL_DSP
+#define RI_CLKSEL_GFX			(1 << 0)	/* 165MHz */
+#define RI_CM_CLKSEL_GFX_VAL		RI_CLKSEL_GFX
 
 /* 2420-PRCM VII (boot) */
 #define RVII_CLKSEL_L3			(1 << 0)
@@ -300,6 +323,13 @@ struct prcm_config {
  * boot (boot)
  */
 
+/* PRCM I target DPLL = 2*330MHz = 660MHz */
+#define MI_DPLL_MULT_12			(55 << 12)
+#define MI_DPLL_DIV_12			(1 << 8)
+#define MI_CM_CLKSEL1_PLL_12_VAL	MX_48M_SRC | MX_54M_SRC | \
+					MI_DPLL_DIV_12 | MI_DPLL_MULT_12 | \
+					MX_APLLS_CLIKIN_12
+
 /*
  * 2420 Equivalent - mode registers
  * PRCM II , target DPLL = 2*300MHz = 600MHz
@@ -352,6 +382,7 @@ struct prcm_config {
  * By having the boot loader boot up in the fastest L4 speed available likely
  * will result in something which you can switch between.
  */
+#define V24XX_SDRC_RFR_CTRL_165MHz	(0x00044c00 | 1)
 #define V24XX_SDRC_RFR_CTRL_133MHz	(0x0003de00 | 1)
 #define V24XX_SDRC_RFR_CTRL_100MHz	(0x0002da01 | 1)
 #define V24XX_SDRC_RFR_CTRL_110MHz	(0x0002da01 | 1) /* Need to calc */
@@ -394,6 +425,13 @@ struct prcm_config {
  * Note: This table needs to be sorted, fastest to slowest.
  *-------------------------------------------------------------------------*/
 static struct prcm_config rate_table[] = {
+	/* PRCM I - FAST */
+	{S12M, S660M, S330M, RI_CM_CLKSEL_MPU_VAL,		/* 330MHz ARM */
+		RI_CM_CLKSEL_DSP_VAL, RI_CM_CLKSEL_GFX_VAL,
+		RI_CM_CLKSEL1_CORE_VAL, MI_CM_CLKSEL1_PLL_12_VAL,
+		MX_CLKSEL2_PLL_2x_VAL, 0, V24XX_SDRC_RFR_CTRL_165MHz,
+		RATE_IN_242X},
+
 	/* PRCM II - FAST */
 	{S12M, S600M, S300M, RII_CM_CLKSEL_MPU_VAL,		/* 300MHz ARM */
 		RII_CM_CLKSEL_DSP_VAL, RII_CM_CLKSEL_GFX_VAL,
@@ -628,7 +666,7 @@ static struct clk func_54m_ck = {
 				RATE_FIXED | CM_PLL_SEL1 | RATE_PROPAGATES,
 	.src_offset	= 5,
 	.enable_reg	= (void __iomem *)&CM_CLKEN_PLL,
-	.enable_bit	= 0xff,
+	.enable_bit	= PARENT_CONTROLS_CLOCK,
 	.recalc		= &omap2_propagate_rate,
 };
 
@@ -655,7 +693,7 @@ static struct clk func_96m_ck = {
 	.flags		= CLOCK_IN_OMAP242X | CLOCK_IN_OMAP243X |
 				RATE_FIXED | RATE_PROPAGATES,
 	.enable_reg	= (void __iomem *)&CM_CLKEN_PLL,
-	.enable_bit	= 0xff,
+	.enable_bit	= PARENT_CONTROLS_CLOCK,
 	.recalc		= &omap2_propagate_rate,
 };
 
@@ -667,7 +705,7 @@ static struct clk func_48m_ck = {
 				RATE_FIXED | CM_PLL_SEL1 | RATE_PROPAGATES,
 	.src_offset	= 3,
 	.enable_reg	= (void __iomem *)&CM_CLKEN_PLL,
-	.enable_bit	= 0xff,
+	.enable_bit	= PARENT_CONTROLS_CLOCK,
 	.recalc		= &omap2_propagate_rate,
 };
 
@@ -679,7 +717,7 @@ static struct clk func_12m_ck = {
 				RATE_FIXED | RATE_PROPAGATES,
 	.recalc		= &omap2_propagate_rate,
 	.enable_reg	= (void __iomem *)&CM_CLKEN_PLL,
-	.enable_bit	= 0xff,
+	.enable_bit	= PARENT_CONTROLS_CLOCK,
 };
 
 /* Secure timer, only available in secure mode */
@@ -796,7 +834,7 @@ static struct clk dsp_ick = {
 	.parent		= &dsp_fck,
 	.flags		= CLOCK_IN_OMAP242X | RATE_CKCTL | CM_DSP_SEL1 |
 				DELAYED_APP | CONFIG_PARTICIPANT,
-	.rate_offset = 5,
+	.rate_offset	= 5,
 	.enable_reg	= (void __iomem *)&CM_ICLKEN_DSP,
 	.enable_bit	= 1,		/* for ipi */
 	.recalc		= &omap2_clksel_recalc,
@@ -807,7 +845,7 @@ static struct clk iva1_ifck = {
 	.parent		= &core_ck,
 	.flags		= CLOCK_IN_OMAP242X | CM_DSP_SEL1 | RATE_CKCTL |
 			CONFIG_PARTICIPANT | RATE_PROPAGATES | DELAYED_APP,
-	.rate_offset= 8,
+	.rate_offset	= 8,
 	.enable_reg	= (void __iomem *)&CM_FCLKEN_DSP,
 	.enable_bit	= 10,
 	.recalc		= &omap2_clksel_recalc,
@@ -861,7 +899,7 @@ static struct clk usb_l4_ick = {	/* FS-USB interface clock */
 				CONFIG_PARTICIPANT,
 	.enable_reg	= (void __iomem *)&CM_ICLKEN2_CORE,
 	.enable_bit	= 0,
-	.rate_offset = 25,
+	.rate_offset	= 25,
 	.recalc		= &omap2_clksel_recalc,
 };
 
@@ -880,7 +918,7 @@ static struct clk ssi_ssr_sst_fck = {
 				RATE_CKCTL | CM_CORE_SEL1 | DELAYED_APP,
 	.enable_reg	= (void __iomem *)&CM_FCLKEN2_CORE,	/* bit 1 */
 	.enable_bit	= 1,
-	.rate_offset = 20,
+	.rate_offset	= 20,
 	.recalc		= &omap2_clksel_recalc,
 };
 
@@ -902,7 +940,7 @@ static struct clk gfx_3d_fck = {
 				RATE_CKCTL | CM_GFX_SEL1,
 	.enable_reg	= (void __iomem *)&CM_FCLKEN_GFX,
 	.enable_bit	= 2,
-	.rate_offset= 0,
+	.rate_offset	= 0,
 	.recalc		= &omap2_clksel_recalc,
 };
 
@@ -913,7 +951,7 @@ static struct clk gfx_2d_fck = {
 				RATE_CKCTL | CM_GFX_SEL1,
 	.enable_reg	= (void __iomem *)&CM_FCLKEN_GFX,
 	.enable_bit	= 1,
-	.rate_offset= 0,
+	.rate_offset	= 0,
 	.recalc		= &omap2_clksel_recalc,
 };
 
@@ -1282,8 +1320,8 @@ static struct clk mcbsp1_ick = {
 	.name		= "mcbsp1_ick",
 	.parent		= &l4_ck,
 	.flags		= CLOCK_IN_OMAP242X | CLOCK_IN_OMAP243X,
-	.enable_bit	= 15,
 	.enable_reg	= (void __iomem *)&CM_ICLKEN1_CORE,	 /* bit16 */
+	.enable_bit	= 15,
 	.recalc		= &omap2_followparent_recalc,
 };
 
@@ -1291,8 +1329,8 @@ static struct clk mcbsp1_fck = {
 	.name		= "mcbsp1_fck",
 	.parent		= &func_96m_ck,
 	.flags		= CLOCK_IN_OMAP242X | CLOCK_IN_OMAP243X,
-	.enable_bit	= 15,
 	.enable_reg	= (void __iomem *)&CM_FCLKEN1_CORE,
+	.enable_bit	= 15,
 	.recalc		= &omap2_followparent_recalc,
 };
 
@@ -1300,8 +1338,8 @@ static struct clk mcbsp2_ick = {
 	.name		= "mcbsp2_ick",
 	.parent		= &l4_ck,
 	.flags		= CLOCK_IN_OMAP242X | CLOCK_IN_OMAP243X,
-	.enable_bit	= 16,
 	.enable_reg	= (void __iomem *)&CM_ICLKEN1_CORE,
+	.enable_bit	= 16,
 	.recalc		= &omap2_followparent_recalc,
 };
 
@@ -1309,8 +1347,8 @@ static struct clk mcbsp2_fck = {
 	.name		= "mcbsp2_fck",
 	.parent		= &func_96m_ck,
 	.flags		= CLOCK_IN_OMAP242X | CLOCK_IN_OMAP243X,
-	.enable_bit	= 16,
 	.enable_reg	= (void __iomem *)&CM_FCLKEN1_CORE,
+	.enable_bit	= 16,
 	.recalc		= &omap2_followparent_recalc,
 };
 
@@ -1725,7 +1763,8 @@ static struct clk i2c2_fck = {
 };
 
 static struct clk i2chs2_fck = {
-	.name		= "i2chs2_fck",
+	.name		= "i2chs_fck",
+	.id		= 2,
 	.parent		= &func_96m_ck,
 	.flags		= CLOCK_IN_OMAP243X,
 	.enable_reg	= (void __iomem *)&CM_FCLKEN2_CORE,
@@ -1754,7 +1793,8 @@ static struct clk i2c1_fck = {
 };
 
 static struct clk i2chs1_fck = {
-	.name		= "i2chs1_fck",
+	.name		= "i2chs_fck",
+	.id		= 1,
 	.parent		= &func_96m_ck,
 	.flags		= CLOCK_IN_OMAP243X,
 	.enable_reg	= (void __iomem *)&CM_FCLKEN2_CORE,

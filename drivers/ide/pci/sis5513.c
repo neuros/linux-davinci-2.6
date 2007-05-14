@@ -191,7 +191,7 @@ static char* chipset_capability[] = {
 	"ATA 133 (1st gen)", "ATA 133 (2nd gen)"
 };
 
-#if defined(DISPLAY_SIS_TIMINGS) && defined(CONFIG_PROC_FS)
+#if defined(DISPLAY_SIS_TIMINGS) && defined(CONFIG_IDE_PROC_FS)
 #include <linux/stat.h>
 #include <linux/proc_fs.h>
 
@@ -426,17 +426,7 @@ static int sis_get_info (char *buffer, char **addr, off_t offset, int count)
 
 	return len > count ? count : len;
 }
-#endif /* defined(DISPLAY_SIS_TIMINGS) && defined(CONFIG_PROC_FS) */
-
-static u8 sis5513_ratemask (ide_drive_t *drive)
-{
-	u8 rates[] = { 0, 0, 1, 2, 3, 3, 4, 4 };
-	u8 mode = rates[chipset_family];
-
-	if (!eighty_ninty_three(drive))
-		mode = min(mode, (u8)1);
-	return mode;
-}
+#endif /* defined(DISPLAY_SIS_TIMINGS) && defined(CONFIG_IDE_PROC_FS) */
 
 /*
  * Configuration functions
@@ -563,7 +553,7 @@ static int sis5513_tune_chipset (ide_drive_t *drive, u8 xferspeed)
 	u8 drive_pci, reg, speed;
 	u32 regdw;
 
-	speed = ide_rate_filter(sis5513_ratemask(drive), xferspeed);
+	speed = ide_rate_filter(drive, xferspeed);
 
 	/* See config_art_rwp_pio for drive pci config registers */
 	drive_pci = 0x40;
@@ -648,86 +638,20 @@ static void sis5513_tune_drive (ide_drive_t *drive, u8 pio)
 	(void) config_chipset_for_pio(drive, pio);
 }
 
-/*
- * ((id->hw_config & 0x4000|0x2000) && (HWIF(drive)->udma_four))
- */
-static int config_chipset_for_dma (ide_drive_t *drive)
+static int sis5513_config_xfer_rate(ide_drive_t *drive)
 {
-	u8 speed	= ide_dma_speed(drive, sis5513_ratemask(drive));
-
-#ifdef DEBUG
-	printk("SIS5513: config_chipset_for_dma, drive %d, ultra %x\n",
-	       drive->dn, drive->id->dma_ultra);
-#endif
-
-	if (!(speed))
-		return 0;
-
-	sis5513_tune_chipset(drive, speed);
-	return ide_dma_enable(drive);
-}
-
-static int sis5513_config_drive_xfer_rate (ide_drive_t *drive)
-{
-	ide_hwif_t *hwif	= HWIF(drive);
-	struct hd_driveid *id	= drive->id;
+	config_art_rwp_pio(drive, 5);
 
 	drive->init_speed = 0;
 
-	if (id && (id->capability & 1) && drive->autodma) {
+	if (ide_tune_dma(drive))
+		return 0;
 
-		if (ide_use_dma(drive)) {
-			if (config_chipset_for_dma(drive))
-				return hwif->ide_dma_on(drive);
-		}
-
-		goto fast_ata_pio;
-
-	} else if ((id->capability & 8) || (id->field_valid & 2)) {
-fast_ata_pio:
+	if (ide_use_fast_pio(drive))
 		sis5513_tune_drive(drive, 5);
-		return hwif->ide_dma_off_quietly(drive);
-	}
-	/* IORDY not supported */
-	return 0;
+
+	return -1;
 }
-
-/* initiates/aborts (U)DMA read/write operations on a drive. */
-static int sis5513_config_xfer_rate (ide_drive_t *drive)
-{
-	config_drive_art_rwp(drive);
-	config_art_rwp_pio(drive, 5);
-	return sis5513_config_drive_xfer_rate(drive);
-}
-
-/*
-  Future simpler config_xfer_rate :
-   When ide_find_best_mode is made bad-drive aware
-   - remove config_drive_xfer_rate and config_chipset_for_dma,
-   - replace config_xfer_rate with the following
-
-static int sis5513_config_xfer_rate (ide_drive_t *drive)
-{
-	u16 w80 = HWIF(drive)->udma_four;
-	u16 speed;
-
-	config_drive_art_rwp(drive);
-	config_art_rwp_pio(drive, 5);
-
-	speed = ide_find_best_mode(drive,
-		XFER_PIO | XFER_EPIO | XFER_SWDMA | XFER_MWDMA |
-		(chipset_family >= ATA_33 ? XFER_UDMA : 0) |
-		(w80 && chipset_family >= ATA_66 ? XFER_UDMA_66 : 0) |
-		(w80 && chipset_family >= ATA_100a ? XFER_UDMA_100 : 0) |
-		(w80 && chipset_family >= ATA_133a ? XFER_UDMA_133 : 0));
-
-	sis5513_tune_chipset(drive, speed);
-
-	if (drive->autodma && (speed & XFER_MODE) != XFER_PIO)
-		return HWIF(drive)->ide_dma_on(drive);
-	return HWIF(drive)->ide_dma_off_quietly(drive);
-}
-*/
 
 /* Chip detection and general config */
 static unsigned int __devinit init_chipset_sis5513 (struct pci_dev *dev, const char *name)
@@ -873,7 +797,7 @@ static unsigned int __devinit init_chipset_sis5513 (struct pci_dev *dev, const c
 				break;
 		}
 
-#if defined(DISPLAY_SIS_TIMINGS) && defined(CONFIG_PROC_FS)
+#if defined(DISPLAY_SIS_TIMINGS) && defined(CONFIG_IDE_PROC_FS)
 		if (!sis_proc) {
 			sis_proc = 1;
 			bmide_dev = dev;
@@ -905,6 +829,8 @@ static unsigned int __devinit ata66_sis5513 (ide_hwif_t *hwif)
 
 static void __devinit init_hwif_sis5513 (ide_hwif_t *hwif)
 {
+	u8 udma_rates[] = { 0x00, 0x00, 0x07, 0x1f, 0x3f, 0x3f, 0x7f, 0x7f };
+
 	hwif->autodma = 0;
 
 	if (!hwif->irq)
@@ -920,7 +846,8 @@ static void __devinit init_hwif_sis5513 (ide_hwif_t *hwif)
 	}
 
 	hwif->atapi_dma = 1;
-	hwif->ultra_mask = 0x7f;
+
+	hwif->ultra_mask = udma_rates[chipset_family];
 	hwif->mwdma_mask = 0x07;
 	hwif->swdma_mask = 0x07;
 

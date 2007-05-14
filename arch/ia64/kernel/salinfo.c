@@ -42,7 +42,6 @@
 #include <linux/proc_fs.h>
 #include <linux/module.h>
 #include <linux/smp.h>
-#include <linux/smp_lock.h>
 #include <linux/timer.h>
 #include <linux/vmalloc.h>
 
@@ -352,7 +351,7 @@ retry:
 	return size;
 }
 
-static struct file_operations salinfo_event_fops = {
+static const struct file_operations salinfo_event_fops = {
 	.open  = salinfo_event_open,
 	.read  = salinfo_event_read,
 };
@@ -568,7 +567,7 @@ salinfo_log_write(struct file *file, const char __user *buffer, size_t count, lo
 	return count;
 }
 
-static struct file_operations salinfo_data_fops = {
+static const struct file_operations salinfo_data_fops = {
 	.open    = salinfo_log_open,
 	.release = salinfo_log_release,
 	.read    = salinfo_log_read,
@@ -583,6 +582,7 @@ salinfo_cpu_callback(struct notifier_block *nb, unsigned long action, void *hcpu
 	struct salinfo_data *data;
 	switch (action) {
 	case CPU_ONLINE:
+	case CPU_ONLINE_FROZEN:
 		spin_lock_irqsave(&data_saved_lock, flags);
 		for (i = 0, data = salinfo_data;
 		     i < ARRAY_SIZE(salinfo_data);
@@ -593,6 +593,7 @@ salinfo_cpu_callback(struct notifier_block *nb, unsigned long action, void *hcpu
 		spin_unlock_irqrestore(&data_saved_lock, flags);
 		break;
 	case CPU_DEAD:
+	case CPU_DEAD_FROZEN:
 		spin_lock_irqsave(&data_saved_lock, flags);
 		for (i = 0, data = salinfo_data;
 		     i < ARRAY_SIZE(salinfo_data);

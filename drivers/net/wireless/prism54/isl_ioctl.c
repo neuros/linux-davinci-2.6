@@ -1395,11 +1395,16 @@ static int prism54_set_auth(struct net_device *ndev,
 		break;
 
 	case IW_AUTH_RX_UNENCRYPTED_EAPOL:
-		dot1x = param->value ? 1 : 0;
+		/* dot1x should be the opposite of RX_UNENCRYPTED_EAPOL;
+		 * turn off dot1x when allowing receipt of unencrypted EAPOL
+		 * frames, turn on dot1x when receipt should be disallowed
+		 */
+		dot1x = param->value ? 0 : 0x01;
 		break;
 
 	case IW_AUTH_PRIVACY_INVOKED:
 		privinvoked = param->value ? 1 : 0;
+		break;
 
 	case IW_AUTH_DROP_UNENCRYPTED:
 		exunencrypt = param->value ? 1 : 0;
@@ -1589,6 +1594,7 @@ static int prism54_set_encodeext(struct net_device *ndev,
 			}
 			key.type = DOT11_PRIV_TKIP;
 			key.length = KEY_SIZE_TKIP;
+			break;
 		default:
 			return -EINVAL;
 		}
@@ -3048,7 +3054,7 @@ static const iw_handler prism54_handler[] = {
 	(iw_handler) prism54_set_wap,	/* SIOCSIWAP */
 	(iw_handler) prism54_get_wap,	/* SIOCGIWAP */
 	(iw_handler) NULL,	/* -- hole -- */
-	(iw_handler) NULL,	/* SIOCGIWAPLIST depreciated */
+	(iw_handler) NULL,	/* SIOCGIWAPLIST deprecated */
 	(iw_handler) prism54_set_scan,	/* SIOCSIWSCAN */
 	(iw_handler) prism54_get_scan,	/* SIOCGIWSCAN */
 	(iw_handler) prism54_set_essid,	/* SIOCSIWESSID */

@@ -387,7 +387,6 @@
 #include <linux/ctype.h>
 #include <linux/ioport.h>
 #include <linux/delay.h>
-#include <linux/sched.h>
 #include <linux/interrupt.h>
 #include <linux/in.h>
 #include <linux/proc_fs.h>
@@ -687,7 +686,7 @@ MODULE_AUTHOR("Achim Leubner");
 MODULE_LICENSE("GPL");
 
 /* ioctl interface */
-static struct file_operations gdth_fops = {
+static const struct file_operations gdth_fops = {
     .ioctl   = gdth_ioctl,
     .open    = gdth_open,
     .release = gdth_close,
@@ -3092,6 +3091,7 @@ static int gdth_fill_raw_cmd(int hanum,Scsi_Cmnd *scp,unchar b)
             cmdp->u.raw64.direction  = 
                 gdth_direction_tab[scp->cmnd[0]]==DOU ? GDTH_DATA_OUT:GDTH_DATA_IN;
             memcpy(cmdp->u.raw64.cmd,scp->cmnd,16);
+            cmdp->u.raw64.sg_ranz    = 0;
         } else {
             cmdp->u.raw.reserved   = 0;
             cmdp->u.raw.mdisc_time = 0;
@@ -3108,6 +3108,7 @@ static int gdth_fill_raw_cmd(int hanum,Scsi_Cmnd *scp,unchar b)
             cmdp->u.raw.direction  = 
                 gdth_direction_tab[scp->cmnd[0]]==DOU ? GDTH_DATA_OUT:GDTH_DATA_IN;
             memcpy(cmdp->u.raw.cmd,scp->cmnd,12);
+            cmdp->u.raw.sg_ranz    = 0;
         }
 
         if (scp->use_sg) {

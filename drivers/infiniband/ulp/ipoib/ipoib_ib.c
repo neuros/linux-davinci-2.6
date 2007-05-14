@@ -50,8 +50,6 @@ MODULE_PARM_DESC(data_debug_level,
 		 "Enable data path debug tracing if > 0");
 #endif
 
-#define	IPOIB_OP_RECV	(1ul << 31)
-
 static DEFINE_MUTEX(pkey_mutex);
 
 struct ipoib_ah *ipoib_create_ah(struct net_device *dev,
@@ -174,8 +172,8 @@ static void ipoib_ib_handle_rx_wc(struct net_device *dev, struct ib_wc *wc)
 	struct sk_buff *skb;
 	u64 addr;
 
-	ipoib_dbg_data(priv, "recv completion: id %d, op %d, status: %d\n",
-		       wr_id, wc->opcode, wc->status);
+	ipoib_dbg_data(priv, "recv completion: id %d, status: %d\n",
+		       wr_id, wc->status);
 
 	if (unlikely(wr_id >= ipoib_recvq_size)) {
 		ipoib_warn(priv, "recv completion event with wrid %d (> %d)\n",
@@ -218,7 +216,7 @@ static void ipoib_ib_handle_rx_wc(struct net_device *dev, struct ib_wc *wc)
 	if (wc->slid != priv->local_lid ||
 	    wc->src_qp != priv->qp->qp_num) {
 		skb->protocol = ((struct ipoib_header *) skb->data)->proto;
-		skb->mac.raw = skb->data;
+		skb_reset_mac_header(skb);
 		skb_pull(skb, IPOIB_ENCAP_LEN);
 
 		dev->last_rx = jiffies;
@@ -228,7 +226,7 @@ static void ipoib_ib_handle_rx_wc(struct net_device *dev, struct ib_wc *wc)
 		skb->dev = dev;
 		/* XXX get correct PACKET_ type here */
 		skb->pkt_type = PACKET_HOST;
-		netif_rx_ni(skb);
+		netif_receive_skb(skb);
 	} else {
 		ipoib_dbg_data(priv, "dropping loopback packet\n");
 		dev_kfree_skb_any(skb);
@@ -247,8 +245,8 @@ static void ipoib_ib_handle_tx_wc(struct net_device *dev, struct ib_wc *wc)
 	struct ipoib_tx_buf *tx_req;
 	unsigned long flags;
 
-	ipoib_dbg_data(priv, "send completion: id %d, op %d, status: %d\n",
-		       wr_id, wc->opcode, wc->status);
+	ipoib_dbg_data(priv, "send completion: id %d, status: %d\n",
+		       wr_id, wc->status);
 
 	if (unlikely(wr_id >= ipoib_sendq_size)) {
 		ipoib_warn(priv, "send completion event with wrid %d (> %d)\n",
@@ -268,10 +266,11 @@ static void ipoib_ib_handle_tx_wc(struct net_device *dev, struct ib_wc *wc)
 
 	spin_lock_irqsave(&priv->tx_lock, flags);
 	++priv->tx_tail;
-	if (netif_queue_stopped(dev) &&
-	    test_bit(IPOIB_FLAG_ADMIN_UP, &priv->flags) &&
-	    priv->tx_head - priv->tx_tail <= ipoib_sendq_size >> 1)
+	if (unlikely(test_bit(IPOIB_FLAG_NETIF_STOPPED, &priv->flags)) &&
+	    priv->tx_head - priv->tx_tail <= ipoib_sendq_size >> 1) {
+		clear_bit(IPOIB_FLAG_NETIF_STOPPED, &priv->flags);
 		netif_wake_queue(dev);
+	}
 	spin_unlock_irqrestore(&priv->tx_lock, flags);
 
 	if (wc->status != IB_WC_SUCCESS &&
@@ -281,26 +280,63 @@ static void ipoib_ib_handle_tx_wc(struct net_device *dev, struct ib_wc *wc)
 			   wc->status, wr_id, wc->vendor_err);
 }
 
-static void ipoib_ib_handle_wc(struct net_device *dev, struct ib_wc *wc)
+int ipoib_poll(struct net_device *dev, int *budget)
 {
-	if (wc->wr_id & IPOIB_OP_RECV)
-		ipoib_ib_handle_rx_wc(dev, wc);
-	else
-		ipoib_ib_handle_tx_wc(dev, wc);
+	struct ipoib_dev_priv *priv = netdev_priv(dev);
+	int max = min(*budget, dev->quota);
+	int done;
+	int t;
+	int empty;
+	int n, i;
+
+	done  = 0;
+	empty = 0;
+
+	while (max) {
+		t = min(IPOIB_NUM_WC, max);
+		n = ib_poll_cq(priv->cq, t, priv->ibwc);
+
+		for (i = 0; i < n; ++i) {
+			struct ib_wc *wc = priv->ibwc + i;
+
+			if (wc->wr_id & IPOIB_CM_OP_SRQ) {
+				++done;
+				--max;
+				ipoib_cm_handle_rx_wc(dev, wc);
+			} else if (wc->wr_id & IPOIB_OP_RECV) {
+				++done;
+				--max;
+				ipoib_ib_handle_rx_wc(dev, wc);
+			} else
+				ipoib_ib_handle_tx_wc(dev, wc);
+		}
+
+		if (n != t) {
+			empty = 1;
+			break;
+		}
+	}
+
+	dev->quota -= done;
+	*budget    -= done;
+
+	if (empty) {
+		netif_rx_complete(dev);
+		if (unlikely(ib_req_notify_cq(priv->cq,
+					      IB_CQ_NEXT_COMP |
+					      IB_CQ_REPORT_MISSED_EVENTS)) &&
+		    netif_rx_reschedule(dev, 0))
+			return 1;
+
+		return 0;
+	}
+
+	return 1;
 }
 
 void ipoib_ib_completion(struct ib_cq *cq, void *dev_ptr)
 {
-	struct net_device *dev = (struct net_device *) dev_ptr;
-	struct ipoib_dev_priv *priv = netdev_priv(dev);
-	int n, i;
-
-	ib_req_notify_cq(cq, IB_CQ_NEXT_COMP);
-	do {
-		n = ib_poll_cq(cq, IPOIB_NUM_WC, priv->ibwc);
-		for (i = 0; i < n; ++i)
-			ipoib_ib_handle_wc(dev, priv->ibwc + i);
-	} while (n == IPOIB_NUM_WC);
+	netif_rx_schedule(dev_ptr);
 }
 
 static inline int post_send(struct ipoib_dev_priv *priv,
@@ -327,12 +363,12 @@ void ipoib_send(struct net_device *dev, struct sk_buff *skb,
 	struct ipoib_tx_buf *tx_req;
 	u64 addr;
 
-	if (unlikely(skb->len > dev->mtu + INFINIBAND_ALEN)) {
+	if (unlikely(skb->len > priv->mcast_mtu + IPOIB_ENCAP_LEN)) {
 		ipoib_warn(priv, "packet len %d (> %d) too long to send, dropping\n",
-			   skb->len, dev->mtu + INFINIBAND_ALEN);
+			   skb->len, priv->mcast_mtu + IPOIB_ENCAP_LEN);
 		++priv->stats.tx_dropped;
 		++priv->stats.tx_errors;
-		dev_kfree_skb_any(skb);
+		ipoib_cm_skb_too_long(dev, skb, priv->mcast_mtu);
 		return;
 	}
 
@@ -372,6 +408,7 @@ void ipoib_send(struct net_device *dev, struct sk_buff *skb,
 		if (priv->tx_head - priv->tx_tail == ipoib_sendq_size) {
 			ipoib_dbg(priv, "TX ring full, stopping kernel net queue\n");
 			netif_stop_queue(dev);
+			set_bit(IPOIB_FLAG_NETIF_STOPPED, &priv->flags);
 		}
 	}
 }
@@ -418,6 +455,13 @@ int ipoib_ib_dev_open(struct net_device *dev)
 	}
 
 	ret = ipoib_ib_post_receives(dev);
+	if (ret) {
+		ipoib_warn(priv, "ipoib_ib_post_receives returned %d\n", ret);
+		ipoib_ib_dev_stop(dev);
+		return -1;
+	}
+
+	ret = ipoib_cm_dev_open(dev);
 	if (ret) {
 		ipoib_warn(priv, "ipoib_ib_post_receives returned %d\n", ret);
 		ipoib_ib_dev_stop(dev);
@@ -505,9 +549,12 @@ int ipoib_ib_dev_stop(struct net_device *dev)
 	struct ib_qp_attr qp_attr;
 	unsigned long begin;
 	struct ipoib_tx_buf *tx_req;
-	int i;
+	int i, n;
 
 	clear_bit(IPOIB_FLAG_INITIALIZED, &priv->flags);
+	netif_poll_disable(dev);
+
+	ipoib_cm_dev_stop(dev);
 
 	/*
 	 * Move our QP to the error state and then reinitialize in
@@ -557,6 +604,18 @@ int ipoib_ib_dev_stop(struct net_device *dev)
 			goto timeout;
 		}
 
+		do {
+			n = ib_poll_cq(priv->cq, IPOIB_NUM_WC, priv->ibwc);
+			for (i = 0; i < n; ++i) {
+				if (priv->ibwc[i].wr_id & IPOIB_CM_OP_SRQ)
+					ipoib_cm_handle_rx_wc(dev, priv->ibwc + i);
+				else if (priv->ibwc[i].wr_id & IPOIB_OP_RECV)
+					ipoib_ib_handle_rx_wc(dev, priv->ibwc + i);
+				else
+					ipoib_ib_handle_tx_wc(dev, priv->ibwc + i);
+			}
+		} while (n == IPOIB_NUM_WC);
+
 		msleep(1);
 	}
 
@@ -584,6 +643,9 @@ timeout:
 
 		msleep(1);
 	}
+
+	netif_poll_enable(dev);
+	ib_req_notify_cq(priv->cq, IB_CQ_NEXT_COMP);
 
 	return 0;
 }

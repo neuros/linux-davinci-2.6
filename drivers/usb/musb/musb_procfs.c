@@ -534,6 +534,15 @@ static int dump_header_stats(struct musb *pThis, char *buffer)
 	count += code;
 	buffer += code;
 
+#ifdef	CONFIG_USB_GADGET_MUSB_HDRC
+	code = sprintf(buffer, "Peripheral address: %02x\n",
+			musb_readb(pThis, MGC_O_HDRC_FADDR));
+	if (code <= 0)
+		goto done;
+	buffer += code;
+	count += code;
+#endif
+
 #ifdef	CONFIG_USB_MUSB_HDRC_HCD
 	code = sprintf(buffer, "Root port status: %08x\n",
 			pThis->port1_status);
@@ -648,7 +657,9 @@ static int musb_proc_write(struct file *file, const char __user *buffer,
 
 	/* MOD_INC_USE_COUNT; */
 
-	copy_from_user(&cmd, buffer, 1);
+	if (unlikely(copy_from_user(&cmd, buffer, 1)))
+		return -EFAULT;
+
 	switch (cmd) {
 	case 'C':
 		if (pBase) {
@@ -722,7 +733,8 @@ static int musb_proc_write(struct file *file, const char __user *buffer,
 				int i = 0, level = 0, sign = 1;
 				int len = min(count - 1, (unsigned long)8);
 
-				copy_from_user(&digits, &buffer[1], len);
+				if (copy_from_user(&digits, &buffer[1], len))
+					return -EFAULT;
 
 				/* optional sign */
 				if (*p == '-') {

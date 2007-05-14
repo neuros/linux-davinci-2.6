@@ -9,24 +9,6 @@
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
- *
- * 23 Apr 2001: Harald Welte <laforge@gnumonks.org>
- *	- new API and handling of conntrack/nat helpers
- *	- now capable of multiple expectations for one master
- * 16 Jul 2002: Harald Welte <laforge@gnumonks.org>
- *	- add usage/reference counts to ip_conntrack_expect
- *	- export ip_conntrack[_expect]_{find_get,put} functions
- * 16 Dec 2003: Yasuyuki Kozakai @USAGI <yasuyuki.kozakai@toshiba.co.jp>
- *	- generalize L3 protocol denendent part.
- * 23 Mar 2004: Yasuyuki Kozakai @USAGI <yasuyuki.kozakai@toshiba.co.jp>
- *	- add support various size of conntrack structures.
- * 26 Jan 2006: Harald Welte <laforge@netfilter.org>
- * 	- restructure nf_conn (introduce nf_conn_help)
- * 	- redesign 'features' how they were originally intended
- * 26 Feb 2006: Pablo Neira Ayuso <pablo@eurodev.net>
- * 	- add support for L3 protocol module load on demand.
- *
- * Derived from net/ipv4/netfilter/ip_conntrack_core.c
  */
 
 #include <linux/types.h>
@@ -128,10 +110,11 @@ static u_int32_t __hash_conntrack(const struct nf_conntrack_tuple *tuple,
 				  unsigned int size, unsigned int rnd)
 {
 	unsigned int a, b;
-	a = jhash((void *)tuple->src.u3.all, sizeof(tuple->src.u3.all),
-		  ((tuple->src.l3num) << 16) | tuple->dst.protonum);
-	b = jhash((void *)tuple->dst.u3.all, sizeof(tuple->dst.u3.all),
-			(tuple->src.u.all << 16) | tuple->dst.u.all);
+
+	a = jhash2(tuple->src.u3.all, ARRAY_SIZE(tuple->src.u3.all),
+		   (tuple->src.l3num << 16) | tuple->dst.protonum);
+	b = jhash2(tuple->dst.u3.all, ARRAY_SIZE(tuple->dst.u3.all),
+		   (tuple->src.u.all << 16) | tuple->dst.u.all);
 
 	return jhash_2words(a, b, rnd) % size;
 }
@@ -318,6 +301,7 @@ destroy_conntrack(struct nf_conntrack *nfct)
 	struct nf_conn_help *help = nfct_help(ct);
 	struct nf_conntrack_l3proto *l3proto;
 	struct nf_conntrack_l4proto *l4proto;
+	typeof(nf_conntrack_destroyed) destroyed;
 
 	DEBUGP("destroy_conntrack(%p)\n", ct);
 	NF_CT_ASSERT(atomic_read(&nfct->use) == 0);
@@ -332,16 +316,21 @@ destroy_conntrack(struct nf_conntrack *nfct)
 	/* To make sure we don't get any weird locking issues here:
 	 * destroy_conntrack() MUST NOT be called with a write lock
 	 * to nf_conntrack_lock!!! -HW */
+	rcu_read_lock();
 	l3proto = __nf_ct_l3proto_find(ct->tuplehash[IP_CT_DIR_REPLY].tuple.src.l3num);
 	if (l3proto && l3proto->destroy)
 		l3proto->destroy(ct);
 
-	l4proto = __nf_ct_l4proto_find(ct->tuplehash[IP_CT_DIR_REPLY].tuple.src.l3num, ct->tuplehash[IP_CT_DIR_REPLY].tuple.dst.protonum);
+	l4proto = __nf_ct_l4proto_find(ct->tuplehash[IP_CT_DIR_REPLY].tuple.src.l3num,
+				       ct->tuplehash[IP_CT_DIR_REPLY].tuple.dst.protonum);
 	if (l4proto && l4proto->destroy)
 		l4proto->destroy(ct);
 
-	if (nf_conntrack_destroyed)
-		nf_conntrack_destroyed(ct);
+	destroyed = rcu_dereference(nf_conntrack_destroyed);
+	if (destroyed)
+		destroyed(ct);
+
+	rcu_read_unlock();
 
 	write_lock_bh(&nf_conntrack_lock);
 	/* Expectations will have been removed in clean_from_lists,
@@ -418,7 +407,7 @@ EXPORT_SYMBOL_GPL(nf_conntrack_find_get);
 
 static void __nf_conntrack_hash_insert(struct nf_conn *ct,
 				       unsigned int hash,
-				       unsigned int repl_hash) 
+				       unsigned int repl_hash)
 {
 	ct->id = ++nf_conntrack_next_id;
 	list_add(&ct->tuplehash[IP_CT_DIR_ORIGINAL].list,
@@ -560,7 +549,7 @@ static int early_drop(struct list_head *chain)
 	if (del_timer(&ct->timeout)) {
 		death_by_timeout((unsigned long)ct);
 		dropped = 1;
-		NF_CT_STAT_INC(early_drop);
+		NF_CT_STAT_INC_ATOMIC(early_drop);
 	}
 	nf_ct_put(ct);
 	return dropped;
@@ -627,13 +616,11 @@ __nf_conntrack_alloc(const struct nf_conntrack_tuple *orig,
 	memset(conntrack, 0, nf_ct_cache[features].size);
 	conntrack->features = features;
 	atomic_set(&conntrack->ct_general.use, 1);
-	conntrack->ct_general.destroy = destroy_conntrack;
 	conntrack->tuplehash[IP_CT_DIR_ORIGINAL].tuple = *orig;
 	conntrack->tuplehash[IP_CT_DIR_REPLY].tuple = *repl;
 	/* Don't set timer yet: wait for confirmation */
-	init_timer(&conntrack->timeout);
-	conntrack->timeout.data = (unsigned long)conntrack;
-	conntrack->timeout.function = death_by_timeout;
+	setup_timer(&conntrack->timeout, death_by_timeout,
+		    (unsigned long)conntrack);
 	read_unlock_bh(&nf_ct_cache_lock);
 
 	return conntrack;
@@ -647,9 +634,14 @@ struct nf_conn *nf_conntrack_alloc(const struct nf_conntrack_tuple *orig,
 				   const struct nf_conntrack_tuple *repl)
 {
 	struct nf_conntrack_l3proto *l3proto;
+	struct nf_conn *ct;
 
+	rcu_read_lock();
 	l3proto = __nf_ct_l3proto_find(orig->src.l3num);
-	return __nf_conntrack_alloc(orig, repl, l3proto, 0);
+	ct = __nf_conntrack_alloc(orig, repl, l3proto, 0);
+	rcu_read_unlock();
+
+	return ct;
 }
 EXPORT_SYMBOL_GPL(nf_conntrack_alloc);
 
@@ -757,7 +749,7 @@ resolve_normal_ct(struct sk_buff *skb,
 	struct nf_conntrack_tuple_hash *h;
 	struct nf_conn *ct;
 
-	if (!nf_ct_get_tuple(skb, (unsigned int)(skb->nh.raw - skb->data),
+	if (!nf_ct_get_tuple(skb, skb_network_offset(skb),
 			     dataoff, l3num, protonum, &tuple, l3proto,
 			     l4proto)) {
 		DEBUGP("resolve_normal_ct: Can't get tuple\n");
@@ -813,11 +805,13 @@ nf_conntrack_in(int pf, unsigned int hooknum, struct sk_buff **pskb)
 
 	/* Previously seen (loopback or untracked)?  Ignore. */
 	if ((*pskb)->nfct) {
-		NF_CT_STAT_INC(ignore);
+		NF_CT_STAT_INC_ATOMIC(ignore);
 		return NF_ACCEPT;
 	}
 
+	/* rcu_read_lock()ed by nf_hook_slow */
 	l3proto = __nf_ct_l3proto_find((u_int16_t)pf);
+
 	if ((ret = l3proto->prepare(pskb, hooknum, &dataoff, &protonum)) <= 0) {
 		DEBUGP("not prepared to track yet or error occured\n");
 		return -ret;
@@ -830,8 +824,8 @@ nf_conntrack_in(int pf, unsigned int hooknum, struct sk_buff **pskb)
 	 * core what to do with the packet. */
 	if (l4proto->error != NULL &&
 	    (ret = l4proto->error(*pskb, dataoff, &ctinfo, pf, hooknum)) <= 0) {
-		NF_CT_STAT_INC(error);
-		NF_CT_STAT_INC(invalid);
+		NF_CT_STAT_INC_ATOMIC(error);
+		NF_CT_STAT_INC_ATOMIC(invalid);
 		return -ret;
 	}
 
@@ -839,13 +833,13 @@ nf_conntrack_in(int pf, unsigned int hooknum, struct sk_buff **pskb)
 			       &set_reply, &ctinfo);
 	if (!ct) {
 		/* Not valid part of a connection */
-		NF_CT_STAT_INC(invalid);
+		NF_CT_STAT_INC_ATOMIC(invalid);
 		return NF_ACCEPT;
 	}
 
 	if (IS_ERR(ct)) {
 		/* Too stressed to deal. */
-		NF_CT_STAT_INC(drop);
+		NF_CT_STAT_INC_ATOMIC(drop);
 		return NF_DROP;
 	}
 
@@ -858,7 +852,7 @@ nf_conntrack_in(int pf, unsigned int hooknum, struct sk_buff **pskb)
 		DEBUGP("nf_conntrack_in: Can't track with proto module\n");
 		nf_conntrack_put((*pskb)->nfct);
 		(*pskb)->nfct = NULL;
-		NF_CT_STAT_INC(invalid);
+		NF_CT_STAT_INC_ATOMIC(invalid);
 		return -ret;
 	}
 
@@ -872,10 +866,15 @@ EXPORT_SYMBOL_GPL(nf_conntrack_in);
 int nf_ct_invert_tuplepr(struct nf_conntrack_tuple *inverse,
 			 const struct nf_conntrack_tuple *orig)
 {
-	return nf_ct_invert_tuple(inverse, orig,
-				  __nf_ct_l3proto_find(orig->src.l3num),
-				  __nf_ct_l4proto_find(orig->src.l3num,
-						     orig->dst.protonum));
+	int ret;
+
+	rcu_read_lock();
+	ret = nf_ct_invert_tuple(inverse, orig,
+				 __nf_ct_l3proto_find(orig->src.l3num),
+				 __nf_ct_l4proto_find(orig->src.l3num,
+						      orig->dst.protonum));
+	rcu_read_unlock();
+	return ret;
 }
 EXPORT_SYMBOL_GPL(nf_ct_invert_tuplepr);
 
@@ -942,7 +941,7 @@ void __nf_ct_refresh_acct(struct nf_conn *ct,
 	if (do_acct) {
 		ct->counters[CTINFO2DIR(ctinfo)].packets++;
 		ct->counters[CTINFO2DIR(ctinfo)].bytes +=
-			skb->len - (unsigned int)(skb->nh.raw - skb->data);
+			skb->len - skb_network_offset(skb);
 
 		if ((ct->counters[CTINFO2DIR(ctinfo)].packets & 0x80000000)
 		    || (ct->counters[CTINFO2DIR(ctinfo)].bytes & 0x80000000))
@@ -958,8 +957,7 @@ void __nf_ct_refresh_acct(struct nf_conn *ct,
 }
 EXPORT_SYMBOL_GPL(__nf_ct_refresh_acct);
 
-#if defined(CONFIG_NF_CT_NETLINK) || \
-    defined(CONFIG_NF_CT_NETLINK_MODULE)
+#if defined(CONFIG_NF_CT_NETLINK) || defined(CONFIG_NF_CT_NETLINK_MODULE)
 
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/netfilter/nfnetlink_conntrack.h>
@@ -1048,11 +1046,11 @@ get_next_corpse(int (*iter)(struct nf_conn *i, void *data),
 			if (iter(ct, data))
 				goto found;
 		}
- 	}
+	}
 	list_for_each_entry(h, &unconfirmed, list) {
 		ct = nf_ct_tuplehash_to_ctrack(h);
 		if (iter(ct, data))
-			goto found;
+			set_bit(IPS_DYING_BIT, &ct->status);
 	}
 	write_unlock_bh(&nf_conntrack_lock);
 	return NULL;
@@ -1089,7 +1087,7 @@ static void free_conntrack_hash(struct list_head *hash, int vmalloced, int size)
 	if (vmalloced)
 		vfree(hash);
 	else
-		free_pages((unsigned long)hash, 
+		free_pages((unsigned long)hash,
 			   get_order(sizeof(struct list_head) * size));
 }
 
@@ -1105,7 +1103,7 @@ void nf_conntrack_cleanup(void)
 {
 	int i;
 
-	ip_ct_attach = NULL;
+	rcu_assign_pointer(ip_ct_attach, NULL);
 
 	/* This makes sure all current packets have passed through
 	   netfilter framework.  Roll on, two-stage module
@@ -1123,6 +1121,8 @@ void nf_conntrack_cleanup(void)
 	while (atomic_read(&nf_conntrack_untracked.ct_general.use) > 1)
 		schedule();
 
+	rcu_assign_pointer(nf_ct_destroy, NULL);
+
 	for (i = 0; i < NF_CT_F_NUM; i++) {
 		if (nf_ct_cache[i].use == 0)
 			continue;
@@ -1135,14 +1135,7 @@ void nf_conntrack_cleanup(void)
 	free_conntrack_hash(nf_conntrack_hash, nf_conntrack_vmalloc,
 			    nf_conntrack_htable_size);
 
-	nf_conntrack_l4proto_unregister(&nf_conntrack_l4proto_generic);
-
-	/* free l3proto protocol tables */
-	for (i = 0; i < PF_MAX; i++)
-		if (nf_ct_protos[i]) {
-			kfree(nf_ct_protos[i]);
-			nf_ct_protos[i] = NULL;
-		}
+	nf_conntrack_proto_fini();
 }
 
 static struct list_head *alloc_hashtable(int size, int *vmalloced)
@@ -1150,18 +1143,18 @@ static struct list_head *alloc_hashtable(int size, int *vmalloced)
 	struct list_head *hash;
 	unsigned int i;
 
-	*vmalloced = 0; 
-	hash = (void*)__get_free_pages(GFP_KERNEL, 
+	*vmalloced = 0;
+	hash = (void*)__get_free_pages(GFP_KERNEL,
 				       get_order(sizeof(struct list_head)
 						 * size));
-	if (!hash) { 
+	if (!hash) {
 		*vmalloced = 1;
 		printk(KERN_WARNING "nf_conntrack: falling back to vmalloc.\n");
 		hash = vmalloc(sizeof(struct list_head) * size);
 	}
 
 	if (hash)
-		for (i = 0; i < size; i++) 
+		for (i = 0; i < size; i++)
 			INIT_LIST_HEAD(&hash[i]);
 
 	return hash;
@@ -1220,7 +1213,6 @@ module_param_call(hashsize, set_hashsize, param_get_uint,
 
 int __init nf_conntrack_init(void)
 {
-	unsigned int i;
 	int ret;
 
 	/* Idea from tcp.c: use 1/16384 of memory.  On i386: 32MB
@@ -1262,18 +1254,13 @@ int __init nf_conntrack_init(void)
 		goto err_free_conntrack_slab;
 	}
 
-	ret = nf_conntrack_l4proto_register(&nf_conntrack_l4proto_generic);
+	ret = nf_conntrack_proto_init();
 	if (ret < 0)
 		goto out_free_expect_slab;
 
-	/* Don't NEED lock here, but good form anyway. */
-	write_lock_bh(&nf_conntrack_lock);
-        for (i = 0; i < AF_MAX; i++)
-		nf_ct_l3protos[i] = &nf_conntrack_l3proto_generic;
-        write_unlock_bh(&nf_conntrack_lock);
-
 	/* For use by REJECT target */
-	ip_ct_attach = __nf_conntrack_attach;
+	rcu_assign_pointer(ip_ct_attach, __nf_conntrack_attach);
+	rcu_assign_pointer(nf_ct_destroy, destroy_conntrack);
 
 	/* Set up fake conntrack:
 	    - to never be deleted, not in any hashes */

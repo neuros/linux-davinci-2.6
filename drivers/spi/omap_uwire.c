@@ -6,9 +6,12 @@
  * Ported to 2.6 OMAP uwire interface.
  * Copyright (C) 2004 Texas Instruments.
  *
- * Generalization patches by Juha Yrjölä <juha.yrjola@nokia.com>
+ * Generalization patches by Juha Yrjola <juha.yrjola@nokia.com>
  *
  * Copyright (C) 2005 David Brownell (ported to 2.6 SPI interface)
+ * Copyright (C) 2006 Nokia
+ *
+ * Many updates by Imre Deak <imre.deak@nokia.com>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -34,6 +37,7 @@
 #include <linux/init.h>
 #include <linux/delay.h>
 #include <linux/platform_device.h>
+#include <linux/workqueue.h>
 #include <linux/interrupt.h>
 #include <linux/err.h>
 #include <linux/clk.h>
@@ -399,8 +403,8 @@ static int uwire_setup_transfer(struct spi_device *spi, struct spi_transfer *t)
 	if (div1_idx == 4) {
 		pr_debug("%s: lowest clock %ld, need %d\n",
 			spi->dev.bus_id, rate / 10 / 8, hz);
-			status = -EDOM;
-			goto done;
+		status = -EDOM;
+		goto done;
 	}
 
 	/* we have to cache this and reset in uwire_chipselect as this is a
@@ -455,7 +459,7 @@ static int uwire_setup(struct spi_device *spi)
 	return uwire_setup_transfer(spi, NULL);
 }
 
-static void uwire_cleanup(const struct spi_device *spi)
+static void uwire_cleanup(struct spi_device *spi)
 {
 	kfree(spi->controller_state);
 }
@@ -565,3 +569,4 @@ subsys_initcall(omap_uwire_init);
 module_exit(omap_uwire_exit);
 
 MODULE_LICENSE("GPL");
+

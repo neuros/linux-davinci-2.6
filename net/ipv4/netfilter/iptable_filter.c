@@ -13,6 +13,7 @@
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
+#include <net/ip.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Netfilter Core Team <coreteam@netfilter.org>");
@@ -25,7 +26,7 @@ static struct
 	struct ipt_replace repl;
 	struct ipt_standard entries[3];
 	struct ipt_error term;
-} initial_table __initdata 
+} initial_table __initdata
 = { { "filter", FILTER_VALID_HOOKS, 4,
       sizeof(struct ipt_standard) * 3 + sizeof(struct ipt_error),
       { [NF_IP_LOCAL_IN] = 0,
@@ -74,7 +75,7 @@ static struct
     }
 };
 
-static struct ipt_table packet_filter = {
+static struct xt_table packet_filter = {
 	.name		= "filter",
 	.valid_hooks	= FILTER_VALID_HOOKS,
 	.lock		= RW_LOCK_UNLOCKED,
@@ -102,7 +103,7 @@ ipt_local_out_hook(unsigned int hook,
 {
 	/* root is playing with raw sockets. */
 	if ((*pskb)->len < sizeof(struct iphdr)
-	    || (*pskb)->nh.iph->ihl * 4 < sizeof(struct iphdr)) {
+	    || ip_hdrlen(*pskb) < sizeof(struct iphdr)) {
 		if (net_ratelimit())
 			printk("ipt_hook: happy cracking.\n");
 		return NF_ACCEPT;

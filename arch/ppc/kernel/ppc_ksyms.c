@@ -43,6 +43,7 @@
 #include <asm/div64.h>
 #include <asm/xmon.h>
 #include <asm/signal.h>
+#include <asm/dcr.h>
 
 #ifdef  CONFIG_8xx
 #include <asm/commproc.h>
@@ -92,8 +93,6 @@ EXPORT_SYMBOL(strncpy);
 EXPORT_SYMBOL(strcat);
 EXPORT_SYMBOL(strlen);
 EXPORT_SYMBOL(strcmp);
-EXPORT_SYMBOL(strcasecmp);
-EXPORT_SYMBOL(strncasecmp);
 EXPORT_SYMBOL(__div64_32);
 
 EXPORT_SYMBOL(csum_partial);
@@ -270,7 +269,7 @@ EXPORT_SYMBOL(mmu_hash_lock); /* For MOL */
 extern long *intercept_table;
 EXPORT_SYMBOL(intercept_table);
 #endif /* CONFIG_PPC_STD_MMU */
-#if defined(CONFIG_40x) || defined(CONFIG_BOOKE)
+#ifdef CONFIG_PPC_DCR_NATIVE
 EXPORT_SYMBOL(__mtdcr);
 EXPORT_SYMBOL(__mfdcr);
 #endif

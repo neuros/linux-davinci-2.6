@@ -12,6 +12,24 @@
 #include <linux/hugetlb.h>
 
 /*
+ * Any behaviour which results in changes to the vma->vm_flags needs to
+ * take mmap_sem for writing. Others, which simply traverse vmas, need
+ * to only take it for reading.
+ */
+static int madvise_need_mmap_write(int behavior)
+{
+	switch (behavior) {
+	case MADV_REMOVE:
+	case MADV_WILLNEED:
+	case MADV_DONTNEED:
+		return 0;
+	default:
+		/* be safe, default to 1. list exceptions explicitly */
+		return 1;
+	}
+}
+
+/*
  * We can potentially split a vm area into separate
  * areas, each area with its own behavior.
  */
@@ -155,10 +173,14 @@ static long madvise_dontneed(struct vm_area_struct * vma,
  * Other filesystems return -ENOSYS.
  */
 static long madvise_remove(struct vm_area_struct *vma,
+				struct vm_area_struct **prev,
 				unsigned long start, unsigned long end)
 {
 	struct address_space *mapping;
-        loff_t offset, endoff;
+	loff_t offset, endoff;
+	int error;
+
+	*prev = NULL;	/* tell sys_madvise we drop mmap_sem */
 
 	if (vma->vm_flags & (VM_LOCKED|VM_NONLINEAR|VM_HUGETLB))
 		return -EINVAL;
@@ -177,7 +199,12 @@ static long madvise_remove(struct vm_area_struct *vma,
 			+ ((loff_t)vma->vm_pgoff << PAGE_SHIFT);
 	endoff = (loff_t)(end - vma->vm_start - 1)
 			+ ((loff_t)vma->vm_pgoff << PAGE_SHIFT);
-	return  vmtruncate_range(mapping->host, offset, endoff);
+
+	/* vmtruncate_range needs to take i_mutex and i_alloc_sem */
+	up_read(&current->mm->mmap_sem);
+	error = vmtruncate_range(mapping->host, offset, endoff);
+	down_read(&current->mm->mmap_sem);
+	return error;
 }
 
 static long
@@ -199,7 +226,7 @@ madvise_vma(struct vm_area_struct *vma, struct vm_area_struct **prev,
 		error = madvise_behavior(vma, prev, start, end, behavior);
 		break;
 	case MADV_REMOVE:
-		error = madvise_remove(vma, start, end);
+		error = madvise_remove(vma, prev, start, end);
 		break;
 
 	case MADV_WILLNEED:
@@ -261,7 +288,10 @@ asmlinkage long sys_madvise(unsigned long start, size_t len_in, int behavior)
 	int error = -EINVAL;
 	size_t len;
 
-	down_write(&current->mm->mmap_sem);
+	if (madvise_need_mmap_write(behavior))
+		down_write(&current->mm->mmap_sem);
+	else
+		down_read(&current->mm->mmap_sem);
 
 	if (start & ~PAGE_MASK)
 		goto out;
@@ -312,14 +342,21 @@ asmlinkage long sys_madvise(unsigned long start, size_t len_in, int behavior)
 		if (error)
 			goto out;
 		start = tmp;
-		if (start < prev->vm_end)
+		if (prev && start < prev->vm_end)
 			start = prev->vm_end;
 		error = unmapped_error;
 		if (start >= end)
 			goto out;
-		vma = prev->vm_next;
+		if (prev)
+			vma = prev->vm_next;
+		else	/* madvise_remove dropped mmap_sem */
+			vma = find_vma(current->mm, start);
 	}
 out:
-	up_write(&current->mm->mmap_sem);
+	if (madvise_need_mmap_write(behavior))
+		up_write(&current->mm->mmap_sem);
+	else
+		up_read(&current->mm->mmap_sem);
+
 	return error;
 }

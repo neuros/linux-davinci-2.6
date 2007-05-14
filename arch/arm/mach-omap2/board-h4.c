@@ -42,7 +42,6 @@
 #include "prcm-regs.h"
 
 #include <asm/io.h>
-#include <asm/delay.h>
 
 #define H4_FLASH_CS	0
 #define H4_SMC91X_CS	1
@@ -266,7 +265,7 @@ static struct platform_device *h4_devices[] __initdata = {
 /* 2420 Sysboot setup (2430 is different) */
 static u32 get_sysboot_value(void)
 {
-	return (omap_readl(OMAP242X_CONTROL_STATUS) & 0xFFF);
+	return (omap_readl(OMAP24XX_CONTROL_STATUS) & 0xFFF);
 }
 
 /* FIXME: This function should be moved to some other file, gpmc.c? */

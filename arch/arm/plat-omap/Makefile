@@ -14,10 +14,10 @@ obj-$(CONFIG_OMAP_32K_TIMER)	+= timer32k.o
 # OCPI interconnect support for 1710, 1610 and 5912
 obj-$(CONFIG_ARCH_OMAP16XX) += ocpi.o
 
+obj-$(CONFIG_OMAP_MCBSP) += mcbsp.o
+
 # STI support
 obj-$(CONFIG_OMAP_STI) += sti/
-
-obj-$(CONFIG_OMAP_MCBSP) += mcbsp.o
 
 obj-$(CONFIG_CPU_FREQ) += cpu-omap.o
 obj-$(CONFIG_OMAP_DM_TIMER) += dmtimer.o
@@ -26,6 +26,12 @@ obj-$(CONFIG_OMAP_COMPONENT_VERSION) += component-version.o
 obj-$(CONFIG_OMAP_GPIO_SWITCH) += gpio-switch.o
 obj-$(CONFIG_OMAP_DEBUG_DEVICES) += debug-devices.o
 obj-$(CONFIG_OMAP_DEBUG_LEDS) += debug-leds.o
+
+# OMAP MMU framework
+obj-$(CONFIG_OMAP_MMU_FWK) += mmu.o
+
+# OMAP mailbox framework
+obj-$(CONFIG_OMAP_MBOX_FWK) += mailbox.o
 
 # DSP subsystem
 obj-y += dsp/

@@ -146,7 +146,7 @@ static void tusb_omap_dma_cb(int lch, u16 ch_status, void *data)
 	struct musb_hw_ep	*hw_ep = chdat->hw_ep;
 	void __iomem		*ep_conf = hw_ep->conf;
 	void __iomem		*musb_base = musb->pRegs;
-	unsigned long		remaining, flags;
+	unsigned long		remaining, flags, pio;
 	int			ch;
 
 	spin_lock_irqsave(&musb->Lock, flags);
@@ -169,9 +169,35 @@ static void tusb_omap_dma_cb(int lch, u16 ch_status, void *data)
 		remaining = musb_readl(ep_conf, TUSB_EP_RX_OFFSET);
 
 	remaining = TUSB_EP_CONFIG_XFR_SIZE(remaining);
-	channel->dwActualLength = chdat->transfer_len - remaining;
 
-	DBG(2, "remaining %lu/%u\n", remaining, chdat->transfer_len);
+	/* HW issue #10: XFR_SIZE may get corrupt on async DMA */
+	if (unlikely(remaining > chdat->transfer_len)) {
+		WARN("Corrupt XFR_SIZE with async DMA: %lu\n", remaining);
+		remaining = 0;
+	}
+
+	channel->dwActualLength = chdat->transfer_len - remaining;
+	pio = chdat->len - channel->dwActualLength;
+
+	DBG(2, "DMA remaining %lu/%u\n", remaining, chdat->transfer_len);
+
+	/* Transfer remaining 1 - 31 bytes */
+	if (pio > 0 && pio < 32) {
+		u8	*buf;
+
+		DBG(2, "Using PIO for remaining %lu bytes\n", pio);
+		buf = phys_to_virt((u32)chdat->dma_addr) + chdat->transfer_len;
+		if (chdat->tx) {
+			consistent_sync(phys_to_virt((u32)chdat->dma_addr),
+					chdat->transfer_len, DMA_TO_DEVICE);
+			musb_write_fifo(hw_ep, pio, buf);
+		} else {
+			musb_read_fifo(hw_ep, pio, buf);
+			consistent_sync(phys_to_virt((u32)chdat->dma_addr),
+					chdat->transfer_len, DMA_FROM_DEVICE);
+		}
+		channel->dwActualLength += pio;
+	}
 
 	if (!dmareq_works())
 		tusb_omap_free_shared_dmareq(chdat);
@@ -186,7 +212,7 @@ static void tusb_omap_dma_cb(int lch, u16 ch_status, void *data)
 	if (!chdat->tx)
 		musb_dma_completion(musb, chdat->epnum, chdat->tx);
 
-	/* We musb terminate short tx transfers manually by setting TXPKTRDY.
+	/* We must terminate short tx transfers manually by setting TXPKTRDY.
 	 * REVISIT: This same problem may occur with other MUSB dma as well.
 	 * Easy to test with g_ether by pinging the MUSB board with ping -s54.
 	 */
@@ -224,14 +250,19 @@ static int tusb_omap_dma_program(struct dma_channel *channel, u16 packet_sz,
 	s8				dmareq;
 	s8				sync_dev;
 
-	if (unlikely(dma_addr & 0x1))
+	if (unlikely(dma_addr & 0x1) || (len < 32) || (len > packet_sz))
 		return FALSE;
-	if (len < 32)
+
+	/*
+	 * HW issue #10: Async dma will eventually corrupt the XFR_SIZE
+	 * register which will cause missed DMA interrupt. We could try to
+	 * use a timer for the callback, but it is unsafe as the XFR_SIZE
+	 * register is corrupt, and we won't know if the DMA worked.
+	 */
+	if (dma_addr & 0x2)
 		return FALSE;
-	if ((len % 32 != 0))
-		return FALSE;
-	else
-		chdat->transfer_len = len;
+
+	chdat->transfer_len = len & ~0x1f;
 
 	if (len < packet_sz)
 		chdat->transfer_packet_sz = chdat->transfer_len;

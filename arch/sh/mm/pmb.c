@@ -311,9 +311,9 @@ static int __init pmb_init(void)
 
 	BUG_ON(unlikely(nr_entries >= NR_PMB_ENTRIES));
 
-	pmb_cache = kmem_cache_create("pmb", sizeof(struct pmb_entry),
-				      0, 0, pmb_cache_ctor, pmb_cache_dtor);
-	BUG_ON(!pmb_cache);
+	pmb_cache = kmem_cache_create("pmb", sizeof(struct pmb_entry), 0,
+				      SLAB_PANIC, pmb_cache_ctor,
+				      pmb_cache_dtor);
 
 	jump_to_P2();
 
@@ -378,7 +378,7 @@ static int pmb_debugfs_open(struct inode *inode, struct file *file)
 	return single_open(file, pmb_seq_show, NULL);
 }
 
-static struct file_operations pmb_debugfs_fops = {
+static const struct file_operations pmb_debugfs_fops = {
 	.owner		= THIS_MODULE,
 	.open		= pmb_debugfs_open,
 	.read		= seq_read,

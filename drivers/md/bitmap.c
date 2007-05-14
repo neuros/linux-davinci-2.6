@@ -666,7 +666,7 @@ static void bitmap_file_put(struct bitmap *bitmap)
 
 	if (file) {
 		struct inode *inode = file->f_path.dentry->d_inode;
-		invalidate_inode_pages(inode->i_mapping);
+		invalidate_mapping_pages(inode->i_mapping, 0, -1);
 		fput(file);
 	}
 }
@@ -863,9 +863,7 @@ static int bitmap_init_from_disk(struct bitmap *bitmap, sector_t start)
 
 	/* We need 4 bits per page, rounded up to a multiple of sizeof(unsigned long) */
 	bitmap->filemap_attr = kzalloc(
-		(((num_pages*4/8)+sizeof(unsigned long)-1)
-		 /sizeof(unsigned long))
-		*sizeof(unsigned long),
+		roundup( DIV_ROUND_UP(num_pages*4, 8), sizeof(unsigned long)),
 		GFP_KERNEL);
 	if (!bitmap->filemap_attr)
 		goto out;
@@ -1160,6 +1158,22 @@ int bitmap_startwrite(struct bitmap *bitmap, sector_t offset, unsigned long sect
 			return 0;
 		}
 
+		if (unlikely((*bmc & COUNTER_MAX) == COUNTER_MAX)) {
+			DEFINE_WAIT(__wait);
+			/* note that it is safe to do the prepare_to_wait
+			 * after the test as long as we do it before dropping
+			 * the spinlock.
+			 */
+			prepare_to_wait(&bitmap->overflow_wait, &__wait,
+					TASK_UNINTERRUPTIBLE);
+			spin_unlock_irq(&bitmap->lock);
+			bitmap->mddev->queue
+				->unplug_fn(bitmap->mddev->queue);
+			schedule();
+			finish_wait(&bitmap->overflow_wait, &__wait);
+			continue;
+		}
+
 		switch(*bmc) {
 		case 0:
 			bitmap_file_set_bit(bitmap, offset);
@@ -1169,7 +1183,7 @@ int bitmap_startwrite(struct bitmap *bitmap, sector_t offset, unsigned long sect
 		case 1:
 			*bmc = 2;
 		}
-		BUG_ON((*bmc & COUNTER_MAX) == COUNTER_MAX);
+
 		(*bmc)++;
 
 		spin_unlock_irq(&bitmap->lock);
@@ -1206,6 +1220,9 @@ void bitmap_endwrite(struct bitmap *bitmap, sector_t offset, unsigned long secto
 
 		if (!success && ! (*bmc & NEEDED_MASK))
 			*bmc |= NEEDED_MASK;
+
+		if ((*bmc & COUNTER_MAX) == COUNTER_MAX)
+			wake_up(&bitmap->overflow_wait);
 
 		(*bmc)--;
 		if (*bmc <= 2) {
@@ -1431,6 +1448,7 @@ int bitmap_create(mddev_t *mddev)
 	spin_lock_init(&bitmap->lock);
 	atomic_set(&bitmap->pending_writes, 0);
 	init_waitqueue_head(&bitmap->write_wait);
+	init_waitqueue_head(&bitmap->overflow_wait);
 
 	bitmap->mddev = mddev;
 
@@ -1438,10 +1456,10 @@ int bitmap_create(mddev_t *mddev)
 	bitmap->offset = mddev->bitmap_offset;
 	if (file) {
 		get_file(file);
-		do_sync_file_range(file, 0, LLONG_MAX,
-				   SYNC_FILE_RANGE_WAIT_BEFORE |
-				   SYNC_FILE_RANGE_WRITE |
-				   SYNC_FILE_RANGE_WAIT_AFTER);
+		do_sync_mapping_range(file->f_mapping, 0, LLONG_MAX,
+				      SYNC_FILE_RANGE_WAIT_BEFORE |
+				      SYNC_FILE_RANGE_WRITE |
+				      SYNC_FILE_RANGE_WAIT_AFTER);
 	}
 	/* read superblock from bitmap file (this sets bitmap->chunksize) */
 	err = bitmap_read_sb(bitmap);

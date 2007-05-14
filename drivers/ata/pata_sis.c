@@ -32,9 +32,10 @@
 #include <scsi/scsi_host.h>
 #include <linux/libata.h>
 #include <linux/ata.h>
+#include "sis.h"
 
 #define DRV_NAME	"pata_sis"
-#define DRV_VERSION	"0.4.5"
+#define DRV_VERSION	"0.5.1"
 
 struct sis_chipset {
 	u16 device;			/* PCI host ID */
@@ -42,6 +43,34 @@ struct sis_chipset {
 	/* Probably add family, cable detect type etc here to clean
 	   up code later */
 };
+
+struct sis_laptop {
+	u16 device;
+	u16 subvendor;
+	u16 subdevice;
+};
+
+static const struct sis_laptop sis_laptop[] = {
+	/* devid, subvendor, subdev */
+	{ 0x5513, 0x1043, 0x1107 },	/* ASUS A6K */
+	/* end marker */
+	{ 0, }
+};
+
+static int sis_short_ata40(struct pci_dev *dev)
+{
+	const struct sis_laptop *lap = &sis_laptop[0];
+
+	while (lap->device) {
+		if (lap->device == dev->device &&
+		    lap->subvendor == dev->subsystem_vendor &&
+		    lap->subdevice == dev->subsystem_device)
+			return 1;
+		lap++;
+	}
+
+	return 0;
+}
 
 /**
  *	sis_port_base		-	return PCI configuration base for dev
@@ -57,14 +86,58 @@ static int sis_port_base(struct ata_device *adev)
 }
 
 /**
- *	sis_133_pre_reset	-	check for 40/80 pin
+ *	sis_133_cable_detect	-	check for 40/80 pin
  *	@ap: Port
+ *	@deadline: deadline jiffies for the operation
  *
  *	Perform cable detection for the later UDMA133 capable
  *	SiS chipset.
  */
 
-static int sis_133_pre_reset(struct ata_port *ap)
+static int sis_133_cable_detect(struct ata_port *ap)
+{
+	struct pci_dev *pdev = to_pci_dev(ap->host->dev);
+	u16 tmp;
+
+	/* The top bit of this register is the cable detect bit */
+	pci_read_config_word(pdev, 0x50 + 2 * ap->port_no, &tmp);
+	if ((tmp & 0x8000) && !sis_short_ata40(pdev))
+		return ATA_CBL_PATA40;
+	return ATA_CBL_PATA80;
+}
+
+/**
+ *	sis_66_cable_detect	-	check for 40/80 pin
+ *	@ap: Port
+ *	@deadline: deadline jiffies for the operation
+ *
+ *	Perform cable detection on the UDMA66, UDMA100 and early UDMA133
+ *	SiS IDE controllers.
+ */
+
+static int sis_66_cable_detect(struct ata_port *ap)
+{
+	struct pci_dev *pdev = to_pci_dev(ap->host->dev);
+	u8 tmp;
+
+	/* Older chips keep cable detect in bits 4/5 of reg 0x48 */
+	pci_read_config_byte(pdev, 0x48, &tmp);
+	tmp >>= ap->port_no;
+	if ((tmp & 0x10) && !sis_short_ata40(pdev))
+		return ATA_CBL_PATA40;
+	return ATA_CBL_PATA80;
+}
+
+
+/**
+ *	sis_pre_reset		-	probe begin
+ *	@ap: ATA port
+ *	@deadline: deadline jiffies for the operation
+ *
+ *	Set up cable type and use generic probe init
+ */
+
+static int sis_pre_reset(struct ata_port *ap, unsigned long deadline)
 {
 	static const struct pci_bits sis_enable_bits[] = {
 		{ 0x4aU, 1U, 0x02UL, 0x02UL },	/* port 0 */
@@ -72,20 +145,13 @@ static int sis_133_pre_reset(struct ata_port *ap)
 	};
 
 	struct pci_dev *pdev = to_pci_dev(ap->host->dev);
-	u16 tmp;
 
 	if (!pci_test_config_bits(pdev, &sis_enable_bits[ap->port_no]))
 		return -ENOENT;
 
-	/* The top bit of this register is the cable detect bit */
-	pci_read_config_word(pdev, 0x50 + 2 * ap->port_no, &tmp);
-	if (tmp & 0x8000)
-		ap->cbl = ATA_CBL_PATA40;
-	else
-		ap->cbl = ATA_CBL_PATA80;
-
-	return ata_std_prereset(ap);
+	return ata_std_prereset(ap, deadline);
 }
+
 
 /**
  *	sis_error_handler - Probe specified port on PATA host controller
@@ -95,97 +161,9 @@ static int sis_133_pre_reset(struct ata_port *ap)
  *	None (inherited from caller).
  */
 
-static void sis_133_error_handler(struct ata_port *ap)
+static void sis_error_handler(struct ata_port *ap)
 {
-	ata_bmdma_drive_eh(ap, sis_133_pre_reset, ata_std_softreset, NULL, ata_std_postreset);
-}
-
-
-/**
- *	sis_66_pre_reset	-	check for 40/80 pin
- *	@ap: Port
- *
- *	Perform cable detection on the UDMA66, UDMA100 and early UDMA133
- *	SiS IDE controllers.
- */
-
-static int sis_66_pre_reset(struct ata_port *ap)
-{
-	static const struct pci_bits sis_enable_bits[] = {
-		{ 0x4aU, 1U, 0x02UL, 0x02UL },	/* port 0 */
-		{ 0x4aU, 1U, 0x04UL, 0x04UL },	/* port 1 */
-	};
-
-	struct pci_dev *pdev = to_pci_dev(ap->host->dev);
-	u8 tmp;
-
-	if (!pci_test_config_bits(pdev, &sis_enable_bits[ap->port_no])) {
-		ata_port_disable(ap);
-		printk(KERN_INFO "ata%u: port disabled. ignoring.\n", ap->id);
-		return 0;
-	}
-	/* Older chips keep cable detect in bits 4/5 of reg 0x48 */
-	pci_read_config_byte(pdev, 0x48, &tmp);
-	tmp >>= ap->port_no;
-	if (tmp & 0x10)
-		ap->cbl = ATA_CBL_PATA40;
-	else
-		ap->cbl = ATA_CBL_PATA80;
-
-	return ata_std_prereset(ap);
-}
-
-/**
- *	sis_66_error_handler - Probe specified port on PATA host controller
- *	@ap: Port to probe
- *	@classes:
- *
- *	LOCKING:
- *	None (inherited from caller).
- */
-
-static void sis_66_error_handler(struct ata_port *ap)
-{
-	ata_bmdma_drive_eh(ap, sis_66_pre_reset, ata_std_softreset, NULL, ata_std_postreset);
-}
-
-/**
- *	sis_old_pre_reset		-	probe begin
- *	@ap: ATA port
- *
- *	Set up cable type and use generic probe init
- */
-
-static int sis_old_pre_reset(struct ata_port *ap)
-{
-	static const struct pci_bits sis_enable_bits[] = {
-		{ 0x4aU, 1U, 0x02UL, 0x02UL },	/* port 0 */
-		{ 0x4aU, 1U, 0x04UL, 0x04UL },	/* port 1 */
-	};
-
-	struct pci_dev *pdev = to_pci_dev(ap->host->dev);
-
-	if (!pci_test_config_bits(pdev, &sis_enable_bits[ap->port_no])) {
-		ata_port_disable(ap);
-		printk(KERN_INFO "ata%u: port disabled. ignoring.\n", ap->id);
-		return 0;
-	}
-	ap->cbl = ATA_CBL_PATA40;
-	return ata_std_prereset(ap);
-}
-
-
-/**
- *	sis_old_error_handler - Probe specified port on PATA host controller
- *	@ap: Port to probe
- *
- *	LOCKING:
- *	None (inherited from caller).
- */
-
-static void sis_old_error_handler(struct ata_port *ap)
-{
-	ata_bmdma_drive_eh(ap, sis_old_pre_reset, ata_std_softreset, NULL, ata_std_postreset);
+	ata_bmdma_drive_eh(ap, sis_pre_reset, ata_std_softreset, NULL, ata_std_postreset);
 }
 
 /**
@@ -465,7 +443,7 @@ static void sis_133_early_set_dmamode (struct ata_port *ap, struct ata_device *a
 	int drive_pci = sis_port_base(adev);
 	u16 timing;
 
-	const u16 udma_bits[]  = { 0x8F00, 0x8A00, 0x8700, 0x8500, 0x8300, 0x8200, 0x8100};
+	static const u16 udma_bits[]  = { 0x8F00, 0x8A00, 0x8700, 0x8500, 0x8300, 0x8200, 0x8100};
 
 	pci_read_config_word(pdev, drive_pci, &timing);
 
@@ -502,8 +480,8 @@ static void sis_133_set_dmamode (struct ata_port *ap, struct ata_device *adev)
 	u32 reg54;
 
 	/* bits 4- cycle time 8 - cvs time */
-	const u32 timing_u100[] = { 0x6B0, 0x470, 0x350, 0x140, 0x120, 0x110, 0x000 };
-	const u32 timing_u133[] = { 0x9F0, 0x6A0, 0x470, 0x250, 0x230, 0x220, 0x210 };
+	static const u32 timing_u100[] = { 0x6B0, 0x470, 0x350, 0x140, 0x120, 0x110, 0x000 };
+	static const u32 timing_u133[] = { 0x9F0, 0x6A0, 0x470, 0x250, 0x230, 0x220, 0x210 };
 
 	/* If bit 14 is set then the registers are mapped at 0x70 not 0x40 */
 	pci_read_config_dword(pdev, 0x54, &reg54);
@@ -546,8 +524,10 @@ static struct scsi_host_template sis_sht = {
 	.slave_configure	= ata_scsi_slave_config,
 	.slave_destroy		= ata_scsi_slave_destroy,
 	.bios_param		= ata_std_bios_param,
+#ifdef CONFIG_PM
 	.resume			= ata_scsi_device_resume,
 	.suspend		= ata_scsi_device_suspend,
+#endif
 };
 
 static const struct ata_port_operations sis_133_ops = {
@@ -564,8 +544,9 @@ static const struct ata_port_operations sis_133_ops = {
 
 	.freeze			= ata_bmdma_freeze,
 	.thaw			= ata_bmdma_thaw,
-	.error_handler		= sis_133_error_handler,
+	.error_handler		= sis_error_handler,
 	.post_internal_cmd	= ata_bmdma_post_internal_cmd,
+	.cable_detect		= sis_133_cable_detect,
 
 	.bmdma_setup		= ata_bmdma_setup,
 	.bmdma_start		= ata_bmdma_start,
@@ -573,14 +554,14 @@ static const struct ata_port_operations sis_133_ops = {
 	.bmdma_status		= ata_bmdma_status,
 	.qc_prep		= ata_qc_prep,
 	.qc_issue		= ata_qc_issue_prot,
-	.data_xfer		= ata_pio_data_xfer,
+	.data_xfer		= ata_data_xfer,
 
 	.irq_handler		= ata_interrupt,
 	.irq_clear		= ata_bmdma_irq_clear,
+	.irq_on			= ata_irq_on,
+	.irq_ack		= ata_irq_ack,
 
 	.port_start		= ata_port_start,
-	.port_stop		= ata_port_stop,
-	.host_stop		= ata_host_stop,
 };
 
 static const struct ata_port_operations sis_133_early_ops = {
@@ -597,8 +578,9 @@ static const struct ata_port_operations sis_133_early_ops = {
 
 	.freeze			= ata_bmdma_freeze,
 	.thaw			= ata_bmdma_thaw,
-	.error_handler		= sis_66_error_handler,
+	.error_handler		= sis_error_handler,
 	.post_internal_cmd	= ata_bmdma_post_internal_cmd,
+	.cable_detect		= sis_66_cable_detect,
 
 	.bmdma_setup		= ata_bmdma_setup,
 	.bmdma_start		= ata_bmdma_start,
@@ -606,14 +588,14 @@ static const struct ata_port_operations sis_133_early_ops = {
 	.bmdma_status		= ata_bmdma_status,
 	.qc_prep		= ata_qc_prep,
 	.qc_issue		= ata_qc_issue_prot,
-	.data_xfer		= ata_pio_data_xfer,
+	.data_xfer		= ata_data_xfer,
 
 	.irq_handler		= ata_interrupt,
 	.irq_clear		= ata_bmdma_irq_clear,
+	.irq_on			= ata_irq_on,
+	.irq_ack		= ata_irq_ack,
 
 	.port_start		= ata_port_start,
-	.port_stop		= ata_port_stop,
-	.host_stop		= ata_host_stop,
 };
 
 static const struct ata_port_operations sis_100_ops = {
@@ -630,9 +612,9 @@ static const struct ata_port_operations sis_100_ops = {
 
 	.freeze			= ata_bmdma_freeze,
 	.thaw			= ata_bmdma_thaw,
-	.error_handler		= sis_66_error_handler,
+	.error_handler		= sis_error_handler,
 	.post_internal_cmd	= ata_bmdma_post_internal_cmd,
-
+	.cable_detect		= sis_66_cable_detect,
 
 	.bmdma_setup		= ata_bmdma_setup,
 	.bmdma_start		= ata_bmdma_start,
@@ -640,14 +622,14 @@ static const struct ata_port_operations sis_100_ops = {
 	.bmdma_status		= ata_bmdma_status,
 	.qc_prep		= ata_qc_prep,
 	.qc_issue		= ata_qc_issue_prot,
-	.data_xfer		= ata_pio_data_xfer,
+	.data_xfer		= ata_data_xfer,
 
 	.irq_handler		= ata_interrupt,
 	.irq_clear		= ata_bmdma_irq_clear,
+	.irq_on			= ata_irq_on,
+	.irq_ack		= ata_irq_ack,
 
 	.port_start		= ata_port_start,
-	.port_stop		= ata_port_stop,
-	.host_stop		= ata_host_stop,
 };
 
 static const struct ata_port_operations sis_66_ops = {
@@ -661,10 +643,11 @@ static const struct ata_port_operations sis_66_ops = {
 	.check_status		= ata_check_status,
 	.exec_command		= ata_exec_command,
 	.dev_select		= ata_std_dev_select,
+	.cable_detect		= sis_66_cable_detect,
 
 	.freeze			= ata_bmdma_freeze,
 	.thaw			= ata_bmdma_thaw,
-	.error_handler		= sis_66_error_handler,
+	.error_handler		= sis_error_handler,
 	.post_internal_cmd	= ata_bmdma_post_internal_cmd,
 
 	.bmdma_setup		= ata_bmdma_setup,
@@ -673,14 +656,14 @@ static const struct ata_port_operations sis_66_ops = {
 	.bmdma_status		= ata_bmdma_status,
 	.qc_prep		= ata_qc_prep,
 	.qc_issue		= ata_qc_issue_prot,
-	.data_xfer		= ata_pio_data_xfer,
+	.data_xfer		= ata_data_xfer,
 
 	.irq_handler		= ata_interrupt,
 	.irq_clear		= ata_bmdma_irq_clear,
+	.irq_on			= ata_irq_on,
+	.irq_ack		= ata_irq_ack,
 
 	.port_start		= ata_port_start,
-	.port_stop		= ata_port_stop,
-	.host_stop		= ata_host_stop,
 };
 
 static const struct ata_port_operations sis_old_ops = {
@@ -697,8 +680,9 @@ static const struct ata_port_operations sis_old_ops = {
 
 	.freeze			= ata_bmdma_freeze,
 	.thaw			= ata_bmdma_thaw,
-	.error_handler		= sis_old_error_handler,
+	.error_handler		= sis_error_handler,
 	.post_internal_cmd	= ata_bmdma_post_internal_cmd,
+	.cable_detect		= ata_cable_40wire,
 
 	.bmdma_setup		= ata_bmdma_setup,
 	.bmdma_start		= ata_bmdma_start,
@@ -706,14 +690,14 @@ static const struct ata_port_operations sis_old_ops = {
 	.bmdma_status		= ata_bmdma_status,
 	.qc_prep		= ata_qc_prep,
 	.qc_issue		= ata_qc_issue_prot,
-	.data_xfer		= ata_pio_data_xfer,
+	.data_xfer		= ata_data_xfer,
 
 	.irq_handler		= ata_interrupt,
 	.irq_clear		= ata_bmdma_irq_clear,
+	.irq_on			= ata_irq_on,
+	.irq_ack		= ata_irq_ack,
 
 	.port_start		= ata_port_start,
-	.port_stop		= ata_port_stop,
-	.host_stop		= ata_host_stop,
 };
 
 static struct ata_port_info sis_info = {
@@ -753,7 +737,7 @@ static struct ata_port_info sis_info100_early = {
 	.pio_mask	= 0x1f,	/* pio0-4 */
 	.port_ops	= &sis_66_ops,
 };
-static struct ata_port_info sis_info133 = {
+struct ata_port_info sis_info133 = {
 	.sht		= &sis_sht,
 	.flags		= ATA_FLAG_SLAVE_POSS | ATA_FLAG_SRST,
 	.pio_mask	= 0x1f,	/* pio0-4 */
@@ -768,6 +752,8 @@ static struct ata_port_info sis_info133_early = {
 	.port_ops	= &sis_133_early_ops,
 };
 
+/* Privately shared with the SiS180 SATA driver, not for use elsewhere */
+EXPORT_SYMBOL_GPL(sis_info133);
 
 static void sis_fixup(struct pci_dev *pdev, struct sis_chipset *sis)
 {
@@ -845,9 +831,10 @@ static int sis_init_one (struct pci_dev *pdev, const struct pci_device_id *ent)
 	struct ata_port_info *port;
 	struct pci_dev *host = NULL;
 	struct sis_chipset *chipset = NULL;
+	struct sis_chipset *sets;
 
 	static struct sis_chipset sis_chipsets[] = {
-	
+
 		{ 0x0968, &sis_info133 },
 		{ 0x0966, &sis_info133 },
 		{ 0x0965, &sis_info133 },
@@ -899,10 +886,11 @@ static int sis_init_one (struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	/* We have to find the bridge first */
 
-	for (chipset = &sis_chipsets[0]; chipset->device; chipset++) {
-		host = pci_get_device(PCI_VENDOR_ID_SI, chipset->device, NULL);
+	for (sets = &sis_chipsets[0]; sets->device; sets++) {
+		host = pci_get_device(PCI_VENDOR_ID_SI, sets->device, NULL);
 		if (host != NULL) {
-			if (chipset->device == 0x630) {	/* SIS630 */
+			chipset = sets;			/* Match found */
+			if (sets->device == 0x630) {	/* SIS630 */
 				u8 host_rev;
 				pci_read_config_byte(host, PCI_REVISION_ID, &host_rev);
 				if (host_rev >= 0x30)	/* 630 ET */
@@ -913,7 +901,7 @@ static int sis_init_one (struct pci_dev *pdev, const struct pci_device_id *ent)
 	}
 
 	/* Look for concealed bridges */
-	if (host == NULL) {
+	if (chipset == NULL) {
 		/* Second check */
 		u32 idemisc;
 		u16 trueid;
@@ -1001,8 +989,10 @@ static struct pci_driver sis_pci_driver = {
 	.id_table		= sis_pci_tbl,
 	.probe			= sis_init_one,
 	.remove			= ata_pci_remove_one,
+#ifdef CONFIG_PM
 	.suspend		= ata_pci_device_suspend,
 	.resume			= ata_pci_device_resume,
+#endif
 };
 
 static int __init sis_init(void)

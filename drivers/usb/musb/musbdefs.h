@@ -39,8 +39,9 @@
 #include <linux/interrupt.h>
 #include <linux/smp_lock.h>
 #include <linux/errno.h>
+#include <linux/clk.h>
 #include <linux/device.h>
-#include <linux/usb_ch9.h>
+#include <linux/usb/ch9.h>
 #include <linux/usb_gadget.h>
 #include <linux/usb.h>
 #include <linux/usb/otg.h>
@@ -205,7 +206,7 @@ enum musb_g_ep0_state {
  * directly with the "flat" model, or after setting up an index register.
  */
 
-#if defined(CONFIG_ARCH_DAVINCI) || defined(CONFIG_ARCH_OMAP243X)
+#if defined(CONFIG_ARCH_DAVINCI) || defined(CONFIG_ARCH_OMAP2430)
 /* REVISIT indexed access seemed to
  * misbehave (on DaVinci) for at least peripheral IN ...
  */
@@ -295,6 +296,7 @@ struct musb_hw_ep {
 	/* TUSB has "asynchronous" and "synchronous" dma modes */
 	dma_addr_t		fifo_async;
 	dma_addr_t		fifo_sync;
+	void __iomem		*fifo_sync_va;
 #endif
 
 #ifdef CONFIG_USB_MUSB_HDRC_HCD
@@ -380,6 +382,7 @@ struct musb {
 #ifdef CONFIG_USB_TUSB6010
 	dma_addr_t		async;
 	dma_addr_t		sync;
+	void __iomem		*sync_va;
 #endif
 
 	/* passed down from chip/board specific irq handlers */
@@ -402,10 +405,12 @@ struct musb {
 	u8 board_mode;		/* enum musb_mode */
 	int			(*board_set_power)(int state);
 
+	int			(*set_clock)(struct clk *clk, int is_active);
+
 	u8			min_power;	/* vbus for periph, in mA/2 */
 
 	/* active means connected and not suspended */
-	unsigned is_active:1;
+	unsigned		is_active:1;
 
 	unsigned bIsMultipoint:1;
 	unsigned bIsHost:1;
@@ -433,8 +438,19 @@ struct musb {
 #endif
 
 #ifdef CONFIG_USB_GADGET_MUSB_HDRC
-	unsigned bIsSelfPowered:1;
-	unsigned bMayWakeup:1;
+	/* is_suspended means USB B_PERIPHERAL suspend */
+	unsigned		is_suspended:1;
+
+	/* may_wakeup means remote wakeup is enabled */
+	unsigned		may_wakeup:1;
+
+	/* is_self_powered is reported in device status and the
+	 * config descriptor.  is_bus_powered means B_PERIPHERAL
+	 * draws some VBUS current; both can be true.
+	 */
+	unsigned		is_self_powered:1;
+	unsigned		is_bus_powered:1;
+
 	unsigned bSetAddress:1;
 	unsigned bTestMode:1;
 	unsigned softconnect:1;
@@ -492,9 +508,11 @@ extern void musb_platform_disable(struct musb *musb);
 #ifdef CONFIG_USB_TUSB6010
 extern void musb_platform_try_idle(struct musb *musb);
 extern int musb_platform_get_vbus_status(struct musb *musb);
+extern void musb_platform_set_mode(struct musb *musb, u8 musb_mode);
 #else
 #define musb_platform_try_idle(x)		do {} while (0)
 #define musb_platform_get_vbus_status(x)	0
+#define musb_platform_set_mode(x, y)		do {} while (0)
 #endif
 
 extern int __init musb_platform_init(struct musb *musb);

@@ -97,7 +97,7 @@ static void omap2_clk_fixed_enable(struct clk *clk)
 {
 	u32 cval, i=0;
 
-	if (clk->enable_bit == 0xff)			/* Parent will do it */
+	if (clk->enable_bit == PARENT_CONTROLS_CLOCK)	/* Parent will do it */
 		return;
 
 	cval = CM_CLKEN_PLL;
@@ -205,8 +205,8 @@ static void omap2_clk_fixed_disable(struct clk *clk)
 {
 	u32 cval;
 
-	if(clk->enable_bit == 0xff)		/* let parent off do it */
-		return;
+	if (clk->enable_bit == PARENT_CONTROLS_CLOCK)
+		return;		/* let parent off do it */
 
 	cval = CM_CLKEN_PLL;
 	cval &= ~(0x3 << clk->enable_bit);
@@ -651,7 +651,7 @@ static u32 omap2_get_clksel(u32 *div_sel, u32 *field_mask,
 		break;
 	case CM_SYSCLKOUT_SEL1:
 		div_addr = (u32)&PRCM_CLKOUT_CTRL;
-		if ((div_off == 3) || (div_off = 11))
+		if ((div_off == 3) || (div_off == 11))
 			mask= 0x3;
 		break;
 	case CM_CORE_SEL1:

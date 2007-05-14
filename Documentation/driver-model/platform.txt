@@ -16,7 +16,7 @@ host bridges to peripheral buses, and most controllers integrated
 into system-on-chip platforms.  What they usually have in common
 is direct addressing from a CPU bus.  Rarely, a platform_device will
 be connected through a segment of some other kind of bus; but its
-registers will still be directly addressible.
+registers will still be directly addressable.
 
 Platform devices are given a name, used in driver binding, and a
 list of resources such as addresses and IRQs.
@@ -66,7 +66,7 @@ runtime memory footprint:
 
 Device Enumeration
 ~~~~~~~~~~~~~~~~~~
-As a rule, platform specific (and often board-specific) setup code wil
+As a rule, platform specific (and often board-specific) setup code will
 register platform devices:
 
 	int platform_device_register(struct platform_device *pdev);
@@ -106,7 +106,7 @@ It's built from two components:
     * platform_device.id ... the device instance number, or else "-1"
       to indicate there's only one.
 
-These are catenated, so name/id "serial"/0 indicates bus_id "serial.0", and
+These are concatenated, so name/id "serial"/0 indicates bus_id "serial.0", and
 "serial/3" indicates bus_id "serial.3"; both would use the platform_driver
 named "serial".  While "my_rtc"/-1 would be bus_id "my_rtc" (no instance id)
 and use the platform_driver called "my_rtc".
@@ -125,7 +125,7 @@ three different ways to find such a match:
       usually register later during booting, or by module loading.
 
     - Registering a driver using platform_driver_probe() works just like
-      using platform_driver_register(), except that the the driver won't
+      using platform_driver_register(), except that the driver won't
       be probed later if another device registers.  (Which is OK, since
       this interface is only for use with non-hotpluggable devices.)
 

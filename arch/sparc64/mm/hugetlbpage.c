@@ -10,7 +10,6 @@
 #include <linux/mm.h>
 #include <linux/hugetlb.h>
 #include <linux/pagemap.h>
-#include <linux/smp_lock.h>
 #include <linux/slab.h>
 #include <linux/sysctl.h>
 
@@ -175,6 +174,12 @@ hugetlb_get_unmapped_area(struct file *file, unsigned long addr,
 	if (len > task_size)
 		return -ENOMEM;
 
+	if (flags & MAP_FIXED) {
+		if (prepare_hugepage_range(addr, len, pgoff))
+			return -EINVAL;
+		return addr;
+	}
+
 	if (addr) {
 		addr = ALIGN(addr, HPAGE_SIZE);
 		vma = find_vma(mm, addr);
@@ -248,6 +253,7 @@ void set_huge_pte_at(struct mm_struct *mm, unsigned long addr,
 	if (!pte_present(*ptep) && pte_present(entry))
 		mm->context.huge_pte_count++;
 
+	addr &= HPAGE_MASK;
 	for (i = 0; i < (1 << HUGETLB_PAGE_ORDER); i++) {
 		set_pte_at(mm, addr, ptep, entry);
 		ptep++;
@@ -265,6 +271,8 @@ pte_t huge_ptep_get_and_clear(struct mm_struct *mm, unsigned long addr,
 	entry = *ptep;
 	if (pte_present(entry))
 		mm->context.huge_pte_count--;
+
+	addr &= HPAGE_MASK;
 
 	for (i = 0; i < (1 << HUGETLB_PAGE_ORDER); i++) {
 		pte_clear(mm, addr, ptep);

@@ -35,7 +35,8 @@ extern const char linux_proc_banner[];
 #define ALIGN(x,a)		__ALIGN_MASK(x,(typeof(x))(a)-1)
 #define __ALIGN_MASK(x,mask)	(((x)+(mask))&~(mask))
 
-#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+#define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]) + __must_be_array(arr))
+
 #define FIELD_SIZEOF(t, f) (sizeof(((t*)0)->f))
 #define DIV_ROUND_UP(n,d) (((n) + (d) - 1) / (d))
 #define roundup(x, y) ((((x) + ((y) - 1)) / (y)) * (y))
@@ -92,11 +93,6 @@ extern int cond_resched(void);
 		(__x < 0) ? -__x : __x;		\
 	})
 
-#define labs(x) ({				\
-		long __x = (x);			\
-		(__x < 0) ? -__x : __x;		\
-	})
-
 extern struct atomic_notifier_head panic_notifier_list;
 extern long (*panic_blink)(long time);
 NORET_TYPE void panic(const char * fmt, ...)
@@ -126,6 +122,7 @@ extern int vscnprintf(char *buf, size_t size, const char *fmt, va_list args)
 	__attribute__ ((format (printf, 3, 0)));
 extern char *kasprintf(gfp_t gfp, const char *fmt, ...)
 	__attribute__ ((format (printf, 2, 3)));
+extern char *kvasprintf(gfp_t gfp, const char *fmt, va_list args);
 
 extern int sscanf(const char *, const char *, ...)
 	__attribute__ ((format (scanf, 2, 3)));
@@ -139,7 +136,8 @@ extern unsigned long long memparse(char *ptr, char **retptr);
 extern int core_kernel_text(unsigned long addr);
 extern int __kernel_text_address(unsigned long addr);
 extern int kernel_text_address(unsigned long addr);
-extern int session_of_pgrp(int pgrp);
+struct pid;
+extern struct pid *session_of_pgrp(struct pid *pgrp);
 
 extern void dump_thread(struct pt_regs *regs, struct user *dump);
 
@@ -176,6 +174,7 @@ static inline void console_verbose(void)
 }
 
 extern void bust_spinlocks(int yes);
+extern void wake_up_klogd(void);
 extern int oops_in_progress;		/* If set, an oops, panic(), BUG() or die() is in progress */
 extern int panic_timeout;
 extern int panic_on_oops;
@@ -200,6 +199,7 @@ extern enum system_states {
 #define TAINT_FORCED_RMMOD		(1<<3)
 #define TAINT_MACHINE_CHECK		(1<<4)
 #define TAINT_BAD_PAGE			(1<<5)
+#define TAINT_USER			(1<<6)
 
 extern void dump_stack(void);
 
@@ -311,6 +311,9 @@ static inline int __attribute__ ((format (printf, 1, 2))) pr_debug(const char * 
 ({	typeof(type) __tmp = function; \
 	(void)__tmp; \
 })
+
+struct sysinfo;
+extern int do_sysinfo(struct sysinfo *info);
 
 #endif /* __KERNEL__ */
 

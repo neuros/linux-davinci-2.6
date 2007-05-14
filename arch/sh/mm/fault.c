@@ -2,7 +2,7 @@
  * Page fault handler for SH with an MMU.
  *
  *  Copyright (C) 1999  Niibe Yutaka
- *  Copyright (C) 2003  Paul Mundt
+ *  Copyright (C) 2003 - 2007  Paul Mundt
  *
  *  Based on linux/arch/i386/mm/fault.c:
  *   Copyright (C) 1995  Linus Torvalds
@@ -15,11 +15,42 @@
 #include <linux/mm.h>
 #include <linux/hardirq.h>
 #include <linux/kprobes.h>
+#include <linux/kdebug.h>
 #include <asm/system.h>
 #include <asm/mmu_context.h>
+#include <asm/tlbflush.h>
 #include <asm/kgdb.h>
 
-extern void die(const char *,struct pt_regs *,long);
+#ifdef CONFIG_KPROBES
+ATOMIC_NOTIFIER_HEAD(notify_page_fault_chain);
+
+/* Hook to register for page fault notifications */
+int register_page_fault_notifier(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_register(&notify_page_fault_chain, nb);
+}
+
+int unregister_page_fault_notifier(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_unregister(&notify_page_fault_chain, nb);
+}
+
+static inline int notify_page_fault(enum die_val val, struct pt_regs *regs,
+				    int trap, int sig)
+{
+	struct die_args args = {
+		.regs = regs,
+		.trapnr = trap,
+	};
+	return atomic_notifier_call_chain(&notify_page_fault_chain, val, &args);
+}
+#else
+static inline int notify_page_fault(enum die_val val, struct pt_regs *regs,
+				    int trap, int sig)
+{
+	return NOTIFY_DONE;
+}
+#endif
 
 /*
  * This routine handles page faults.  It determines the address,
@@ -38,6 +69,11 @@ asmlinkage void __kprobes do_page_fault(struct pt_regs *regs,
 	siginfo_t info;
 
 	trace_hardirqs_on();
+
+	if (notify_page_fault(DIE_PAGE_FAULT, regs,
+			      writeaccess, SIGSEGV) == NOTIFY_STOP)
+		return;
+
 	local_irq_enable();
 
 #ifdef CONFIG_SH_KGDB
@@ -223,4 +259,90 @@ do_sigbus:
 	/* Kernel mode? Handle exceptions or die */
 	if (!user_mode(regs))
 		goto no_context;
+}
+
+#ifdef CONFIG_SH_STORE_QUEUES
+/*
+ * This is a special case for the SH-4 store queues, as pages for this
+ * space still need to be faulted in before it's possible to flush the
+ * store queue cache for writeout to the remapped region.
+ */
+#define P3_ADDR_MAX		(P4SEG_STORE_QUE + 0x04000000)
+#else
+#define P3_ADDR_MAX		P4SEG
+#endif
+
+/*
+ * Called with interrupts disabled.
+ */
+asmlinkage int __kprobes __do_page_fault(struct pt_regs *regs,
+					 unsigned long writeaccess,
+					 unsigned long address)
+{
+	pgd_t *pgd;
+	pud_t *pud;
+	pmd_t *pmd;
+	pte_t *pte;
+	pte_t entry;
+	struct mm_struct *mm = current->mm;
+	spinlock_t *ptl;
+	int ret = 1;
+
+#ifdef CONFIG_SH_KGDB
+	if (kgdb_nofault && kgdb_bus_err_hook)
+		kgdb_bus_err_hook();
+#endif
+
+	/*
+	 * We don't take page faults for P1, P2, and parts of P4, these
+	 * are always mapped, whether it be due to legacy behaviour in
+	 * 29-bit mode, or due to PMB configuration in 32-bit mode.
+	 */
+	if (address >= P3SEG && address < P3_ADDR_MAX) {
+		pgd = pgd_offset_k(address);
+		mm = NULL;
+	} else {
+		if (unlikely(address >= TASK_SIZE || !mm))
+			return 1;
+
+		pgd = pgd_offset(mm, address);
+	}
+
+	pud = pud_offset(pgd, address);
+	if (pud_none_or_clear_bad(pud))
+		return 1;
+	pmd = pmd_offset(pud, address);
+	if (pmd_none_or_clear_bad(pmd))
+		return 1;
+
+	if (mm)
+		pte = pte_offset_map_lock(mm, pmd, address, &ptl);
+	else
+		pte = pte_offset_kernel(pmd, address);
+
+	entry = *pte;
+	if (unlikely(pte_none(entry) || pte_not_present(entry)))
+		goto unlock;
+	if (unlikely(writeaccess && !pte_write(entry)))
+		goto unlock;
+
+	if (writeaccess)
+		entry = pte_mkdirty(entry);
+	entry = pte_mkyoung(entry);
+
+#ifdef CONFIG_CPU_SH4
+	/*
+	 * ITLB is not affected by "ldtlb" instruction.
+	 * So, we need to flush the entry by ourselves.
+	 */
+	local_flush_tlb_one(get_asid(), address & PAGE_MASK);
+#endif
+
+	set_pte(pte, entry);
+	update_mmu_cache(NULL, address, entry);
+	ret = 0;
+unlock:
+	if (mm)
+		pte_unmap_unlock(pte, ptl);
+	return ret;
 }

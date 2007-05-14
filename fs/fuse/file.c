@@ -69,7 +69,7 @@ void fuse_finish_open(struct inode *inode, struct file *file,
 	if (outarg->open_flags & FOPEN_DIRECT_IO)
 		file->f_op = &fuse_direct_io_file_operations;
 	if (!(outarg->open_flags & FOPEN_KEEP_CACHE))
-		invalidate_inode_pages(inode->i_mapping);
+		invalidate_mapping_pages(inode->i_mapping, 0, -1);
 	ff->fh = outarg->fh;
 	file->private_data = ff;
 }
@@ -738,8 +738,7 @@ static int fuse_file_lock(struct file *file, int cmd, struct file_lock *fl)
 
 	if (cmd == F_GETLK) {
 		if (fc->no_lock) {
-			if (!posix_test_lock(file, fl, fl))
-				fl->fl_type = F_UNLCK;
+			posix_test_lock(file, fl);
 			err = 0;
 		} else
 			err = fuse_getlk(file, fl);

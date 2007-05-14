@@ -20,7 +20,6 @@
 #include <linux/mm.h>
 #include <linux/tty.h>
 #include <linux/tty_driver.h>
-#include <linux/smp_lock.h>
 #include <linux/console.h>
 #include <linux/init.h>
 #include <linux/module.h>
@@ -58,7 +57,7 @@ int console_printk[4] = {
 };
 
 /*
- * Low lever drivers may need that to know if they can schedule in
+ * Low level drivers may need that to know if they can schedule in
  * their unblank() callback or not. So let's export it.
  */
 int oops_in_progress;
@@ -500,7 +499,7 @@ static int have_callable_console(void)
  * printk - print a kernel message
  * @fmt: format string
  *
- * This is printk.  It can be called from any context.  We want it to work.
+ * This is printk().  It can be called from any context.  We want it to work.
  *
  * We try to grab the console_sem.  If we succeed, it's easy - we log the output and
  * call the console drivers.  If we fail to get the semaphore we place the output
@@ -546,7 +545,7 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 		zap_locks();
 
 	/* This stops the holder of console_sem just where we want him */
-	local_irq_save(flags);
+	raw_local_irq_save(flags);
 	lockdep_off();
 	spin_lock(&logbuf_lock);
 	printk_cpu = smp_processor_id();
@@ -639,7 +638,7 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 			up(&console_sem);
 		}
 		lockdep_on();
-		local_irq_restore(flags);
+		raw_local_irq_restore(flags);
 	} else {
 		/*
 		 * Someone else owns the drivers.  We drop the spinlock, which
@@ -649,7 +648,7 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 		printk_cpu = UINT_MAX;
 		spin_unlock(&logbuf_lock);
 		lockdep_on();
-		local_irq_restore(flags);
+		raw_local_irq_restore(flags);
 	}
 
 	preempt_enable();
@@ -804,6 +803,12 @@ int is_console_locked(void)
 	return console_locked;
 }
 
+void wake_up_klogd(void)
+{
+	if (!oops_in_progress && waitqueue_active(&log_wait))
+		wake_up_interruptible(&log_wait);
+}
+
 /**
  * release_console_sem - unlock the console system
  *
@@ -846,8 +851,8 @@ void release_console_sem(void)
 	console_locked = 0;
 	up(&console_sem);
 	spin_unlock_irqrestore(&logbuf_lock, flags);
-	if (wake_klogd && !oops_in_progress && waitqueue_active(&log_wait))
-		wake_up_interruptible(&log_wait);
+	if (wake_klogd)
+		wake_up_klogd();
 }
 EXPORT_SYMBOL(release_console_sem);
 
@@ -946,8 +951,16 @@ void register_console(struct console *console)
 {
 	int i;
 	unsigned long flags;
+	struct console *bootconsole = NULL;
 
-	if (preferred_console < 0)
+	if (console_drivers) {
+		if (console->flags & CON_BOOT)
+			return;
+		if (console_drivers->flags & CON_BOOT)
+			bootconsole = console_drivers;
+	}
+
+	if (preferred_console < 0 || bootconsole || !console_drivers)
 		preferred_console = selected_console;
 
 	/*
@@ -993,8 +1006,11 @@ void register_console(struct console *console)
 	if (!(console->flags & CON_ENABLED))
 		return;
 
-	if (console_drivers && (console_drivers->flags & CON_BOOT)) {
-		unregister_console(console_drivers);
+	if (bootconsole) {
+		printk(KERN_INFO "console handover: boot [%s%d] -> real [%s%d]\n",
+		       bootconsole->name, bootconsole->index,
+		       console->name, console->index);
+		unregister_console(bootconsole);
 		console->flags &= ~CON_PRINTBUFFER;
 	}
 
@@ -1045,16 +1061,11 @@ int unregister_console(struct console *console)
 		}
 	}
 
-	/* If last console is removed, we re-enable picking the first
-	 * one that gets registered. Without that, pmac early boot console
-	 * would prevent fbcon from taking over.
-	 *
+	/*
 	 * If this isn't the last console and it has CON_CONSDEV set, we
 	 * need to set it on the next preferred console.
 	 */
-	if (console_drivers == NULL)
-		preferred_console = selected_console;
-	else if (console->flags & CON_CONSDEV)
+	if (console_drivers != NULL && console->flags & CON_CONSDEV)
 		console_drivers->flags |= CON_CONSDEV;
 
 	release_console_sem();

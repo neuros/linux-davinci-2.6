@@ -63,10 +63,6 @@ static int atkbd_extra;
 module_param_named(extra, atkbd_extra, bool, 0);
 MODULE_PARM_DESC(extra, "Enable extra LEDs and keys on IBM RapidAcces, EzKey and similar keyboards");
 
-__obsolete_setup("atkbd_set=");
-__obsolete_setup("atkbd_reset");
-__obsolete_setup("atkbd_softrepeat=");
-
 /*
  * Scancode to keycode tables. These are just the default setting, and
  * are loadable via an userland utility.
@@ -590,7 +586,7 @@ static void atkbd_event_work(struct work_struct *work)
 
 static int atkbd_event(struct input_dev *dev, unsigned int type, unsigned int code, int value)
 {
-	struct atkbd *atkbd = dev->private;
+	struct atkbd *atkbd = input_get_drvdata(dev);
 
 	if (!atkbd->write)
 		return -1;
@@ -887,8 +883,9 @@ static void atkbd_set_device_attrs(struct atkbd *atkbd)
 	input_dev->id.product = atkbd->translated ? 1 : atkbd->set;
 	input_dev->id.version = atkbd->id;
 	input_dev->event = atkbd_event;
-	input_dev->private = atkbd;
-	input_dev->cdev.dev = &atkbd->ps2dev.serio->dev;
+	input_dev->dev.parent = &atkbd->ps2dev.serio->dev;
+
+	input_set_drvdata(input_dev, atkbd);
 
 	input_dev->evbit[0] = BIT(EV_KEY) | BIT(EV_REP) | BIT(EV_MSC);
 

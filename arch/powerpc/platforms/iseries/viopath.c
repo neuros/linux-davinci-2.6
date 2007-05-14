@@ -36,7 +36,6 @@
 #include <linux/dma-mapping.h>
 #include <linux/wait.h>
 #include <linux/seq_file.h>
-#include <linux/smp_lock.h>
 #include <linux/interrupt.h>
 
 #include <asm/system.h>
@@ -155,7 +154,7 @@ static int proc_viopath_show(struct seq_file *m, void *v)
 	node = of_find_node_by_path("/");
 	sysid = NULL;
 	if (node != NULL)
-		sysid = get_property(node, "system-id", NULL);
+		sysid = of_get_property(node, "system-id", NULL);
 
 	if (sysid == NULL)
 		seq_printf(m, "SRLNBR=<UNKNOWN>\n");
@@ -173,7 +172,7 @@ static int proc_viopath_open(struct inode *inode, struct file *file)
 	return single_open(file, proc_viopath_show, NULL);
 }
 
-static struct file_operations proc_viopath_operations = {
+static const struct file_operations proc_viopath_operations = {
 	.open		= proc_viopath_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,

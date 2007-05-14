@@ -29,6 +29,7 @@
 #include <asm/uaccess.h>
 #include <asm/cacheflush.h>
 #include <asm/tlb.h>
+#include <asm/mmu_context.h>
 
 #ifndef arch_mmap_check
 #define arch_mmap_check(addr, len, flags)	(0)
@@ -299,6 +300,8 @@ static int browse_rb(struct rb_root *root)
 			printk("vm_end %lx < vm_start %lx\n", vma->vm_end, vma->vm_start);
 		i++;
 		pn = nd;
+		prev = vma->vm_start;
+		pend = vma->vm_end;
 	}
 	j = 0;
 	for (nd = pn; nd; nd = rb_prev(nd)) {
@@ -1197,6 +1200,9 @@ arch_get_unmapped_area(struct file *filp, unsigned long addr,
 	if (len > TASK_SIZE)
 		return -ENOMEM;
 
+	if (flags & MAP_FIXED)
+		return addr;
+
 	if (addr) {
 		addr = PAGE_ALIGN(addr);
 		vma = find_vma(mm, addr);
@@ -1269,6 +1275,9 @@ arch_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
 	/* requested length too big for entire address space */
 	if (len > TASK_SIZE)
 		return -ENOMEM;
+
+	if (flags & MAP_FIXED)
+		return addr;
 
 	/* requesting a specific address */
 	if (addr) {
@@ -1357,39 +1366,21 @@ unsigned long
 get_unmapped_area(struct file *file, unsigned long addr, unsigned long len,
 		unsigned long pgoff, unsigned long flags)
 {
-	unsigned long ret;
+	unsigned long (*get_area)(struct file *, unsigned long,
+				  unsigned long, unsigned long, unsigned long);
 
-	if (!(flags & MAP_FIXED)) {
-		unsigned long (*get_area)(struct file *, unsigned long, unsigned long, unsigned long, unsigned long);
-
-		get_area = current->mm->get_unmapped_area;
-		if (file && file->f_op && file->f_op->get_unmapped_area)
-			get_area = file->f_op->get_unmapped_area;
-		addr = get_area(file, addr, len, pgoff, flags);
-		if (IS_ERR_VALUE(addr))
-			return addr;
-	}
+	get_area = current->mm->get_unmapped_area;
+	if (file && file->f_op && file->f_op->get_unmapped_area)
+		get_area = file->f_op->get_unmapped_area;
+	addr = get_area(file, addr, len, pgoff, flags);
+	if (IS_ERR_VALUE(addr))
+		return addr;
 
 	if (addr > TASK_SIZE - len)
 		return -ENOMEM;
 	if (addr & ~PAGE_MASK)
 		return -EINVAL;
-	if (file && is_file_hugepages(file))  {
-		/*
-		 * Check if the given range is hugepage aligned, and
-		 * can be made suitable for hugepages.
-		 */
-		ret = prepare_hugepage_range(addr, len, pgoff);
-	} else {
-		/*
-		 * Ensure that a normal request is not falling in a
-		 * reserved hugepage range.  For some archs like IA-64,
-		 * there is a separate region for hugepages.
-		 */
-		ret = is_hugepage_only_range(current->mm, addr, len);
-	}
-	if (ret)
-		return -EINVAL;
+
 	return addr;
 }
 
@@ -1729,7 +1720,7 @@ detach_vmas_to_be_unmapped(struct mm_struct *mm, struct vm_area_struct *vma,
 
 /*
  * Split a vma into two pieces at address 'addr', a new vma is allocated
- * either for the first part or the the tail.
+ * either for the first part or the tail.
  */
 int split_vma(struct mm_struct * mm, struct vm_area_struct * vma,
 	      unsigned long addr, int new_below)
@@ -1977,6 +1968,9 @@ void exit_mmap(struct mm_struct *mm)
 	unsigned long nr_accounted = 0;
 	unsigned long end;
 
+	/* mm's last user has gone, and its about to be pulled down */
+	arch_exit_mmap(mm);
+
 	lru_add_drain();
 	flush_cache_mm(mm);
 	tlb = tlb_gather_mmu(mm, 1);
@@ -2100,4 +2094,76 @@ int may_expand_vm(struct mm_struct *mm, unsigned long npages)
 	if (cur + npages > lim)
 		return 0;
 	return 1;
+}
+
+
+static struct page *special_mapping_nopage(struct vm_area_struct *vma,
+					   unsigned long address, int *type)
+{
+	struct page **pages;
+
+	BUG_ON(address < vma->vm_start || address >= vma->vm_end);
+
+	address -= vma->vm_start;
+	for (pages = vma->vm_private_data; address > 0 && *pages; ++pages)
+		address -= PAGE_SIZE;
+
+	if (*pages) {
+		struct page *page = *pages;
+		get_page(page);
+		return page;
+	}
+
+	return NOPAGE_SIGBUS;
+}
+
+/*
+ * Having a close hook prevents vma merging regardless of flags.
+ */
+static void special_mapping_close(struct vm_area_struct *vma)
+{
+}
+
+static struct vm_operations_struct special_mapping_vmops = {
+	.close = special_mapping_close,
+	.nopage	= special_mapping_nopage,
+};
+
+/*
+ * Called with mm->mmap_sem held for writing.
+ * Insert a new vma covering the given region, with the given flags.
+ * Its pages are supplied by the given array of struct page *.
+ * The array can be shorter than len >> PAGE_SHIFT if it's null-terminated.
+ * The region past the last page supplied will always produce SIGBUS.
+ * The array pointer and the pages it points to are assumed to stay alive
+ * for as long as this mapping might exist.
+ */
+int install_special_mapping(struct mm_struct *mm,
+			    unsigned long addr, unsigned long len,
+			    unsigned long vm_flags, struct page **pages)
+{
+	struct vm_area_struct *vma;
+
+	vma = kmem_cache_zalloc(vm_area_cachep, GFP_KERNEL);
+	if (unlikely(vma == NULL))
+		return -ENOMEM;
+
+	vma->vm_mm = mm;
+	vma->vm_start = addr;
+	vma->vm_end = addr + len;
+
+	vma->vm_flags = vm_flags | mm->def_flags;
+	vma->vm_page_prot = protection_map[vma->vm_flags & 7];
+
+	vma->vm_ops = &special_mapping_vmops;
+	vma->vm_private_data = pages;
+
+	if (unlikely(insert_vm_struct(mm, vma))) {
+		kmem_cache_free(vm_area_cachep, vma);
+		return -ENOMEM;
+	}
+
+	mm->total_vm += len >> PAGE_SHIFT;
+
+	return 0;
 }

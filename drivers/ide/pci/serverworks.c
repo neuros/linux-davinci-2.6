@@ -65,16 +65,16 @@ static int check_in_drive_lists (ide_drive_t *drive, const char **list)
 	return 0;
 }
 
-static u8 svwks_ratemask (ide_drive_t *drive)
+static u8 svwks_udma_filter(ide_drive_t *drive)
 {
 	struct pci_dev *dev     = HWIF(drive)->pci_dev;
-	u8 mode = 0;
+	u8 mask = 0;
 
 	if (!svwks_revision)
 		pci_read_config_byte(dev, PCI_REVISION_ID, &svwks_revision);
 
 	if (dev->device == PCI_DEVICE_ID_SERVERWORKS_HT1000IDE)
-		return 2;
+		return 0x1f;
 	if (dev->device == PCI_DEVICE_ID_SERVERWORKS_OSB4IDE) {
 		u32 reg = 0;
 		if (isa_dev)
@@ -86,25 +86,31 @@ static u8 svwks_ratemask (ide_drive_t *drive)
 		if(drive->media == ide_disk)
 			return 0;
 		/* Check the OSB4 DMA33 enable bit */
-		return ((reg & 0x00004000) == 0x00004000) ? 1 : 0;
+		return ((reg & 0x00004000) == 0x00004000) ? 0x07 : 0;
 	} else if (svwks_revision < SVWKS_CSB5_REVISION_NEW) {
-		return 1;
+		return 0x07;
 	} else if (svwks_revision >= SVWKS_CSB5_REVISION_NEW) {
-		u8 btr = 0;
+		u8 btr = 0, mode;
 		pci_read_config_byte(dev, 0x5A, &btr);
 		mode = btr & 0x3;
-		if (!eighty_ninty_three(drive))
-			mode = min(mode, (u8)1);
+
 		/* If someone decides to do UDMA133 on CSB5 the same
 		   issue will bite so be inclusive */
 		if (mode > 2 && check_in_drive_lists(drive, svwks_bad_ata100))
 			mode = 2;
+
+		switch(mode) {
+		case 2:	 mask = 0x1f; break;
+		case 1:	 mask = 0x07; break;
+		default: mask = 0x00; break;
+		}
 	}
 	if (((dev->device == PCI_DEVICE_ID_SERVERWORKS_CSB6IDE) ||
 	     (dev->device == PCI_DEVICE_ID_SERVERWORKS_CSB6IDE2)) &&
 	    (!(PCI_FUNC(dev->devfn) & 1)))
-		mode = 2;
-	return mode;
+		mask = 0x1f;
+
+	return mask;
 }
 
 static u8 svwks_csb_check (struct pci_dev *dev)
@@ -141,7 +147,7 @@ static int svwks_tune_chipset (ide_drive_t *drive, u8 xferspeed)
 	if (xferspeed == 255)	/* PIO auto-tuning */
 		speed = XFER_PIO_0 + pio;
 	else
-		speed = ide_rate_filter(svwks_ratemask(drive), xferspeed);
+		speed = ide_rate_filter(drive, xferspeed);
 
 	/* If we are about to put a disk into UDMA mode we screwed up.
 	   Our code assumes we never _ever_ do this on an OSB4 */
@@ -160,7 +166,7 @@ static int svwks_tune_chipset (ide_drive_t *drive, u8 xferspeed)
 	if ((dev->device == PCI_DEVICE_ID_SERVERWORKS_CSB6IDE) ||
 	    (dev->device == PCI_DEVICE_ID_SERVERWORKS_CSB6IDE2)) {
 		if (!drive->init_speed) {
-			u8 dma_stat = hwif->INB(hwif->dma_status);
+			u8 dma_stat = inb(hwif->dma_status);
 
 dma_pio:
 			if (((ultra_enable << (7-drive->dn) & 0x80) == 0x80) &&
@@ -304,7 +310,7 @@ static void svwks_tune_drive (ide_drive_t *drive, u8 pio)
 
 static int config_chipset_for_dma (ide_drive_t *drive)
 {
-	u8 speed = ide_dma_speed(drive, svwks_ratemask(drive));
+	u8 speed = ide_max_dma_mode(drive);
 
 	if (!(speed))
 		speed = XFER_PIO_0 + ide_get_best_pio_mode(drive, 255, 5, NULL);
@@ -315,35 +321,15 @@ static int config_chipset_for_dma (ide_drive_t *drive)
 
 static int svwks_config_drive_xfer_rate (ide_drive_t *drive)
 {
-	ide_hwif_t *hwif	= HWIF(drive);
-	struct hd_driveid *id	= drive->id;
-
 	drive->init_speed = 0;
 
-	if ((id->capability & 1) && drive->autodma) {
+	if (ide_use_dma(drive) && config_chipset_for_dma(drive))
+		return 0;
 
-		if (ide_use_dma(drive)) {
-			if (config_chipset_for_dma(drive))
-				return hwif->ide_dma_on(drive);
-		}
-
-		goto fast_ata_pio;
-
-	} else if ((id->capability & 8) || (id->field_valid & 2)) {
-fast_ata_pio:
+	if (ide_use_fast_pio(drive))
 		config_chipset_for_pio(drive);
-		//	hwif->tuneproc(drive, 5);
-		return hwif->ide_dma_off_quietly(drive);
-	}
-	/* IORDY not supported */
-	return 0;
-}
 
-/* This can go soon */
-
-static int svwks_ide_dma_end (ide_drive_t *drive)
-{
-	return __ide_dma_end(drive);
+	return -1;
 }
 
 static unsigned int __devinit init_chipset_svwks (struct pci_dev *dev, const char *name)
@@ -520,6 +506,7 @@ static void __devinit init_hwif_svwks (ide_hwif_t *hwif)
 
 	hwif->tuneproc = &svwks_tune_drive;
 	hwif->speedproc = &svwks_tune_chipset;
+	hwif->udma_filter = &svwks_udma_filter;
 
 	hwif->atapi_dma = 1;
 
@@ -537,33 +524,18 @@ static void __devinit init_hwif_svwks (ide_hwif_t *hwif)
 	}
 
 	hwif->ide_dma_check = &svwks_config_drive_xfer_rate;
-	if (hwif->pci_dev->device == PCI_DEVICE_ID_SERVERWORKS_OSB4IDE)
-		hwif->ide_dma_end = &svwks_ide_dma_end;
-	else if (!(hwif->udma_four))
-		hwif->udma_four = ata66_svwks(hwif);
+	if (hwif->pci_dev->device != PCI_DEVICE_ID_SERVERWORKS_OSB4IDE) {
+		if (!hwif->udma_four)
+			hwif->udma_four = ata66_svwks(hwif);
+	}
 	if (!noautodma)
 		hwif->autodma = 1;
 
-	dma_stat = hwif->INB(hwif->dma_status);
+	dma_stat = inb(hwif->dma_status);
 	hwif->drives[0].autodma = (dma_stat & 0x20);
 	hwif->drives[1].autodma = (dma_stat & 0x40);
 	hwif->drives[0].autotune = (!(dma_stat & 0x20));
 	hwif->drives[1].autotune = (!(dma_stat & 0x40));
-}
-
-/*
- * We allow the BM-DMA driver to only work on enabled interfaces.
- */
-static void __devinit init_dma_svwks (ide_hwif_t *hwif, unsigned long dmabase)
-{
-	struct pci_dev *dev = hwif->pci_dev;
-
-	if (((dev->device == PCI_DEVICE_ID_SERVERWORKS_CSB6IDE) ||
-	     (dev->device == PCI_DEVICE_ID_SERVERWORKS_CSB6IDE2)) &&
-	    (!(PCI_FUNC(dev->devfn) & 1)) && (hwif->channel))
-		return;
-
-	ide_setup_dma(hwif, dmabase, 8);
 }
 
 static int __devinit init_setup_svwks (struct pci_dev *dev, ide_pci_device_t *d)
@@ -600,7 +572,6 @@ static ide_pci_device_t serverworks_chipsets[] __devinitdata = {
 		.init_setup	= init_setup_svwks,
 		.init_chipset	= init_chipset_svwks,
 		.init_hwif	= init_hwif_svwks,
-		.init_dma	= init_dma_svwks,
 		.channels	= 2,
 		.autodma	= AUTODMA,
 		.bootable	= ON_BOARD,
@@ -609,7 +580,6 @@ static ide_pci_device_t serverworks_chipsets[] __devinitdata = {
 		.init_setup	= init_setup_csb6,
 		.init_chipset	= init_chipset_svwks,
 		.init_hwif	= init_hwif_svwks,
-		.init_dma	= init_dma_svwks,
 		.channels	= 2,
 		.autodma	= AUTODMA,
 		.bootable	= ON_BOARD,
@@ -618,7 +588,6 @@ static ide_pci_device_t serverworks_chipsets[] __devinitdata = {
 		.init_setup	= init_setup_csb6,
 		.init_chipset	= init_chipset_svwks,
 		.init_hwif	= init_hwif_svwks,
-		.init_dma	= init_dma_svwks,
 		.channels	= 1,	/* 2 */
 		.autodma	= AUTODMA,
 		.bootable	= ON_BOARD,
@@ -627,7 +596,6 @@ static ide_pci_device_t serverworks_chipsets[] __devinitdata = {
 		.init_setup	= init_setup_svwks,
 		.init_chipset	= init_chipset_svwks,
 		.init_hwif	= init_hwif_svwks,
-		.init_dma	= init_dma_svwks,
 		.channels	= 1,	/* 2 */
 		.autodma	= AUTODMA,
 		.bootable	= ON_BOARD,

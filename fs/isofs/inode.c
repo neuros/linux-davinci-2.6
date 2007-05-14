@@ -77,8 +77,7 @@ static void init_once(void *foo, struct kmem_cache * cachep, unsigned long flags
 {
 	struct iso_inode_info *ei = foo;
 
-	if ((flags & (SLAB_CTOR_VERIFY|SLAB_CTOR_CONSTRUCTOR)) ==
-	    SLAB_CTOR_CONSTRUCTOR)
+	if (flags & SLAB_CTOR_CONSTRUCTOR)
 		inode_init_once(&ei->vfs_inode);
 }
  
@@ -106,7 +105,7 @@ static int isofs_remount(struct super_block *sb, int *flags, char *data)
 	return 0;
 }
 
-static struct super_operations isofs_sops = {
+static const struct super_operations isofs_sops = {
 	.alloc_inode	= isofs_alloc_inode,
 	.destroy_inode	= isofs_destroy_inode,
 	.read_inode	= isofs_read_inode,

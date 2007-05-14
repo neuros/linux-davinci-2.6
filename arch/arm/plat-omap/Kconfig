@@ -11,6 +11,7 @@ choice
 
 config ARCH_OMAP1
 	bool "TI OMAP1"
+	select GENERIC_CLOCKEVENTS
 
 config ARCH_OMAP2
 	bool "TI OMAP2"
@@ -119,6 +120,22 @@ config OMAP_MCBSP
 	  Say Y here if you want support for the OMAP Multichannel
 	  Buffered Serial Port.
 
+config OMAP_MMU_FWK
+	tristate "MMU framework support"
+	depends on ARCH_OMAP
+	default n
+	help
+	  Say Y here if you want to use OMAP MMU framework support for
+	  DSP, IVA1.0 and Camera in OMAP1/2.
+
+config OMAP_MBOX_FWK
+	tristate "Mailbox framework support"
+	depends on ARCH_OMAP
+	default n
+	help
+	  Say Y here if you want to use OMAP Mailbox framework support for
+	  DSP and IVA1.0 in OMAP1/2.
+
 choice
         prompt "System timer"
 	default OMAP_MPU_TIMER
@@ -133,6 +150,8 @@ config OMAP_MPU_TIMER
 config OMAP_32K_TIMER
 	bool "Use 32KHz timer"
 	depends on ARCH_OMAP16XX || ARCH_OMAP24XX
+	select GENERIC_TIME
+	select GENERIC_CLOCKEVENTS
 	help
 	  Select this option if you want to enable the OMAP 32KHz timer.
 	  This timer saves power compared to the OMAP_MPU_TIMER, and has

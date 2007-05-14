@@ -60,6 +60,7 @@ static struct page *split_large_page(unsigned long address, pgprot_t prot,
 	address = __pa(address);
 	addr = address & LARGE_PAGE_MASK; 
 	pbase = (pte_t *)page_address(base);
+	paravirt_alloc_pt(page_to_pfn(base));
 	for (i = 0; i < PTRS_PER_PTE; i++, addr += PAGE_SIZE) {
                set_pte(&pbase[i], pfn_pte(addr >> PAGE_SHIFT,
                                           addr == address ? prot : ref_prot));
@@ -90,7 +91,7 @@ static void set_pmd_pte(pte_t *kpte, unsigned long address, pte_t pte)
 	unsigned long flags;
 
 	set_pte_atomic(kpte, pte); 	/* change init_mm */
-	if (PTRS_PER_PMD > 1)
+	if (SHARED_KERNEL_PMD)
 		return;
 
 	spin_lock_irqsave(&pgd_lock, flags);
@@ -141,7 +142,7 @@ __change_page_attr(struct page *page, pgprot_t prot)
 		return -EINVAL;
 	kpte_page = virt_to_page(kpte);
 	if (pgprot_val(prot) != pgprot_val(PAGE_KERNEL)) { 
-		if ((pte_val(*kpte) & _PAGE_PSE) == 0) { 
+		if (!pte_huge(*kpte)) {
 			set_pte_atomic(kpte, mk_pte(page, prot)); 
 		} else {
 			pgprot_t ref_prot;
@@ -157,7 +158,7 @@ __change_page_attr(struct page *page, pgprot_t prot)
 			kpte_page = split;
 		}
 		page_private(kpte_page)++;
-	} else if ((pte_val(*kpte) & _PAGE_PSE) == 0) { 
+	} else if (!pte_huge(*kpte)) {
 		set_pte_atomic(kpte, mk_pte(page, PAGE_KERNEL));
 		BUG_ON(page_private(kpte_page) == 0);
 		page_private(kpte_page)--;
@@ -172,6 +173,7 @@ __change_page_attr(struct page *page, pgprot_t prot)
 	if (!PageReserved(kpte_page)) {
 		if (cpu_has_pse && (page_private(kpte_page) == 0)) {
 			ClearPagePrivate(kpte_page);
+			paravirt_release_pt(page_to_pfn(kpte_page));
 			list_add(&kpte_page->lru, &df_list);
 			revert_page(kpte_page, address);
 		}
@@ -224,7 +226,7 @@ void global_flush_tlb(void)
 	list_replace_init(&df_list, &l);
 	spin_unlock_irq(&cpa_lock);
 	if (!cpu_has_clflush)
-		flush_map(0);
+		flush_map(NULL);
 	list_for_each_entry_safe(pg, next, &l, lru) {
 		if (cpu_has_clflush)
 			flush_map(page_address(pg));

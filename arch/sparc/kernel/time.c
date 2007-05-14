@@ -301,7 +301,7 @@ static __inline__ void sun4_clock_probe(void)
 static int __devinit clock_probe(struct of_device *op, const struct of_device_id *match)
 {
 	struct device_node *dp = op->node;
-	char *model = of_get_property(dp, "model", NULL);
+	const char *model = of_get_property(dp, "model", NULL);
 
 	if (!model)
 		return -ENODEV;
@@ -434,15 +434,6 @@ void __init time_init(void)
 static inline unsigned long do_gettimeoffset(void)
 {
 	return (*master_l10_counter >> 10) & 0x1fffff;
-}
-
-/*
- * Returns nanoseconds
- * XXX This is a suboptimal implementation.
- */
-unsigned long long sched_clock(void)
-{
-	return (unsigned long long)jiffies * (1000000000 / HZ);
 }
 
 /* Ok, my cute asm atomicity trick doesn't work anymore.

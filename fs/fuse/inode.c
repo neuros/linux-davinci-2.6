@@ -112,7 +112,7 @@ void fuse_change_attributes(struct inode *inode, struct fuse_attr *attr)
 {
 	struct fuse_conn *fc = get_fuse_conn(inode);
 	if (S_ISREG(inode->i_mode) && i_size_read(inode) != attr->size)
-		invalidate_inode_pages(inode->i_mapping);
+		invalidate_mapping_pages(inode->i_mapping, 0, -1);
 
 	inode->i_ino     = attr->ino;
 	inode->i_mode    = (inode->i_mode & S_IFMT) + (attr->mode & 07777);
@@ -330,6 +330,8 @@ static int parse_fuse_opt(char *opt, struct fuse_mount_data *d, int is_bdev)
 		case OPT_ROOTMODE:
 			if (match_octal(&args[0], &value))
 				return 0;
+			if (!fuse_valid_type(value))
+				return 0;
 			d->rootmode = value;
 			d->rootmode_present = 1;
 			break;
@@ -446,7 +448,7 @@ static struct inode *get_root_inode(struct super_block *sb, unsigned mode)
 	return fuse_iget(sb, 1, 0, &attr);
 }
 
-static struct super_operations fuse_super_operations = {
+static const struct super_operations fuse_super_operations = {
 	.alloc_inode    = fuse_alloc_inode,
 	.destroy_inode  = fuse_destroy_inode,
 	.read_inode	= fuse_read_inode,
@@ -634,6 +636,7 @@ static int fuse_get_sb(struct file_system_type *fs_type,
 static struct file_system_type fuse_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "fuse",
+	.fs_flags	= FS_HAS_SUBTYPE,
 	.get_sb		= fuse_get_sb,
 	.kill_sb	= kill_anon_super,
 };
@@ -650,6 +653,7 @@ static int fuse_get_sb_blk(struct file_system_type *fs_type,
 static struct file_system_type fuseblk_fs_type = {
 	.owner		= THIS_MODULE,
 	.name		= "fuseblk",
+	.fs_flags	= FS_HAS_SUBTYPE,
 	.get_sb		= fuse_get_sb_blk,
 	.kill_sb	= kill_block_super,
 	.fs_flags	= FS_REQUIRES_DEV,
@@ -683,8 +687,7 @@ static void fuse_inode_init_once(void *foo, struct kmem_cache *cachep,
 {
 	struct inode * inode = foo;
 
-	if ((flags & (SLAB_CTOR_VERIFY|SLAB_CTOR_CONSTRUCTOR)) ==
-	    SLAB_CTOR_CONSTRUCTOR)
+	if (flags & SLAB_CTOR_CONSTRUCTOR)
 		inode_init_once(inode);
 }
 
@@ -729,12 +732,12 @@ static int fuse_sysfs_init(void)
 {
 	int err;
 
-	kset_set_kset_s(&fuse_subsys, fs_subsys);
+	kobj_set_kset_s(&fuse_subsys, fs_subsys);
 	err = subsystem_register(&fuse_subsys);
 	if (err)
 		goto out_err;
 
-	kset_set_kset_s(&connections_subsys, fuse_subsys);
+	kobj_set_kset_s(&connections_subsys, fuse_subsys);
 	err = subsystem_register(&connections_subsys);
 	if (err)
 		goto out_fuse_unregister;

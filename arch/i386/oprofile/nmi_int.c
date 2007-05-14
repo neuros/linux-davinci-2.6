@@ -14,10 +14,10 @@
 #include <linux/sysdev.h>
 #include <linux/slab.h>
 #include <linux/moduleparam.h>
+#include <linux/kdebug.h>
 #include <asm/nmi.h>
 #include <asm/msr.h>
 #include <asm/apic.h>
-#include <asm/kdebug.h>
  
 #include "op_counter.h"
 #include "op_x86_model.h"
@@ -63,7 +63,7 @@ static struct sys_device device_oprofile = {
 };
 
 
-static int __init init_driverfs(void)
+static int __init init_sysfs(void)
 {
 	int error;
 	if (!(error = sysdev_class_register(&oprofile_sysclass)))
@@ -72,15 +72,15 @@ static int __init init_driverfs(void)
 }
 
 
-static void exit_driverfs(void)
+static void exit_sysfs(void)
 {
 	sysdev_unregister(&device_oprofile);
 	sysdev_class_unregister(&oprofile_sysclass);
 }
 
 #else
-#define init_driverfs() do { } while (0)
-#define exit_driverfs() do { } while (0)
+#define init_sysfs() do { } while (0)
+#define exit_sysfs() do { } while (0)
 #endif /* CONFIG_PM */
 
 static int profile_exceptions_notify(struct notifier_block *self,
@@ -385,7 +385,7 @@ static int __init ppro_init(char ** cpu_type)
 	return 1;
 }
 
-/* in order to get driverfs right */
+/* in order to get sysfs right */
 static int using_nmi;
 
 int __init op_nmi_init(struct oprofile_operations *ops)
@@ -414,6 +414,10 @@ int __init op_nmi_init(struct oprofile_operations *ops)
 				   user space an consistent name. */
 				cpu_type = "x86-64/hammer";
 				break;
+			case 0x10:
+				model = &op_athlon_spec;
+				cpu_type = "x86-64/family10";
+				break;
 			}
 			break;
  
@@ -440,7 +444,7 @@ int __init op_nmi_init(struct oprofile_operations *ops)
 			return -ENODEV;
 	}
 
-	init_driverfs();
+	init_sysfs();
 	using_nmi = 1;
 	ops->create_files = nmi_create_files;
 	ops->setup = nmi_setup;
@@ -456,5 +460,5 @@ int __init op_nmi_init(struct oprofile_operations *ops)
 void op_nmi_exit(void)
 {
 	if (using_nmi)
-		exit_driverfs();
+		exit_sysfs();
 }

@@ -10,6 +10,7 @@
 
 #include <linux/kernel.h>
 #include <linux/init.h>
+#include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/kallsyms.h>
 
@@ -215,11 +216,8 @@ static void unwind_frame_regs(struct unwind_frame_info *info)
 		/* Handle some frequent special cases.... */
 		{
 			char symname[KSYM_NAME_LEN+1];
-			char *modname;
-			unsigned long symsize, offset;
 
-			kallsyms_lookup(info->ip, &symsize, &offset,
-					&modname, symname);
+			kallsyms_lookup(info->ip, NULL, NULL, NULL, symname);
 
 			dbg("info->ip = 0x%lx, name = %s\n", info->ip, symname);
 

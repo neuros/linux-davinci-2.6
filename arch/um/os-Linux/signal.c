@@ -11,7 +11,6 @@
 #include <stdarg.h>
 #include <string.h>
 #include <sys/mman.h>
-#include "user_util.h"
 #include "user.h"
 #include "signal_kern.h"
 #include "sysdep/sigcontext.h"
@@ -242,9 +241,4 @@ int set_signals(int enable)
 	else block_signals();
 
 	return ret;
-}
-
-void os_usr1_signal(int on)
-{
-	change_sig(SIGUSR1, on);
 }

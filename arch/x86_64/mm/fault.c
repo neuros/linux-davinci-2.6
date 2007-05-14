@@ -15,22 +15,22 @@
 #include <linux/mman.h>
 #include <linux/mm.h>
 #include <linux/smp.h>
-#include <linux/smp_lock.h>
 #include <linux/interrupt.h>
 #include <linux/init.h>
 #include <linux/tty.h>
 #include <linux/vt_kern.h>		/* For unblank_screen() */
 #include <linux/compiler.h>
+#include <linux/vmalloc.h>
 #include <linux/module.h>
 #include <linux/kprobes.h>
 #include <linux/uaccess.h>
+#include <linux/kdebug.h>
 
 #include <asm/system.h>
 #include <asm/pgalloc.h>
 #include <asm/smp.h>
 #include <asm/tlbflush.h>
 #include <asm/proto.h>
-#include <asm/kdebug.h>
 #include <asm-generic/sections.h>
 
 /* Page fault error code bits */
@@ -56,38 +56,17 @@ int unregister_page_fault_notifier(struct notifier_block *nb)
 }
 EXPORT_SYMBOL_GPL(unregister_page_fault_notifier);
 
-static inline int notify_page_fault(enum die_val val, const char *str,
-			struct pt_regs *regs, long err, int trap, int sig)
+static inline int notify_page_fault(struct pt_regs *regs, long err)
 {
 	struct die_args args = {
 		.regs = regs,
-		.str = str,
+		.str = "page fault",
 		.err = err,
-		.trapnr = trap,
-		.signr = sig
+		.trapnr = 14,
+		.signr = SIGSEGV
 	};
-	return atomic_notifier_call_chain(&notify_page_fault_chain, val, &args);
-}
-
-void bust_spinlocks(int yes)
-{
-	int loglevel_save = console_loglevel;
-	if (yes) {
-		oops_in_progress = 1;
-	} else {
-#ifdef CONFIG_VT
-		unblank_screen();
-#endif
-		oops_in_progress = 0;
-		/*
-		 * OK, the message is on the console.  Now we call printk()
-		 * without oops_in_progress set so that printk will give klogd
-		 * a poke.  Hold onto your hats...
-		 */
-		console_loglevel = 15;		/* NMI oopser may have shut the console up */
-		printk(" ");
-		console_loglevel = loglevel_save;
-	}
+	return atomic_notifier_call_chain(&notify_page_fault_chain,
+	                                  DIE_PAGE_FAULT, &args);
 }
 
 /* Sometimes the CPU reports invalid exceptions on prefetch.
@@ -376,8 +355,7 @@ asmlinkage void __kprobes do_page_fault(struct pt_regs *regs,
 			if (vmalloc_fault(address) >= 0)
 				return;
 		}
-		if (notify_page_fault(DIE_PAGE_FAULT, "page fault", regs, error_code, 14,
-						SIGSEGV) == NOTIFY_STOP)
+		if (notify_page_fault(regs, error_code) == NOTIFY_STOP)
 			return;
 		/*
 		 * Don't take the mm semaphore here. If we fixup a prefetch
@@ -386,8 +364,7 @@ asmlinkage void __kprobes do_page_fault(struct pt_regs *regs,
 		goto bad_area_nosemaphore;
 	}
 
-	if (notify_page_fault(DIE_PAGE_FAULT, "page fault", regs, error_code, 14,
-					SIGSEGV) == NOTIFY_STOP)
+	if (notify_page_fault(regs, error_code) == NOTIFY_STOP)
 		return;
 
 	if (likely(regs->eflags & X86_EFLAGS_IF))
@@ -608,7 +585,7 @@ do_sigbus:
 }
 
 DEFINE_SPINLOCK(pgd_lock);
-struct page *pgd_list;
+LIST_HEAD(pgd_list);
 
 void vmalloc_sync_all(void)
 {
@@ -628,8 +605,7 @@ void vmalloc_sync_all(void)
 			if (pgd_none(*pgd_ref))
 				continue;
 			spin_lock(&pgd_lock);
-			for (page = pgd_list; page;
-			     page = (struct page *)page->index) {
+			list_for_each_entry(page, &pgd_list, lru) {
 				pgd_t *pgd;
 				pgd = (pgd_t *)page_address(page) + pgd_index(address);
 				if (pgd_none(*pgd))

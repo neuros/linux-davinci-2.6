@@ -31,7 +31,6 @@
 #include <linux/init.h>
 #include <linux/highuid.h>
 #include <linux/smp.h>
-#include <linux/smp_lock.h>
 #include <linux/compiler.h>
 #include <linux/highmem.h>
 #include <linux/pagemap.h>
@@ -39,6 +38,7 @@
 #include <linux/syscalls.h>
 #include <linux/random.h>
 #include <linux/elf.h>
+#include <linux/utsname.h>
 #include <asm/uaccess.h>
 #include <asm/param.h>
 #include <asm/page.h>
@@ -76,7 +76,8 @@ static struct linux_binfmt elf_format = {
 		.load_binary	= load_elf_binary,
 		.load_shlib	= load_elf_library,
 		.core_dump	= elf_core_dump,
-		.min_coredump	= ELF_EXEC_PAGESIZE
+		.min_coredump	= ELF_EXEC_PAGESIZE,
+		.hasvdso	= 1
 };
 
 #define BAD_ADDR(x) ((unsigned long)(x) >= TASK_SIZE)
@@ -506,7 +507,7 @@ out:
 #define INTERPRETER_ELF 2
 
 #ifndef STACK_RND_MASK
-#define STACK_RND_MASK 0x7ff		/* with 4K pages 8MB of VA */
+#define STACK_RND_MASK (0x7ff >> (PAGE_SHIFT - 12))	/* 8MB of VA */
 #endif
 
 static unsigned long randomize_stack_top(unsigned long stack_top)
@@ -870,6 +871,8 @@ static int load_elf_binary(struct linux_binprm *bprm, struct pt_regs *regs)
 				elf_prot, elf_flags);
 		if (BAD_ADDR(error)) {
 			send_sig(SIGKILL, current, 0);
+			retval = IS_ERR((void *)error) ?
+				PTR_ERR((void*)error) : -EINVAL;
 			goto out_free_dentry;
 		}
 
@@ -899,6 +902,7 @@ static int load_elf_binary(struct linux_binprm *bprm, struct pt_regs *regs)
 		    TASK_SIZE - elf_ppnt->p_memsz < k) {
 			/* set_brk can never work. Avoid overflows. */
 			send_sig(SIGKILL, current, 0);
+			retval = -EINVAL;
 			goto out_free_dentry;
 		}
 
@@ -1703,7 +1707,10 @@ static int elf_core_dump(long signr, struct pt_regs *regs, struct file *file)
 				DUMP_SEEK(PAGE_SIZE);
 			} else {
 				if (page == ZERO_PAGE(addr)) {
-					DUMP_SEEK(PAGE_SIZE);
+					if (!dump_seek(file, PAGE_SIZE)) {
+						page_cache_release(page);
+						goto end_coredump;
+					}
 				} else {
 					void *kaddr;
 					flush_cache_page(vma, addr,

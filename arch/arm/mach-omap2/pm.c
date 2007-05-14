@@ -3,21 +3,15 @@
  *
  * OMAP2 Power Management Routines
  *
+ * Copyright (C) 2005 Texas Instruments, Inc.
  * Copyright (C) 2006 Nokia Corporation
- * Tony Lindgren <tony@atomide.com>
  *
- * Fixed suspend-resume/dynamic-idle to get OMAP to retention
+ * Written by:
+ * Richard Woodruff <r-woodruff2@ti.com>
+ * Tony Lindgren
+ * Juha Yrjola
  * Amit Kucheria <amit.kucheria@nokia.com>
  * Igor Stoppa <igor.stoppa@nokia.com>
- *
- * Fixed MPU sleep to get ARM idle
- * Igor Stoppa <igor.stoppa@nokia.com>
- *
- * Fixed MPU sleep some more
- * Juha Yrjola
- *
- * Copyright (C) 2005 Texas Instruments, Inc.
- * Richard Woodruff <r-woodruff2@ti.com>
  *
  * Based on pm.c for omap1
  *
@@ -50,8 +44,8 @@
 #include <asm/arch/mux.h>
 #include <asm/arch/dma.h>
 #include <asm/arch/board.h>
+#include <asm/arch/gpio.h>
 
-#define PRCM_BASE		0x48008000
 #define PRCM_REVISION		0x000
 #define PRCM_SYSCONFIG		0x010
 #define PRCM_IRQSTATUS_MPU	0x018
@@ -150,7 +144,7 @@ static void (*omap2_sram_idle)(void);
 static void (*omap2_sram_suspend)(int dllctrl);
 static void (*saved_idle)(void);
 
-static u32 prcm_base = IO_ADDRESS(PRCM_BASE);
+static u32 prcm_base = IO_ADDRESS(OMAP24XX_PRCM_BASE);
 
 static inline void prcm_write_reg(int idx, u32 val)
 {
@@ -389,8 +383,12 @@ static void omap2_pm_dump(int mode, int resume, unsigned int us)
 	}
 
 	if (!resume)
+#if defined(CONFIG_NO_IDLE_HZ) || defined(CONFIG_NO_HZ)
 		printk("--- Going to %s %s (next timer after %u ms)\n", s1, s2,
 		       jiffies_to_msecs(next_timer_interrupt() - jiffies));
+#else
+		printk("--- Going to %s %s\n", s1, s2);
+#endif
 	else
 		printk("--- Woke up (slept for %u.%03u ms)\n", us / 1000, us % 1000);
 	for (i = 0; i < reg_count; i++)
@@ -409,12 +407,12 @@ static inline void serial_console_fclk_mask(u32 *f1, u32 *f2) {}
 
 static unsigned short enable_dyn_sleep = 0; /* disabled till drivers are fixed */
 
-static ssize_t omap_pm_sleep_while_idle_show(struct subsystem * subsys, char *buf)
+static ssize_t omap_pm_sleep_while_idle_show(struct kset * subsys, char *buf)
 {
 	return sprintf(buf, "%hu\n", enable_dyn_sleep);
 }
 
-static ssize_t omap_pm_sleep_while_idle_store(struct subsystem * subsys,
+static ssize_t omap_pm_sleep_while_idle_store(struct kset * subsys,
 					      const char * buf,
 					      size_t n)
 {
@@ -436,8 +434,6 @@ static struct subsys_attribute sleep_while_idle_attr = {
 	.show   = omap_pm_sleep_while_idle_show,
 	.store  = omap_pm_sleep_while_idle_store,
 };
-
-extern struct subsystem power_subsys;
 
 static struct clk *osc_ck, *emul_ck;
 
@@ -483,9 +479,6 @@ void omap2_allow_sleep(void)
 	i = atomic_dec_return(&sleep_block);
 	BUG_ON(i < 0);
 }
-
-extern void omap2_gpio_prepare_for_retention(void);
-extern void omap2_gpio_resume_after_retention(void);
 
 static void omap2_enter_full_retention(void)
 {
@@ -570,8 +563,7 @@ static int omap2_allow_mpu_retention(void)
 	if (sti_console_enabled)
 		return 0;
 
-	/* FIXME: Enable soon */
-	return 0;
+	return 1;
 }
 
 static void omap2_enter_mpu_retention(void)
@@ -684,8 +676,6 @@ static int omap2_pm_prepare(suspend_state_t state)
 	case PM_SUSPEND_STANDBY:
 	case PM_SUSPEND_MEM:
 		break;
-	case PM_SUSPEND_DISK:
-		return -ENOTSUPP;
 	default:
 		return -EINVAL;
 	}
@@ -721,9 +711,6 @@ static int omap2_pm_enter(suspend_state_t state)
 	case PM_SUSPEND_MEM:
 		ret = omap2_pm_suspend();
 		break;
-	case PM_SUSPEND_DISK:
-		ret = -ENOTSUPP;
-		break;
 	default:
 		ret = -EINVAL;
 	}
@@ -738,10 +725,10 @@ static int omap2_pm_finish(suspend_state_t state)
 }
 
 static struct pm_ops omap_pm_ops = {
-	.pm_disk_mode	= 0,
 	.prepare	= omap2_pm_prepare,
 	.enter		= omap2_pm_enter,
 	.finish		= omap2_pm_finish,
+	.valid		= pm_valid_only_mem,
 };
 
 static void __init prcm_setup_regs(void)

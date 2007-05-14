@@ -56,7 +56,7 @@ dsp_long_t dspmem_base, dspmem_size,
 	   daram_base, daram_size,
 	   saram_base, saram_size;
 
-struct cpustat {
+static struct cpustat {
 	struct mutex lock;
 	enum cpustat_e stat;
 	enum cpustat_e req;
@@ -262,7 +262,8 @@ void dsp_reset_idle_boot_base(void)
 {
 	idle_boot_base = DSP_BOOT_ADR_MPUI;
 }
-
+#else
+void dsp_reset_idle_boot_base(void) { }
 #endif /* CONFIG_ARCH_OMAP1 */
 
 static int init_done;
@@ -317,6 +318,8 @@ static int __init omap_dsp_init(void)
 	api_ck_handle = clk_get(NULL, "api_ck");
 	if (IS_ERR(api_ck_handle)) {
 		printk(KERN_ERR "omapdsp: could not acquire api_ck handle.\n");
+		if (dsp_ck_handle != NULL)
+			clk_put(dsp_ck_handle);
 		return PTR_ERR(api_ck_handle);
 	}
 
@@ -337,12 +340,14 @@ static int __init omap_dsp_init(void)
 	dsp_ick_handle = clk_get(NULL, "dsp_ick");
 	if (IS_ERR(dsp_ick_handle)) {
 		printk(KERN_ERR "omapdsp: could not acquire dsp_ick handle.\n");
+		if (dsp_fck_handle != NULL)
+			clk_put(dsp_fck_handle);
 		return PTR_ERR(dsp_ick_handle);
 	}
 #endif
 
 	init_done = 1;
-	printk(KERN_INFO "omap_dsp_init() done\n");
+	pr_info("omap_dsp_init() done\n");
 	return 0;
 }
 
@@ -373,8 +378,6 @@ static void dsp_cpustat_update(void)
 			__dsp_core_enable();
 #endif
 			cpustat.stat = CPUSTAT_RUN;
-			if (omap_dsp != NULL)
-				enable_irq(omap_dsp->mmu_irq);
 		}
 		return;
 	}
@@ -382,8 +385,6 @@ static void dsp_cpustat_update(void)
 	/* cpustat.req < CPUSTAT_RUN */
 
 	if (cpustat.stat == CPUSTAT_RUN) {
-		if (omap_dsp != NULL)
-			disable_irq(omap_dsp->mmu_irq);
 #ifdef CONFIG_ARCH_OMAP1
 		clk_disable(api_ck_handle);
 #endif
@@ -568,6 +569,9 @@ void dsp_unregister_mem_cb(void)
 	cpustat.mem_rel_cb = NULL;
 	mutex_unlock(&cpustat.lock);
 }
+#else
+void dsp_register_mem_cb(int (*req_cb)(void), void (*rel_cb)(void)) { }
+void dsp_unregister_mem_cb(void) { }
 #endif /* CONFIG_ARCH_OMAP1 */
 
 arch_initcall(omap_dsp_init);
@@ -604,10 +608,8 @@ EXPORT_SYMBOL(dsp_cpustat_request);
 EXPORT_SYMBOL(dsp_cpustat_get_stat);
 EXPORT_SYMBOL(dsp_cpustat_get_icrmask);
 EXPORT_SYMBOL(dsp_cpustat_set_icrmask);
-#ifdef CONFIG_ARCH_OMAP1
 EXPORT_SYMBOL(dsp_register_mem_cb);
 EXPORT_SYMBOL(dsp_unregister_mem_cb);
-#endif /* CONFIG_ARCH_OMAP1 */
 
 EXPORT_SYMBOL(__cpu_flush_kern_tlb_range);
 EXPORT_SYMBOL(cpu_architecture);

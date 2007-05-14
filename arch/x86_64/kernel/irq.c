@@ -18,6 +18,7 @@
 #include <asm/uaccess.h>
 #include <asm/io_apic.h>
 #include <asm/idle.h>
+#include <asm/smp.h>
 
 atomic_t irq_err_count;
 
@@ -31,7 +32,7 @@ atomic_t irq_err_count;
  */
 static inline void stack_overflow_check(struct pt_regs *regs)
 {
-	u64 curbase = (u64) current->thread_info;
+	u64 curbase = (u64)task_stack_page(current);
 	static unsigned long warned = -60*HZ;
 
 	if (regs->rsp >= curbase && regs->rsp <= curbase + THREAD_SIZE &&
@@ -120,9 +121,14 @@ asmlinkage unsigned int do_IRQ(struct pt_regs *regs)
 
 	if (likely(irq < NR_IRQS))
 		generic_handle_irq(irq);
-	else if (printk_ratelimit())
-		printk(KERN_EMERG "%s: %d.%d No irq handler for vector\n",
-			__func__, smp_processor_id(), vector);
+	else {
+		if (!disable_apic)
+			ack_APIC_irq();
+
+		if (printk_ratelimit())
+			printk(KERN_EMERG "%s: %d.%d No irq handler for vector\n",
+				__func__, smp_processor_id(), vector);
+	}
 
 	irq_exit();
 

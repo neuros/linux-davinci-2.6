@@ -48,7 +48,6 @@
 
 #include <linux/module.h>
 #include <linux/kernel.h>
-#include <linux/sched.h>
 #include <linux/types.h>
 #include <linux/fcntl.h>
 #include <linux/interrupt.h>
@@ -662,7 +661,6 @@ if (next_ptr < RX_START || next_ptr >= RX_END) {
 			if (skb) {
 				unsigned char *buf;
 
-				skb->dev = dev;
 				skb_reserve(skb, 2);
 				buf = skb_put(skb, length);
 				ether3_readbuffer(dev, buf + 12, length - 12);

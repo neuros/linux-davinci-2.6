@@ -97,7 +97,6 @@
 #include <linux/list.h>
 #include <linux/kobject.h>
 #include <linux/platform_device.h>
-#include <linux/clk.h>
 
 #include <asm/io.h>
 
@@ -330,8 +329,8 @@ static irqreturn_t musb_stage0_irq(struct musb * pThis, u8 bIntrUSB,
 						power | MGC_M_POWER_RESUME);
 
 					pThis->port1_status |=
-						  MUSB_PORT_STAT_RESUME
-						| USB_PORT_STAT_C_SUSPEND;
+						(USB_PORT_STAT_C_SUSPEND << 16)
+						| MUSB_PORT_STAT_RESUME;
 					pThis->rh_timer = jiffies
 						+ msecs_to_jiffies(20);
 
@@ -368,6 +367,15 @@ static irqreturn_t musb_stage0_irq(struct musb * pThis, u8 bIntrUSB,
 #ifdef CONFIG_USB_GADGET_MUSB_HDRC
 			case OTG_STATE_B_WAIT_ACON:
 			case OTG_STATE_B_PERIPHERAL:
+				/* disconnect while suspended?  we may
+				 * not get a disconnect irq...
+				 */
+				if ((devctl & MGC_M_DEVCTL_VBUS)
+						!= (3 << MGC_S_DEVCTL_VBUS)) {
+					pThis->int_usb |= MGC_M_INTR_DISCONNECT;
+					pThis->int_usb &= ~MGC_M_INTR_SUSPEND;
+					break;
+				}
 				musb_g_resume(pThis);
 				break;
 			case OTG_STATE_B_IDLE:
@@ -526,19 +534,14 @@ static irqreturn_t musb_stage0_irq(struct musb * pThis, u8 bIntrUSB,
 	 */
 	if (bIntrUSB & MGC_M_INTR_RESET) {
 		if (devctl & MGC_M_DEVCTL_HM) {
-			DBG(1, "BABBLE\n");
-
-			/* REVISIT it's unclear how to handle this.  Mentor's
-			 * code stopped the whole USB host, which is clearly
-			 * very wrong.  Docs say (15.1) that babble ends the
-			 * current sesssion, so shutdown _with restart_ would
-			 * be appropriate ... except that seems to be wrong,
-			 * at least some lowspeed enumerations trigger the
-			 * babbles without aborting the session!
-			 *
-			 * (A "babble" IRQ seems quite pointless...)
+			/*
+			 * BABBLE is an error condition, so the solution is
+			 * to avoid babble in the first place and fix whatever
+			 * causes BABBLE. When BABBLE happens we can only stop
+			 * the session.
 			 */
-
+			ERR("Stopping host session because of babble\n");
+			musb_writeb(pBase, MGC_O_HDRC_DEVCTL, 0);
 		} else {
 			DBG(1, "BUS RESET\n");
 
@@ -646,8 +649,8 @@ static irqreturn_t musb_stage2_irq(struct musb * pThis, u8 bIntrUSB,
 	}
 
 	if (bIntrUSB & MGC_M_INTR_SUSPEND) {
-		DBG(1, "SUSPEND (%s) devctl %02x\n",
-				otg_state_string(pThis), devctl);
+		DBG(1, "SUSPEND (%s) devctl %02x power %02x\n",
+				otg_state_string(pThis), devctl, power);
 		handled = IRQ_HANDLED;
 
 		switch (pThis->xceiv.state) {
@@ -783,6 +786,10 @@ static void musb_shutdown(struct platform_device *pdev)
 	spin_lock_irqsave(&musb->Lock, flags);
 	musb_platform_disable(musb);
 	musb_generic_disable(musb);
+	if (musb->clock) {
+		clk_put(musb->clock);
+		musb->clock = NULL;
+	}
 	spin_unlock_irqrestore(&musb->Lock, flags);
 
 	/* FIXME power down */
@@ -1262,6 +1269,9 @@ static int __init musb_core_init(u16 wType, struct musb *pThis)
 #ifdef CONFIG_USB_TUSB6010
 		hw_ep->fifo_async = pThis->async + 0x400 + MUSB_FIFO_OFFSET(i);
 		hw_ep->fifo_sync = pThis->sync + 0x400 + MUSB_FIFO_OFFSET(i);
+		hw_ep->fifo_sync_va =
+			pThis->sync_va + 0x400 + MUSB_FIFO_OFFSET(i);
+
 		if (i == 0)
 			hw_ep->conf = pBase - 0x400 + TUSB_EP0_CONF;
 		else
@@ -1302,7 +1312,7 @@ static int __init musb_core_init(u16 wType, struct musb *pThis)
 
 /*-------------------------------------------------------------------------*/
 
-#ifdef CONFIG_ARCH_OMAP243X
+#ifdef CONFIG_ARCH_OMAP2430
 
 static irqreturn_t generic_interrupt(int irq, void *__hci)
 {
@@ -1499,7 +1509,26 @@ musb_mode_show(struct device *dev, struct device_attribute *attr, char *buf)
 
 	return ret;
 }
-static DEVICE_ATTR(mode, S_IRUGO, musb_mode_show, NULL);
+
+static ssize_t
+musb_mode_store(struct device *dev, struct device_attribute *attr,
+		const char *buf, size_t n)
+{
+	struct musb	*musb = dev_to_musb(dev);
+	unsigned long	flags;
+
+	spin_lock_irqsave(&musb->Lock, flags);
+	if (!strncmp(buf, "host", 4))
+		musb_platform_set_mode(musb, MUSB_HOST);
+	if (!strncmp(buf, "peripheral", 10))
+		musb_platform_set_mode(musb, MUSB_PERIPHERAL);
+	if (!strncmp(buf, "otg", 3))
+		musb_platform_set_mode(musb, MUSB_OTG);
+	spin_unlock_irqrestore(&musb->Lock, flags);
+
+	return n;
+}
+static DEVICE_ATTR(mode, 0644, musb_mode_show, musb_mode_store);
 
 static ssize_t
 musb_cable_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -1703,7 +1732,22 @@ musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl)
 	spin_lock_init(&pThis->Lock);
 	pThis->board_mode = plat->mode;
 	pThis->board_set_power = plat->set_power;
+	pThis->set_clock = plat->set_clock;
 	pThis->min_power = plat->min_power;
+
+	/* Clock usage is chip-specific ... functional clock (DaVinci,
+	 * OMAP2430), or PHY ref (some TUSB6010 boards).  All this core
+	 * code does is make sure a clock handle is available; platform
+	 * code manages it during start/stop and suspend/resume.
+	 */
+	if (plat->clock) {
+		pThis->clock = clk_get(dev, plat->clock);
+		if (IS_ERR(pThis->clock)) {
+			status = PTR_ERR(pThis->clock);
+			pThis->clock = NULL;
+			goto fail;
+		}
+	}
 
 	/* assume vbus is off */
 
@@ -1816,6 +1860,8 @@ musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl)
 		musb_debug_create("driver/musb_hdrc", pThis);
 	else {
 fail:
+		if (pThis->clock)
+			clk_put(pThis->clock);
 		device_init_wakeup(dev, 0);
 		musb_free(pThis);
 		return status;

@@ -478,7 +478,7 @@ static int do_dccp_setsockopt(struct sock *sk, int level, int optname,
 			err = -EINVAL;
 		else
 			err = dccp_setsockopt_change(sk, DCCPO_CHANGE_L,
-					             (struct dccp_so_feat __user *)
+						     (struct dccp_so_feat __user *)
 						     optval);
 		break;
 	case DCCP_SOCKOPT_CHANGE_R:
@@ -575,7 +575,7 @@ static int do_dccp_getsockopt(struct sock *sk, int level, int optname,
 	if (get_user(len, optlen))
 		return -EFAULT;
 
-	if (len < sizeof(int))
+	if (len < (int)sizeof(int))
 		return -EINVAL;
 
 	dp = dccp_sk(sk);
@@ -589,9 +589,11 @@ static int do_dccp_getsockopt(struct sock *sk, int level, int optname,
 					       (__be32 __user *)optval, optlen);
 	case DCCP_SOCKOPT_SEND_CSCOV:
 		val = dp->dccps_pcslen;
+		len = sizeof(val);
 		break;
 	case DCCP_SOCKOPT_RECV_CSCOV:
 		val = dp->dccps_pcrlen;
+		len = sizeof(val);
 		break;
 	case 128 ... 191:
 		return ccid_hc_rx_getsockopt(dp->dccps_hc_rx_ccid, sk, optname,
@@ -1024,7 +1026,6 @@ static int __init dccp_init(void)
 	do {
 		dccp_hashinfo.ehash_size = (1UL << ehash_order) * PAGE_SIZE /
 					sizeof(struct inet_ehash_bucket);
-		dccp_hashinfo.ehash_size >>= 1;
 		while (dccp_hashinfo.ehash_size &
 		       (dccp_hashinfo.ehash_size - 1))
 			dccp_hashinfo.ehash_size--;
@@ -1037,9 +1038,10 @@ static int __init dccp_init(void)
 		goto out_free_bind_bucket_cachep;
 	}
 
-	for (i = 0; i < (dccp_hashinfo.ehash_size << 1); i++) {
+	for (i = 0; i < dccp_hashinfo.ehash_size; i++) {
 		rwlock_init(&dccp_hashinfo.ehash[i].lock);
 		INIT_HLIST_HEAD(&dccp_hashinfo.ehash[i].chain);
+		INIT_HLIST_HEAD(&dccp_hashinfo.ehash[i].twchain);
 	}
 
 	bhash_order = ehash_order;

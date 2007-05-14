@@ -68,10 +68,8 @@ static void aio_queue_work(struct kioctx *);
  */
 static int __init aio_setup(void)
 {
-	kiocb_cachep = kmem_cache_create("kiocb", sizeof(struct kiocb),
-				0, SLAB_HWCACHE_ALIGN|SLAB_PANIC, NULL, NULL);
-	kioctx_cachep = kmem_cache_create("kioctx", sizeof(struct kioctx),
-				0, SLAB_HWCACHE_ALIGN|SLAB_PANIC, NULL, NULL);
+	kiocb_cachep = KMEM_CACHE(kiocb, SLAB_HWCACHE_ALIGN|SLAB_PANIC);
+	kioctx_cachep = KMEM_CACHE(kioctx,SLAB_HWCACHE_ALIGN|SLAB_PANIC);
 
 	aio_wq = create_workqueue("aio");
 
@@ -132,11 +130,10 @@ static int aio_setup_ring(struct kioctx *ctx)
 	dprintk("attempting mmap of %lu bytes\n", info->mmap_size);
 	down_write(&ctx->mm->mmap_sem);
 	info->mmap_base = do_mmap(NULL, 0, info->mmap_size, 
-				  PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE,
+				  PROT_READ|PROT_WRITE, MAP_ANONYMOUS|MAP_PRIVATE,
 				  0);
 	if (IS_ERR((void *)info->mmap_base)) {
 		up_write(&ctx->mm->mmap_sem);
-		printk("mmap err: %ld\n", -info->mmap_base);
 		info->mmap_size = 0;
 		aio_free_ring(ctx);
 		return -EAGAIN;
@@ -211,11 +208,10 @@ static struct kioctx *ioctx_alloc(unsigned nr_events)
 	if ((unsigned long)nr_events > aio_max_nr)
 		return ERR_PTR(-EAGAIN);
 
-	ctx = kmem_cache_alloc(kioctx_cachep, GFP_KERNEL);
+	ctx = kmem_cache_zalloc(kioctx_cachep, GFP_KERNEL);
 	if (!ctx)
 		return ERR_PTR(-ENOMEM);
 
-	memset(ctx, 0, sizeof(*ctx));
 	ctx->max_reqs = nr_events;
 	mm = ctx->mm = current->mm;
 	atomic_inc(&mm->mm_count);
@@ -350,10 +346,9 @@ void fastcall exit_aio(struct mm_struct *mm)
 
 		wait_for_all_aios(ctx);
 		/*
-		 * this is an overkill, but ensures we don't leave
-		 * the ctx on the aio_wq
+		 * Ensure we don't leave the ctx on the aio_wq
 		 */
-		flush_workqueue(aio_wq);
+		cancel_work_sync(&ctx->wq.work);
 
 		if (1 != atomic_read(&ctx->users))
 			printk(KERN_DEBUG
@@ -376,7 +371,7 @@ void fastcall __put_ioctx(struct kioctx *ctx)
 	BUG_ON(ctx->reqs_active);
 
 	cancel_delayed_work(&ctx->wq);
-	flush_workqueue(aio_wq);
+	cancel_work_sync(&ctx->wq.work);
 	aio_free_ring(ctx);
 	mmdrop(ctx->mm);
 	ctx->mm = NULL;

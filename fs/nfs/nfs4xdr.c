@@ -224,7 +224,8 @@ static int nfs4_stat_to_errno(int);
                                 encode_getattr_maxsz)
 #define NFS4_dec_setattr_sz     (compound_decode_hdr_maxsz + \
                                 decode_putfh_maxsz + \
-                                op_decode_hdr_maxsz + 3)
+                                op_decode_hdr_maxsz + 3 + \
+                                nfs4_fattr_maxsz)
 #define NFS4_enc_fsinfo_sz	(compound_encode_hdr_maxsz + \
 				encode_putfh_maxsz + \
 				encode_fsinfo_maxsz)
@@ -387,8 +388,10 @@ static int nfs4_stat_to_errno(int);
 				decode_putfh_maxsz + \
 				op_decode_hdr_maxsz + 12)
 #define NFS4_enc_server_caps_sz (compound_encode_hdr_maxsz + \
+				encode_putfh_maxsz + \
 				encode_getattr_maxsz)
 #define NFS4_dec_server_caps_sz (compound_decode_hdr_maxsz + \
+				decode_putfh_maxsz + \
 				decode_getattr_maxsz)
 #define NFS4_enc_delegreturn_sz	(compound_encode_hdr_maxsz + \
 				encode_putfh_maxsz + \
@@ -2077,9 +2080,11 @@ out:
 
 #define READ_BUF(nbytes)  do { \
 	p = xdr_inline_decode(xdr, nbytes); \
-	if (!p) { \
-		printk(KERN_WARNING "%s: reply buffer overflowed in line %d.", \
-			       	__FUNCTION__, __LINE__); \
+	if (unlikely(!p)) { \
+		printk(KERN_INFO "%s: prematurely hit end of receive" \
+				" buffer\n", __FUNCTION__); \
+		printk(KERN_INFO "%s: xdr->p=%p, bytes=%u, xdr->end=%p\n", \
+				__FUNCTION__, xdr->p, nbytes, xdr->end); \
 		return -EIO; \
 	} \
 } while (0)
@@ -4544,16 +4549,13 @@ nfs4_stat_to_errno(int stat)
 	return stat;
 }
 
-#ifndef MAX
-# define MAX(a, b)	(((a) > (b))? (a) : (b))
-#endif
-
 #define PROC(proc, argtype, restype)				\
 [NFSPROC4_CLNT_##proc] = {					\
 	.p_proc   = NFSPROC4_COMPOUND,				\
 	.p_encode = (kxdrproc_t) nfs4_xdr_##argtype,		\
 	.p_decode = (kxdrproc_t) nfs4_xdr_##restype,		\
-	.p_bufsiz = MAX(NFS4_##argtype##_sz,NFS4_##restype##_sz) << 2,	\
+	.p_arglen = NFS4_##argtype##_sz,			\
+	.p_replen = NFS4_##restype##_sz,			\
 	.p_statidx = NFSPROC4_CLNT_##proc,			\
 	.p_name   = #proc,					\
     }

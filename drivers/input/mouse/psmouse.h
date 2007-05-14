@@ -68,6 +68,7 @@ struct psmouse {
 
 	int (*reconnect)(struct psmouse *psmouse);
 	void (*disconnect)(struct psmouse *psmouse);
+	void (*cleanup)(struct psmouse *psmouse);
 	int (*poll)(struct psmouse *psmouse);
 
 	void (*pt_activate)(struct psmouse *psmouse);
@@ -86,6 +87,7 @@ enum psmouse_type {
 	PSMOUSE_ALPS,
 	PSMOUSE_LIFEBOOK,
 	PSMOUSE_TRACKPOINT,
+	PSMOUSE_TOUCHKIT_PS2,
 	PSMOUSE_AUTO		/* This one should always be last */
 };
 

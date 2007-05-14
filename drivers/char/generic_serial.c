@@ -382,7 +382,6 @@ void gs_flush_buffer(struct tty_struct *tty)
 	port->xmit_cnt = port->xmit_head = port->xmit_tail = 0;
 	spin_unlock_irqrestore (&port->driver_lock, flags);
 
-	wake_up_interruptible(&tty->write_wait);
 	tty_wakeup(tty);
 	func_exit ();
 }
@@ -711,12 +710,6 @@ void gs_close(struct tty_struct * tty, struct file * filp)
 }
 
 
-static unsigned int     gs_baudrates[] = {
-  0, 50, 75, 110, 134, 150, 200, 300, 600, 1200, 1800, 2400, 4800,
-  9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600
-};
-
-
 void gs_set_termios (struct tty_struct * tty, 
                      struct ktermios * old_termios)
 {
@@ -772,7 +765,6 @@ void gs_set_termios (struct tty_struct * tty,
 
 	baudrate = tty_get_baud_rate(tty);
 
-	baudrate = gs_baudrates[baudrate];
 	if ((tiosp->c_cflag & CBAUD) == B38400) {
 		if (     (port->flags & ASYNC_SPD_MASK) == ASYNC_SPD_HI)
 			baudrate = 57600;

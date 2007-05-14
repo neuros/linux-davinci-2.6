@@ -13,7 +13,6 @@
 #include <linux/sched.h>
 #include <linux/mm.h>
 #include <linux/smp.h>
-#include <linux/smp_lock.h>
 #include <linux/kernel.h>
 #include <linux/signal.h>
 #include <linux/errno.h>
@@ -109,19 +108,10 @@ restore_sigcontext(struct pt_regs *regs, struct sigcontext __user *sc,
 	COPY(r10);
 	COPY(r11);
 	COPY(r12);
-#if defined(CONFIG_ISA_M32R2) && defined(CONFIG_ISA_DSP_LEVEL2)
 	COPY(acc0h);
 	COPY(acc0l);
-	COPY(acc1h);
-	COPY(acc1l);
-#elif defined(CONFIG_ISA_M32R2) || defined(CONFIG_ISA_M32R)
-	COPY(acch);
-	COPY(accl);
-	COPY(dummy_acc1h);
-	COPY(dummy_acc1l);
-#else
-#error unknown isa configuration
-#endif
+	COPY(acc1h);		/* ISA_DSP_LEVEL2 only */
+	COPY(acc1l);		/* ISA_DSP_LEVEL2 only */
 	COPY(psw);
 	COPY(bpc);
 	COPY(bbpsw);
@@ -196,19 +186,10 @@ setup_sigcontext(struct sigcontext __user *sc, struct pt_regs *regs,
 	COPY(r10);
 	COPY(r11);
 	COPY(r12);
-#if defined(CONFIG_ISA_M32R2) && defined(CONFIG_ISA_DSP_LEVEL2)
 	COPY(acc0h);
 	COPY(acc0l);
-	COPY(acc1h);
-	COPY(acc1l);
-#elif defined(CONFIG_ISA_M32R2) || defined(CONFIG_ISA_M32R)
-	COPY(acch);
-	COPY(accl);
-	COPY(dummy_acc1h);
-	COPY(dummy_acc1l);
-#else
-#error unknown isa configuration
-#endif
+	COPY(acc1h);		/* ISA_DSP_LEVEL2 only */
+	COPY(acc1l);		/* ISA_DSP_LEVEL2 only */
 	COPY(psw);
 	COPY(bpc);
 	COPY(bbpsw);

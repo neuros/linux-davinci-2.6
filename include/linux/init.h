@@ -52,9 +52,14 @@
 #endif
 
 /* For assembly routines */
+#ifdef CONFIG_HOTPLUG_CPU
+#define __INIT		.section	".text","ax"
+#define __INITDATA	.section	".data","aw"
+#else
 #define __INIT		.section	".init.text","ax"
-#define __FINIT		.previous
 #define __INITDATA	.section	".init.data","aw"
+#endif
+#define __FINIT		.previous
 
 #ifndef __ASSEMBLY__
 /*
@@ -67,11 +72,13 @@ extern initcall_t __con_initcall_start[], __con_initcall_end[];
 extern initcall_t __security_initcall_start[], __security_initcall_end[];
 
 /* Defined in init/main.c */
-extern char saved_command_line[];
+extern char __initdata boot_command_line[];
+extern char *saved_command_line;
 extern unsigned int reset_devices;
 
 /* used by init/main.c */
-extern void setup_arch(char **);
+void setup_arch(char **);
+void prepare_namespace(void);
 
 #endif
   
@@ -164,7 +171,7 @@ struct obs_kernel_param {
 #define early_param(str, fn)					\
 	__setup_param(str, fn, fn, 1)
 
-/* Relies on saved_command_line being set */
+/* Relies on boot_command_line being set */
 void __init parse_early_param(void);
 #endif /* __ASSEMBLY__ */
 
@@ -172,7 +179,7 @@ void __init parse_early_param(void);
  * module_init() - driver initialization entry point
  * @x: function to be run at kernel boot time or module insertion
  * 
- * module_init() will either be called during do_initcalls (if
+ * module_init() will either be called during do_initcalls() (if
  * builtin) or at module insertion time (if a module).  There can only
  * be one per module.
  */
@@ -227,7 +234,7 @@ void __init parse_early_param(void);
 #define __obsolete_setup(str) 			/* nothing */
 #endif
 
-/* Data marked not to be saved by software_suspend() */
+/* Data marked not to be saved by software suspend */
 #define __nosavedata __attribute__ ((__section__ (".data.nosave")))
 
 /* This means "can be init if no module support, otherwise module load

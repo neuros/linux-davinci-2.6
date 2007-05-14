@@ -2,7 +2,7 @@
  *  linux/include/asm-arm/arch-omap/dma.h
  *
  *  Copyright (C) 2003 Nokia Corporation
- *  Author: Juha Yrjölä <juha.yrjola@nokia.com>
+ *  Author: Juha YrjÃ¶lÃ¤ <juha.yrjola@nokia.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -417,7 +417,6 @@ extern void omap_free_lcd_dma(void);
 extern void omap_setup_lcd_dma(void);
 extern void omap_enable_lcd_dma(void);
 extern void omap_stop_lcd_dma(void);
-extern int  omap_lcd_dma_ext_running(void);
 extern void omap_set_lcd_dma_ext_controller(int external);
 extern void omap_set_lcd_dma_single_transfer(int single);
 extern void omap_set_lcd_dma_b1(unsigned long addr, u16 fb_xres, u16 fb_yres,

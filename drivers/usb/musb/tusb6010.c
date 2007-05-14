@@ -31,19 +31,58 @@
  * so both loading and unloading FIFOs need explicit byte counts.
  */
 
+static inline void
+tusb_fifo_write_unaligned(void __iomem *fifo, const u8 *buf, u16 len)
+{
+	u32		val;
+	int		i;
+
+	if (len > 4) {
+		for (i = 0; i < (len >> 2); i++) {
+			memcpy(&val, buf, 4);
+			musb_writel(fifo, 0, val);
+			buf += 4;
+		}
+		len %= 4;
+	}
+	if (len > 0) {
+		/* Write the rest 1 - 3 bytes to FIFO */
+		memcpy(&val, buf, len);
+		musb_writel(fifo, 0, val);
+	}
+}
+
+static inline void tusb_fifo_read_unaligned(void __iomem *fifo,
+						void __iomem *buf, u16 len)
+{
+	u32		val;
+	int		i;
+
+	if (len > 4) {
+		for (i = 0; i < (len >> 2); i++) {
+			val = musb_readl(fifo, 0);
+			memcpy(buf, &val, 4);
+			buf += 4;
+		}
+		len %= 4;
+	}
+	if (len > 0) {
+		/* Read the rest 1 - 3 bytes from FIFO */
+		val = musb_readl(fifo, 0);
+		memcpy(buf, &val, len);
+	}
+}
+
 void musb_write_fifo(struct musb_hw_ep *hw_ep, u16 len, const u8 *buf)
 {
 	void __iomem	*ep_conf = hw_ep->conf;
 	void __iomem	*fifo = hw_ep->fifo;
 	u8		epnum = hw_ep->bLocalEnd;
-	u8		*bufp = (u8 *)buf;
-	int		i, remain;
-	u32		val;
 
-	prefetch(bufp);
+	prefetch(buf);
 
 	DBG(4, "%cX ep%d fifo %p count %d buf %p\n",
-			'T', epnum, fifo, len, bufp);
+			'T', epnum, fifo, len, buf);
 
 	if (epnum)
 		musb_writel(ep_conf, TUSB_EP_TX_OFFSET,
@@ -52,40 +91,35 @@ void musb_write_fifo(struct musb_hw_ep *hw_ep, u16 len, const u8 *buf)
 		musb_writel(ep_conf, 0, TUSB_EP0_CONFIG_DIR_TX |
 			TUSB_EP0_CONFIG_XFR_SIZE(len));
 
-	/* Write 32-bit blocks from buffer to FIFO
-	 * REVISIT: Optimize for burst ... writesl/writesw
-	 */
-	if (len >= 4) {
-		if (((unsigned long)bufp & 0x3) == 0) {
-			for (i = 0; i < (len / 4); i++ ) {
-				val = *(u32 *)bufp;
-				bufp += 4;
-				musb_writel(fifo, 0, val);
-			}
-		} else if (((unsigned long)bufp & 0x2) == 0x2) {
-			for (i = 0; i < (len / 4); i++ ) {
-				val = (u32)(*(u16 *)bufp);
-				bufp += 2;
-				val |= (*(u16 *)bufp) << 16;
-				bufp += 2;
-				musb_writel(fifo, 0, val);
+	if (likely((0x01 & (unsigned long) buf) == 0)) {
+
+		/* Best case is 32bit-aligned destination address */
+		if ((0x02 & (unsigned long) buf) == 0) {
+			if (len >= 4) {
+				writesl(fifo, buf, len >> 2);
+				buf += (len & ~0x03);
+				len &= 0x03;
 			}
 		} else {
-			for (i = 0; i < (len / 4); i++ ) {
-				memcpy(&val, bufp, 4);
-				bufp += 4;
-				musb_writel(fifo, 0, val);
+			if (len >= 2) {
+				u32 val;
+				int i;
+
+				/* Cannot use writesw, fifo is 32-bit */
+				for (i = 0; i < (len >> 2); i++) {
+					val = (u32)(*(u16 *)buf);
+					buf += 2;
+					val |= (*(u16 *)buf) << 16;
+					buf += 2;
+					musb_writel(fifo, 0, val);
+				}
+				len &= 0x03;
 			}
 		}
-		remain = len - (i * 4);
-	} else
-		remain = len;
-
-	if (remain) {
-		/* Write rest of 1-3 bytes from buffer into FIFO */
-		memcpy(&val, bufp, remain);
-		musb_writel(fifo, 0, val);
 	}
+
+	if (len > 0)
+		tusb_fifo_write_unaligned(fifo, buf, len);
 }
 
 void musb_read_fifo(struct musb_hw_ep *hw_ep, u16 len, u8 *buf)
@@ -93,12 +127,9 @@ void musb_read_fifo(struct musb_hw_ep *hw_ep, u16 len, u8 *buf)
 	void __iomem	*ep_conf = hw_ep->conf;
 	void __iomem	*fifo = hw_ep->fifo;
 	u8		epnum = hw_ep->bLocalEnd;
-	u8		*bufp = (u8 *)buf;
-	int		i, remain;
-	u32		val;
 
 	DBG(4, "%cX ep%d fifo %p count %d buf %p\n",
-			'R', epnum, fifo, len, bufp);
+			'R', epnum, fifo, len, buf);
 
 	if (epnum)
 		musb_writel(ep_conf, TUSB_EP_RX_OFFSET,
@@ -106,41 +137,38 @@ void musb_read_fifo(struct musb_hw_ep *hw_ep, u16 len, u8 *buf)
 	else
 		musb_writel(ep_conf, 0, TUSB_EP0_CONFIG_XFR_SIZE(len));
 
-	/* Read 32-bit blocks from FIFO to buffer
-	 * REVISIT: Optimize for burst ... writesl/writesw
-	 */
-	if (len >= 4) {
-		if (((unsigned long)bufp & 0x3) == 0) {
-			for (i = 0; i < (len / 4); i++) {
-				val = musb_readl(fifo, 0);
-				*(u32 *)bufp = val;
-				bufp += 4;
-			}
-		} else if (((unsigned long)bufp & 0x2) == 0x2) {
-			for (i = 0; i < (len / 4); i++) {
-				val = musb_readl(fifo, 0);
-				*(u16 *)bufp = (u16)(val & 0xffff);
-				bufp += 2;
-				*(u16 *)bufp = (u16)(val >> 16);
-				bufp += 2;
+	if (likely((0x01 & (unsigned long) buf) == 0)) {
+
+		/* Best case is 32bit-aligned destination address */
+		if ((0x02 & (unsigned long) buf) == 0) {
+			if (len >= 4) {
+				readsl(fifo, buf, len >> 2);
+				buf += (len & ~0x03);
+				len &= 0x03;
 			}
 		} else {
-			for (i = 0; i < (len / 4); i++) {
-				val = musb_readl(fifo, 0);
-				memcpy(bufp, &val, 4);
-				bufp += 4;
+			if (len >= 2) {
+				u32 val;
+				int i;
+
+				/* Cannot use readsw, fifo is 32-bit */
+				for (i = 0; i < (len >> 2); i++) {
+					val = musb_readl(fifo, 0);
+					*(u16 *)buf = (u16)(val & 0xffff);
+					buf += 2;
+					*(u16 *)buf = (u16)(val >> 16);
+					buf += 2;
+				}
+				len &= 0x03;
 			}
 		}
-		remain = len - (i * 4);
-	} else
-		remain = len;
-
-	if (remain) {
-		/* Read rest of 1-3 bytes from FIFO */
-		val = musb_readl(fifo, 0);
-		memcpy(bufp, &val, remain);
 	}
+
+	if (len > 0)
+		tusb_fifo_read_unaligned(fifo, buf, len);
 }
+
+#ifdef CONFIG_USB_GADGET_MUSB_HDRC
 
 /* This is used by gadget drivers, and OTG transceiver logic, allowing
  * at most mA current to be drawn from VBUS during a Default-B session
@@ -148,7 +176,7 @@ void musb_read_fifo(struct musb_hw_ep *hw_ep, u16 len, u8 *buf)
  * mode), or low power Default-B sessions, something else supplies power.
  * Caller must take care of locking.
  */
-static int tusb_set_power(struct otg_transceiver *x, unsigned mA)
+static int tusb_draw_power(struct otg_transceiver *x, unsigned mA)
 {
 	struct musb	*musb = container_of(x, struct musb, xceiv);
 	void __iomem	*base = musb->ctrl_base;
@@ -156,6 +184,9 @@ static int tusb_set_power(struct otg_transceiver *x, unsigned mA)
 
 	/* tps65030 seems to consume max 100mA, with maybe 60mA available
 	 * (measured on one board) for things other than tps and tusb.
+	 *
+	 * Boards sharing the CPU clock with CLKIN will need to prevent
+	 * certain idle sleep states while the USB link is active.
 	 *
 	 * REVISIT we could use VBUS to supply only _one_ of { 1.5V, 3.3V }.
 	 * The actual current usage would be very board-specific.  For now,
@@ -165,15 +196,26 @@ static int tusb_set_power(struct otg_transceiver *x, unsigned mA)
 		mA = 0;
 
 	reg = musb_readl(base, TUSB_PRCM_MNGMT);
-	if (mA)
+	if (mA) {
+		if (musb->set_clock)
+			musb->set_clock(musb->clock, 1);
+		musb->is_bus_powered = 1;
 		reg |= TUSB_PRCM_MNGMT_15_SW_EN | TUSB_PRCM_MNGMT_33_SW_EN;
-	else
+	} else {
+		musb->is_bus_powered = 0;
 		reg &= ~(TUSB_PRCM_MNGMT_15_SW_EN | TUSB_PRCM_MNGMT_33_SW_EN);
+		if (musb->set_clock)
+			musb->set_clock(musb->clock, 0);
+	}
 	musb_writel(base, TUSB_PRCM_MNGMT, reg);
 
 	DBG(2, "draw max %d mA VBUS\n", mA);
 	return 0;
 }
+
+#else
+#define tusb_draw_power	NULL
+#endif
 
 /* workaround for issue 13:  change clock during chip idle
  * (to be fixed in rev3 silicon) ... symptoms include disconnect
@@ -190,7 +232,7 @@ static void tusb_set_clock_source(struct musb *musb, unsigned mode)
 	/* 0 = refclk (clkin, XI)
 	 * 1 = PHY 60 MHz (internal PLL)
 	 * 2 = not supported
-	 * 3 = NOR clock (huh?)
+	 * 3 = what?
 	 */
 	if (mode > 0)
 		reg |= TUSB_PRCM_CONF_SYS_CLKSEL(mode & 0x3);
@@ -233,7 +275,7 @@ static void tusb_allow_idle(struct musb *musb, u32 wakeup_enables)
 	reg |= TUSB_PRCM_MNGMT_PM_IDLE | TUSB_PRCM_MNGMT_DEV_IDLE;
 	musb_writel(base, TUSB_PRCM_MNGMT, reg);
 
-	DBG(2, "idle, wake on %02x\n", wakeup_enables);
+	DBG(6, "idle, wake on %02x\n", wakeup_enables);
 }
 
 /*
@@ -330,7 +372,7 @@ void musb_platform_try_idle(struct musb *musb)
 				| TUSB_DEV_OTG_TIMER_ENABLE) \
 		: 0)
 
-static void tusb_set_vbus(struct musb *musb, int is_on)
+static void tusb_source_power(struct musb *musb, int is_on)
 {
 	void __iomem	*base = musb->ctrl_base;
 	u32		conf, prcm, timer;
@@ -384,6 +426,88 @@ static void tusb_set_vbus(struct musb *musb, int is_on)
 		conf, prcm);
 }
 
+/*
+ * Sets the mode to OTG, peripheral or host by changing the ID detection.
+ * Caller must take care of locking.
+ *
+ * Note that if a mini-A cable is plugged in the ID line will stay down as
+ * the weak ID pull-up is not able to pull the ID up.
+ *
+ * REVISIT: It would be possible to add support for changing between host
+ * and peripheral modes in non-OTG configurations by reconfiguring hardware
+ * and then setting musb->board_mode. For now, only support OTG mode.
+ */
+void musb_platform_set_mode(struct musb *musb, u8 musb_mode)
+{
+	void __iomem	*base = musb->ctrl_base;
+	u32		otg_stat, phy_otg_ena, phy_otg_ctrl, dev_conf;
+	int		vbus = 0;
+
+	if (musb->board_mode != MUSB_OTG) {
+		ERR("Changing mode currently only supported in OTG mode\n");
+		return;
+	}
+
+	otg_stat = musb_readl(base, TUSB_DEV_OTG_STAT);
+	phy_otg_ena = musb_readl(base, TUSB_PHY_OTG_CTRL_ENABLE);
+	phy_otg_ctrl = musb_readl(base, TUSB_PHY_OTG_CTRL);
+	dev_conf = musb_readl(base, TUSB_DEV_CONF);
+
+	switch (musb_mode) {
+
+#ifdef CONFIG_USB_MUSB_HDRC_HCD
+	case MUSB_HOST:		/* Disable PHY ID detect, ground ID */
+		if (!(otg_stat & TUSB_DEV_OTG_STAT_ID_STATUS)) {
+			ERR("Already in host mode otg_stat: %08x\n", otg_stat);
+			return;
+		}
+		phy_otg_ena |= TUSB_PHY_OTG_CTRL_OTG_ID_PULLUP;
+		phy_otg_ctrl &= ~TUSB_PHY_OTG_CTRL_OTG_ID_PULLUP;
+		dev_conf |= TUSB_DEV_CONF_ID_SEL;
+		dev_conf &= ~TUSB_DEV_CONF_SOFT_ID;
+		vbus = 1;
+		break;
+#endif
+
+#ifdef CONFIG_USB_GADGET_MUSB_HDRC
+	case MUSB_PERIPHERAL:	/* Disable PHY ID detect, keep ID pull-up on */
+		if (otg_stat & TUSB_DEV_OTG_STAT_ID_STATUS) {
+			ERR("Already in peripheral mode otg_stat: %08x\n",
+				otg_stat);
+			return;
+		}
+		phy_otg_ena |= TUSB_PHY_OTG_CTRL_OTG_ID_PULLUP;
+		phy_otg_ctrl |= TUSB_PHY_OTG_CTRL_OTG_ID_PULLUP;
+		dev_conf |= (TUSB_DEV_CONF_ID_SEL | TUSB_DEV_CONF_SOFT_ID);
+		break;
+#endif
+
+#ifdef CONFIG_USB_MUSB_OTG
+	case MUSB_OTG:		/* Use PHY ID detection */
+		phy_otg_ena &= ~TUSB_PHY_OTG_CTRL_OTG_ID_PULLUP;
+		phy_otg_ctrl &= ~TUSB_PHY_OTG_CTRL_OTG_ID_PULLUP;
+		dev_conf &= ~(TUSB_DEV_CONF_ID_SEL | TUSB_DEV_CONF_SOFT_ID);
+		break;
+#endif
+
+	default:
+		DBG(2, "Trying to set unknown mode %i\n", musb_mode);
+	}
+
+	musb_writel(base, TUSB_PHY_OTG_CTRL_ENABLE,
+			TUSB_PHY_OTG_CTRL_WRPROTECT | phy_otg_ena);
+	musb_writel(base, TUSB_PHY_OTG_CTRL,
+			TUSB_PHY_OTG_CTRL_WRPROTECT | phy_otg_ctrl);
+	musb_writel(base, TUSB_DEV_CONF, dev_conf);
+
+	msleep(1);
+	otg_stat = musb_readl(base, TUSB_DEV_OTG_STAT);
+	if ((musb_mode == MUSB_PERIPHERAL) &&
+		!(otg_stat & TUSB_DEV_OTG_STAT_ID_STATUS))
+			ERR("Cannot be peripheral with mini-A cable "
+			"otg_stat: %08x\n", otg_stat);
+}
+
 static inline void
 tusb_otg_ints(struct musb *musb, u32 int_src, void __iomem *base)
 {
@@ -399,7 +523,7 @@ tusb_otg_ints(struct musb *musb, u32 int_src, void __iomem *base)
 			default_a = is_host_enabled(musb);
 		DBG(2, "Default-%c\n", default_a ? 'A' : 'B');
 		musb->xceiv.default_a = default_a;
-		tusb_set_vbus(musb, default_a);
+		tusb_source_power(musb, default_a);
 	}
 
 	/* VBUS state change */
@@ -447,7 +571,7 @@ tusb_otg_ints(struct musb *musb, u32 int_src, void __iomem *base)
 				 */
 				if (musb->vbuserr_retry) {
 					musb->vbuserr_retry--;
-					tusb_set_vbus(musb, 1);
+					tusb_source_power(musb, 1);
 				}
 				break;
 			default:
@@ -491,12 +615,12 @@ tusb_otg_ints(struct musb *musb, u32 int_src, void __iomem *base)
 			} else {
 				/* REVISIT report overcurrent to hub? */
 				ERR("vbus too slow, devctl %02x\n", devctl);
-				tusb_set_vbus(musb, 0);
+				tusb_source_power(musb, 0);
 			}
 			break;
 		case OTG_STATE_A_WAIT_BCON:
 			if (OTG_TIME_A_WAIT_BCON)
-				tusb_set_vbus(musb, 0);
+				tusb_source_power(musb, 0);
 			break;
 		case OTG_STATE_A_SUSPEND:
 			break;
@@ -536,7 +660,7 @@ static irqreturn_t tusb_interrupt(int irq, void *__hci)
 			reg = musb_readl(base, TUSB_SCRATCH_PAD);
 			if (reg == i)
 				break;
-			DBG(1, "TUSB NOR not ready\n");
+			DBG(6, "TUSB NOR not ready\n");
 		}
 
 		/* work around issue 13 (2nd half) */
@@ -802,6 +926,7 @@ int __init musb_platform_init(struct musb *musb)
 {
 	struct platform_device	*pdev;
 	struct resource		*mem;
+	void __iomem		*sync;
 	int			ret;
 
 	pdev = to_platform_device(musb->controller);
@@ -818,6 +943,13 @@ int __init musb_platform_init(struct musb *musb)
 	}
 	musb->sync = mem->start;
 
+	sync = ioremap(mem->start, mem->end - mem->start + 1);
+	if (!sync) {
+		pr_debug("ioremap for sync failed\n");
+		return -ENOMEM;
+	}
+	musb->sync_va = sync;
+
 	/* Offsets from base: VLYNQ at 0x000, MUSB regs at 0x400,
 	 * FIFOs at 0x600, TUSB at 0x800
 	 */
@@ -832,9 +964,9 @@ int __init musb_platform_init(struct musb *musb)
 	musb->isr = tusb_interrupt;
 
 	if (is_host_enabled(musb))
-		musb->board_set_vbus = tusb_set_vbus;
+		musb->board_set_vbus = tusb_source_power;
 	if (is_peripheral_enabled(musb))
-		musb->xceiv.set_power = tusb_set_power;
+		musb->xceiv.set_power = tusb_draw_power;
 
 	setup_timer(&musb_idle_timer, musb_do_idle, (unsigned long) musb);
 
@@ -847,6 +979,8 @@ int musb_platform_exit(struct musb *musb)
 
 	if (musb->board_set_power)
 		musb->board_set_power(0);
+
+	iounmap(musb->sync_va);
 
 	return 0;
 }

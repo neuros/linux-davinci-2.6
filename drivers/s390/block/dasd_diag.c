@@ -43,7 +43,7 @@ MODULE_LICENSE("GPL");
 #define DIAG_MAX_RETRIES	32
 #define DIAG_TIMEOUT		50 * HZ
 
-struct dasd_discipline dasd_diag_discipline;
+static struct dasd_discipline dasd_diag_discipline;
 
 struct dasd_diag_private {
 	struct dasd_diag_characteristics rdc_data;
@@ -65,7 +65,7 @@ static const u8 DASD_DIAG_CMS1[] = { 0xc3, 0xd4, 0xe2, 0xf1 };/* EBCDIC CMS1 */
  * resulting condition code and DIAG return code. */
 static inline int dia250(void *iob, int cmd)
 {
-	register unsigned long reg0 asm ("0") = (unsigned long) iob;
+	register unsigned long reg2 asm ("2") = (unsigned long) iob;
 	typedef union {
 		struct dasd_diag_init_io init_io;
 		struct dasd_diag_rw_io rw_io;
@@ -74,15 +74,15 @@ static inline int dia250(void *iob, int cmd)
 
 	rc = 3;
 	asm volatile(
-		"	diag	0,%2,0x250\n"
+		"	diag	2,%2,0x250\n"
 		"0:	ipm	%0\n"
 		"	srl	%0,28\n"
-		"	or	%0,1\n"
+		"	or	%0,3\n"
 		"1:\n"
 		EX_TABLE(0b,1b)
 		: "+d" (rc), "=m" (*(addr_type *) iob)
-		: "d" (cmd), "d" (reg0), "m" (*(addr_type *) iob)
-		: "1", "cc");
+		: "d" (cmd), "d" (reg2), "m" (*(addr_type *) iob)
+		: "3", "cc");
 	return rc;
 }
 
@@ -90,7 +90,7 @@ static inline int dia250(void *iob, int cmd)
  * block offset. On success, return zero and set end_block to contain the
  * number of blocks on the device minus the specified offset. Return non-zero
  * otherwise. */
-static __inline__ int
+static inline int
 mdsk_init_io(struct dasd_device *device, unsigned int blocksize,
 	     blocknum_t offset, blocknum_t *end_block)
 {
@@ -117,7 +117,7 @@ mdsk_init_io(struct dasd_device *device, unsigned int blocksize,
 
 /* Remove block I/O environment for device. Return zero on success, non-zero
  * otherwise. */
-static __inline__ int
+static inline int
 mdsk_term_io(struct dasd_device * device)
 {
 	struct dasd_diag_private *private;
@@ -576,7 +576,7 @@ dasd_diag_dump_sense(struct dasd_device *device, struct dasd_ccw_req * req,
 		    "dump sense not available for DIAG data");
 }
 
-struct dasd_discipline dasd_diag_discipline = {
+static struct dasd_discipline dasd_diag_discipline = {
 	.owner = THIS_MODULE,
 	.name = "DIAG",
 	.ebcname = "DIAG",

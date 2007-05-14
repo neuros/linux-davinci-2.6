@@ -24,6 +24,8 @@
 #ifndef DRIVER_DSP_COMMON_H
 #define DRIVER_DSP_COMMON_H
 
+#include <linux/clk.h>
+#include <asm/arch/mmu.h>
 #include "hardware_dsp.h"
 
 #define DSPSPACE_SIZE	0x1000000
@@ -133,28 +135,37 @@ enum cpustat_e {
 
 int dsp_set_rstvect(dsp_long_t adr);
 dsp_long_t dsp_get_rstvect(void);
-#ifdef CONFIG_ARCH_OMAP1
 void dsp_set_idle_boot_base(dsp_long_t adr, size_t size);
 void dsp_reset_idle_boot_base(void);
-#endif
 void dsp_cpustat_request(enum cpustat_e req);
 enum cpustat_e dsp_cpustat_get_stat(void);
 u16 dsp_cpustat_get_icrmask(void);
 void dsp_cpustat_set_icrmask(u16 mask);
-#ifdef CONFIG_ARCH_OMAP1
 void dsp_register_mem_cb(int (*req_cb)(void), void (*rel_cb)(void));
 void dsp_unregister_mem_cb(void);
-#endif
 
 #if defined(CONFIG_ARCH_OMAP1)
-static inline void dsp_clk_autoidle(void) {}
+static inline void dsp_clk_enable(void) {}
+static inline void dsp_clk_disable(void) {}
 #elif defined(CONFIG_ARCH_OMAP2)
-static inline void dsp_clk_autoidle(void)
+static inline void dsp_clk_enable(void)
 {
 	/*XXX should be handled in mach-omap[1,2] XXX*/
 	PM_PWSTCTRL_DSP = (1 << 18) | (1 << 0);
 	CM_AUTOIDLE_DSP |= (1 << 1);
 	CM_CLKSTCTRL_DSP |= (1 << 0);
+
+	clk_enable(dsp_fck_handle);
+	clk_enable(dsp_ick_handle);
+	__dsp_per_enable();
+}
+static inline void dsp_clk_disable(void)
+{
+	__dsp_per_disable();
+	clk_disable(dsp_ick_handle);
+	clk_disable(dsp_fck_handle);
+
+	PM_PWSTCTRL_DSP = (1 << 18) | (3 << 0);
 }
 #endif
 
@@ -162,7 +173,7 @@ struct dsp_kfunc_device {
 	char		*name;
 	struct clk	*fck;
 	struct clk	*ick;;
-	struct mutex	 lock;
+	spinlock_t	 lock;
 	int		 enabled;
 	int		 type;
 #define DSP_KFUNC_DEV_TYPE_COMMON	1
@@ -170,8 +181,8 @@ struct dsp_kfunc_device {
 
 	struct list_head	entry;
 
-	int	(*probe)(struct dsp_kfunc_device *);
-	int	(*remove)(struct dsp_kfunc_device *);
+	int	(*probe)(struct dsp_kfunc_device *, int);
+	int	(*remove)(struct dsp_kfunc_device *, int);
 	int	(*enable)(struct dsp_kfunc_device *, int);
 	int	(*disable)(struct dsp_kfunc_device *, int);
 };
@@ -185,10 +196,10 @@ struct dsp_platform_data {
 struct omap_dsp {
 	struct mutex		lock;
 	int			enabled;	/* stored peripheral status */
-	int			mmu_irq;
+	struct omap_mmu		*mmu;
 	struct omap_mbox	*mbox;
 	struct device		*dev;
-	struct list_head 	*kdev_list;
+	struct list_head	*kdev_list;
 	int			initialized;
 };
 

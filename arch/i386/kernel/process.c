@@ -21,7 +21,6 @@
 #include <linux/mm.h>
 #include <linux/elfcore.h>
 #include <linux/smp.h>
-#include <linux/smp_lock.h>
 #include <linux/stddef.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
@@ -38,6 +37,8 @@
 #include <linux/ptrace.h>
 #include <linux/random.h>
 #include <linux/personality.h>
+#include <linux/tick.h>
+#include <linux/percpu.h>
 
 #include <asm/uaccess.h>
 #include <asm/pgtable.h>
@@ -56,7 +57,6 @@
 
 #include <asm/tlbflush.h>
 #include <asm/cpu.h>
-#include <asm/pda.h>
 
 asmlinkage void ret_from_fork(void) __asm__("ret_from_fork");
 
@@ -64,6 +64,12 @@ static int hlt_counter;
 
 unsigned long boot_option_idle_override = 0;
 EXPORT_SYMBOL(boot_option_idle_override);
+
+DEFINE_PER_CPU(struct task_struct *, current_task) = &init_task;
+EXPORT_PER_CPU_SYMBOL(current_task);
+
+DEFINE_PER_CPU(int, cpu_number);
+EXPORT_PER_CPU_SYMBOL(cpu_number);
 
 /*
  * Return saved PC of a blocked thread.
@@ -173,6 +179,7 @@ void cpu_idle(void)
 
 	/* endless idle loop with no priority at all */
 	while (1) {
+		tick_nohz_stop_sched_tick();
 		while (!need_resched()) {
 			void (*idle)(void);
 
@@ -191,6 +198,7 @@ void cpu_idle(void)
 			__get_cpu_var(irq_stat).idle_timestamp = jiffies;
 			idle();
 		}
+		tick_nohz_restart_sched_tick();
 		preempt_enable_no_resched();
 		schedule();
 		preempt_disable();
@@ -269,25 +277,24 @@ void __devinit select_idle_routine(const struct cpuinfo_x86 *c)
 	}
 }
 
-static int __init idle_setup (char *str)
+static int __init idle_setup(char *str)
 {
-	if (!strncmp(str, "poll", 4)) {
+	if (!strcmp(str, "poll")) {
 		printk("using polling idle threads.\n");
 		pm_idle = poll_idle;
 #ifdef CONFIG_X86_SMP
 		if (smp_num_siblings > 1)
 			printk("WARNING: polling idle and HT enabled, performance may degrade.\n");
 #endif
-	} else if (!strncmp(str, "halt", 4)) {
-		printk("using halt in idle threads.\n");
-		pm_idle = default_idle;
-	}
+	} else if (!strcmp(str, "mwait"))
+		force_mwait = 1;
+	else
+		return -1;
 
 	boot_option_idle_override = 1;
-	return 1;
+	return 0;
 }
-
-__setup("idle=", idle_setup);
+early_param("idle", idle_setup);
 
 void show_regs(struct pt_regs * regs)
 {
@@ -308,8 +315,8 @@ void show_regs(struct pt_regs * regs)
 		regs->eax,regs->ebx,regs->ecx,regs->edx);
 	printk("ESI: %08lx EDI: %08lx EBP: %08lx",
 		regs->esi, regs->edi, regs->ebp);
-	printk(" DS: %04x ES: %04x GS: %04x\n",
-	       0xffff & regs->xds,0xffff & regs->xes, 0xffff & regs->xgs);
+	printk(" DS: %04x ES: %04x FS: %04x\n",
+	       0xffff & regs->xds,0xffff & regs->xes, 0xffff & regs->xfs);
 
 	cr0 = read_cr0();
 	cr2 = read_cr2();
@@ -340,7 +347,7 @@ int kernel_thread(int (*fn)(void *), void * arg, unsigned long flags)
 
 	regs.xds = __USER_DS;
 	regs.xes = __USER_DS;
-	regs.xgs = __KERNEL_PDA;
+	regs.xfs = __KERNEL_PERCPU;
 	regs.orig_eax = -1;
 	regs.eip = (unsigned long) kernel_thread_helper;
 	regs.xcs = __KERNEL_CS | get_kernel_rpl();
@@ -373,7 +380,7 @@ void exit_thread(void)
 		t->io_bitmap_max = 0;
 		tss->io_bitmap_owner = NULL;
 		tss->io_bitmap_max = 0;
-		tss->io_bitmap_base = INVALID_IO_BITMAP_OFFSET;
+		tss->x86_tss.io_bitmap_base = INVALID_IO_BITMAP_OFFSET;
 		put_cpu();
 	}
 }
@@ -425,7 +432,7 @@ int copy_thread(int nr, unsigned long clone_flags, unsigned long esp,
 
 	p->thread.eip = (unsigned long) ret_from_fork;
 
-	savesegment(fs,p->thread.fs);
+	savesegment(gs,p->thread.gs);
 
 	tsk = current;
 	if (unlikely(test_tsk_thread_flag(tsk, TIF_IO_BITMAP))) {
@@ -501,8 +508,8 @@ void dump_thread(struct pt_regs * regs, struct user * dump)
 	dump->regs.eax = regs->eax;
 	dump->regs.ds = regs->xds;
 	dump->regs.es = regs->xes;
-	savesegment(fs,dump->regs.fs);
-	dump->regs.gs = regs->xgs;
+	dump->regs.fs = regs->xfs;
+	savesegment(gs,dump->regs.gs);
 	dump->regs.orig_eax = regs->orig_eax;
 	dump->regs.eip = regs->eip;
 	dump->regs.cs = regs->xcs;
@@ -552,7 +559,7 @@ static noinline void __switch_to_xtra(struct task_struct *next_p,
 		 * Disable the bitmap via an invalid offset. We still cache
 		 * the previous bitmap owner and the IO bitmap contents:
 		 */
-		tss->io_bitmap_base = INVALID_IO_BITMAP_OFFSET;
+		tss->x86_tss.io_bitmap_base = INVALID_IO_BITMAP_OFFSET;
 		return;
 	}
 
@@ -562,7 +569,7 @@ static noinline void __switch_to_xtra(struct task_struct *next_p,
 		 * matches the next task, we dont have to do anything but
 		 * to set a valid offset in the TSS:
 		 */
-		tss->io_bitmap_base = IO_BITMAP_OFFSET;
+		tss->x86_tss.io_bitmap_base = IO_BITMAP_OFFSET;
 		return;
 	}
 	/*
@@ -574,7 +581,7 @@ static noinline void __switch_to_xtra(struct task_struct *next_p,
 	 * redundant copies when the currently switched task does not
 	 * perform any I/O during its timeslice.
 	 */
-	tss->io_bitmap_base = INVALID_IO_BITMAP_OFFSET_LAZY;
+	tss->x86_tss.io_bitmap_base = INVALID_IO_BITMAP_OFFSET_LAZY;
 }
 
 /*
@@ -653,7 +660,7 @@ struct task_struct fastcall * __switch_to(struct task_struct *prev_p, struct tas
 	load_esp0(tss, next);
 
 	/*
-	 * Save away %fs. No need to save %gs, as it was saved on the
+	 * Save away %gs. No need to save %fs, as it was saved on the
 	 * stack on entry.  No need to save %es and %ds, as those are
 	 * always kernel segments while inside the kernel.  Doing this
 	 * before setting the new TLS descriptors avoids the situation
@@ -662,7 +669,7 @@ struct task_struct fastcall * __switch_to(struct task_struct *prev_p, struct tas
 	 * used %fs or %gs (it does not today), or if the kernel is
 	 * running inside of a hypervisor layer.
 	 */
-	savesegment(fs, prev->fs);
+	savesegment(gs, prev->gs);
 
 	/*
 	 * Load the per-thread Thread-Local Storage descriptor.
@@ -670,14 +677,13 @@ struct task_struct fastcall * __switch_to(struct task_struct *prev_p, struct tas
 	load_TLS(next, cpu);
 
 	/*
-	 * Restore %fs if needed.
-	 *
-	 * Glibc normally makes %fs be zero.
+	 * Restore IOPL if needed.  In normal use, the flags restore
+	 * in the switch assembly will handle this.  But if the kernel
+	 * is running virtualized at a non-zero CPL, the popf will
+	 * not restore flags, so it must be done in a separate step.
 	 */
-	if (unlikely(prev->fs | next->fs))
-		loadsegment(fs, next->fs);
-
-	write_pda(pcurrent, next_p);
+	if (get_kernel_rpl() && unlikely(prev->iopl != next->iopl))
+		set_iopl_mask(next->iopl);
 
 	/*
 	 * Now maybe handle debug registers and/or IO bitmaps
@@ -688,12 +694,29 @@ struct task_struct fastcall * __switch_to(struct task_struct *prev_p, struct tas
 
 	disable_tsc(prev_p, next_p);
 
+	/*
+	 * Leave lazy mode, flushing any hypercalls made here.
+	 * This must be done before restoring TLS segments so
+	 * the GDT and LDT are properly updated, and must be
+	 * done before math_state_restore, so the TS bit is up
+	 * to date.
+	 */
+	arch_leave_lazy_cpu_mode();
+
 	/* If the task has used fpu the last 5 timeslices, just do a full
 	 * restore of the math state immediately to avoid the trap; the
 	 * chances of needing FPU soon are obviously high now
 	 */
 	if (next_p->fpu_counter > 5)
 		math_state_restore();
+
+	/*
+	 * Restore %gs if needed (which is common)
+	 */
+	if (prev->gs | next->gs)
+		loadsegment(gs, next->gs);
+
+	x86_write_percpu(current_task, next_p);
 
 	return prev_p;
 }

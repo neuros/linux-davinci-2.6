@@ -34,7 +34,6 @@
 #include <linux/time.h>
 #include <linux/ext4_jbd2.h>
 #include <linux/jbd.h>
-#include <linux/smp_lock.h>
 #include <linux/highuid.h>
 #include <linux/pagemap.h>
 #include <linux/quotaops.h>
@@ -222,7 +221,7 @@ static int ext4_ext_space_block(struct inode *inode)
 
 	size = (inode->i_sb->s_blocksize - sizeof(struct ext4_extent_header))
 			/ sizeof(struct ext4_extent);
-#ifdef AGRESSIVE_TEST
+#ifdef AGGRESSIVE_TEST
 	if (size > 6)
 		size = 6;
 #endif
@@ -235,7 +234,7 @@ static int ext4_ext_space_block_idx(struct inode *inode)
 
 	size = (inode->i_sb->s_blocksize - sizeof(struct ext4_extent_header))
 			/ sizeof(struct ext4_extent_idx);
-#ifdef AGRESSIVE_TEST
+#ifdef AGGRESSIVE_TEST
 	if (size > 5)
 		size = 5;
 #endif
@@ -249,7 +248,7 @@ static int ext4_ext_space_root(struct inode *inode)
 	size = sizeof(EXT4_I(inode)->i_data);
 	size -= sizeof(struct ext4_extent_header);
 	size /= sizeof(struct ext4_extent);
-#ifdef AGRESSIVE_TEST
+#ifdef AGGRESSIVE_TEST
 	if (size > 3)
 		size = 3;
 #endif
@@ -263,7 +262,7 @@ static int ext4_ext_space_root_idx(struct inode *inode)
 	size = sizeof(EXT4_I(inode)->i_data);
 	size -= sizeof(struct ext4_extent_header);
 	size /= sizeof(struct ext4_extent_idx);
-#ifdef AGRESSIVE_TEST
+#ifdef AGGRESSIVE_TEST
 	if (size > 4)
 		size = 4;
 #endif
@@ -1118,7 +1117,7 @@ ext4_can_extents_be_merged(struct inode *inode, struct ext4_extent *ex1,
 	 */
 	if (le16_to_cpu(ex1->ee_len) + le16_to_cpu(ex2->ee_len) > EXT_MAX_LEN)
 		return 0;
-#ifdef AGRESSIVE_TEST
+#ifdef AGGRESSIVE_TEST
 	if (le16_to_cpu(ex1->ee_len) >= 4)
 		return 0;
 #endif
@@ -1891,8 +1890,8 @@ void ext4_ext_init(struct super_block *sb)
 
 	if (test_opt(sb, EXTENTS)) {
 		printk("EXT4-fs: file extents enabled");
-#ifdef AGRESSIVE_TEST
-		printk(", agressive tests");
+#ifdef AGGRESSIVE_TEST
+		printk(", aggressive tests");
 #endif
 #ifdef CHECK_BINSEARCH
 		printk(", check binsearch");

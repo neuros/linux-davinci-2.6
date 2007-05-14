@@ -747,7 +747,7 @@ int omap_set_dma_callback(int lch,
  */
 dma_addr_t omap_get_dma_src_pos(int lch)
 {
-	dma_addr_t offset;
+	dma_addr_t offset = 0;
 
 	if (cpu_class_is_omap1())
 		offset = (dma_addr_t) (OMAP1_DMA_CSSA_L_REG(lch) |
@@ -769,7 +769,7 @@ dma_addr_t omap_get_dma_src_pos(int lch)
  */
 dma_addr_t omap_get_dma_dst_pos(int lch)
 {
-	dma_addr_t offset;
+	dma_addr_t offset = 0;
 
 	if (cpu_class_is_omap1())
 		offset = (dma_addr_t) (OMAP1_DMA_CDSA_L_REG(lch) |
@@ -1347,11 +1347,6 @@ void omap_stop_lcd_dma(void)
 	omap_writew(w, OMAP1610_DMA_LCD_CTRL);
 }
 
-int omap_lcd_dma_ext_running(void)
-{
-	return lcd_dma.ext_ctrl && lcd_dma.active;
-}
-
 /*----------------------------------------------------------------------------*/
 
 static int __init omap_init_dma(void)
@@ -1493,7 +1488,6 @@ EXPORT_SYMBOL(omap_free_lcd_dma);
 EXPORT_SYMBOL(omap_enable_lcd_dma);
 EXPORT_SYMBOL(omap_setup_lcd_dma);
 EXPORT_SYMBOL(omap_stop_lcd_dma);
-EXPORT_SYMBOL(omap_lcd_dma_ext_running);
 EXPORT_SYMBOL(omap_set_lcd_dma_b1);
 EXPORT_SYMBOL(omap_set_lcd_dma_single_transfer);
 EXPORT_SYMBOL(omap_set_lcd_dma_ext_controller);
