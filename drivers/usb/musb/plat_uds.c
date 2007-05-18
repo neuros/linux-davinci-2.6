@@ -541,7 +541,9 @@ static irqreturn_t musb_stage0_irq(struct musb * pThis, u8 bIntrUSB,
 			 * the session.
 			 */
 			ERR("Stopping host session because of babble\n");
+#ifdef CONFIG_USB_MUSB_HDRC_HCD
 			musb_writeb(pBase, MGC_O_HDRC_DEVCTL, 0);
+#endif
 		} else {
 			DBG(1, "BUS RESET\n");
 
