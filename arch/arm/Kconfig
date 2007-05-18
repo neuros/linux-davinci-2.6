@@ -386,6 +386,7 @@ config ARCH_OMAP
 
 config ARCH_DAVINCI
 	bool "TI DaVinci"
+	select GENERIC_GPIO
 
 endchoice
 

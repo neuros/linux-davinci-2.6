@@ -58,13 +58,11 @@ EXPORT_SYMBOL(__gpio_get);
 /*--------------------------------------------------------------------------*/
 
 /*
- * We expect board setup code to handle all gpio direction setup,
- * so there's no need to let driver modules do it.
- *
- * That same board setup code must also set PINMUX0 and PINMUX1 as
+ * board setup code *MUST* set PINMUX0 and PINMUX1 as
  * needed, and enable the GPIO clock.
  */
-int __init gpio_set_direction(unsigned gpio, int is_in)
+
+int gpio_direction_input(unsigned gpio)
 {
 	struct gpio_controller	*__iomem g = gpio2controller(gpio);
 	u32			temp;
@@ -73,17 +71,31 @@ int __init gpio_set_direction(unsigned gpio, int is_in)
 	if (!g)
 		return -EINVAL;
 
-	g = gpio_to_controller(gpio);
 	mask = gpio_mask(gpio);
 	temp = __raw_readl(&g->dir);
-	if (is_in)
-		temp |= mask;
-	else
-		temp &= ~mask;
+	temp |= mask;
 	__raw_writel(temp, &g->dir);
 	return 0;
 }
-EXPORT_SYMBOL(gpio_set_direction);
+EXPORT_SYMBOL(gpio_direction_input);
+
+int gpio_direction_output(unsigned gpio, int value)
+{
+	struct gpio_controller	*__iomem g = gpio2controller(gpio);
+	u32			temp;
+	u32			mask;
+
+	if (!g)
+		return -EINVAL;
+
+	mask = gpio_mask(gpio);
+	temp = __raw_readl(&g->dir);
+	temp &= ~mask;
+	__raw_writel(mask, value ? &g->set_data : &g->clr_data);
+	__raw_writel(temp, &g->dir);
+	return 0;
+}
+EXPORT_SYMBOL(gpio_direction_output);
 
 /*--------------------------------------------------------------------------*/
 
@@ -99,12 +111,10 @@ EXPORT_SYMBOL(gpio_set_direction);
  * serve as EDMA event triggers.
  */
 
-#define	irq2gpio(irq)	((irq) - DAVINCI_N_AINTC_IRQ)
-
 static void gpio_irq_disable(unsigned irq)
 {
 	struct gpio_controller	*__iomem g = get_irq_chip_data(irq);
-	u32			mask = gpio_mask(irq2gpio(irq));
+	u32			mask = gpio_mask(irq_to_gpio(irq));
 
 	__raw_writel(mask, &g->clr_falling);
 	__raw_writel(mask, &g->clr_rising);
@@ -113,7 +123,7 @@ static void gpio_irq_disable(unsigned irq)
 static void gpio_irq_enable(unsigned irq)
 {
 	struct gpio_controller	*__iomem g = get_irq_chip_data(irq);
-	u32			mask = gpio_mask(irq2gpio(irq));
+	u32			mask = gpio_mask(irq_to_gpio(irq));
 
 	if (irq_desc[irq].status & IRQ_TYPE_EDGE_FALLING)
 		__raw_writel(mask, &g->set_falling);
@@ -124,7 +134,7 @@ static void gpio_irq_enable(unsigned irq)
 static int gpio_irq_type(unsigned irq, unsigned trigger)
 {
 	struct gpio_controller	*__iomem g = get_irq_chip_data(irq);
-	unsigned		mask = gpio_mask(irq2gpio(irq));
+	unsigned		mask = gpio_mask(irq_to_gpio(irq));
 
 	if (trigger & ~(IRQ_TYPE_EDGE_FALLING|IRQ_TYPE_EDGE_RISING))
 		return -EINVAL;
@@ -212,7 +222,7 @@ static int __init davinci_gpio_irq_setup(void)
 	}
 	clk_enable(clk);
 
-	for (gpio = 0, irq = DAVINCI_GPIO_IRQ(0), bank = IRQ_GPIOBNK0;
+	for (gpio = 0, irq = gpio_to_irq(0), bank = IRQ_GPIOBNK0;
 			gpio < DAVINCI_N_GPIO;
 			bank++) {
 		struct gpio_controller	*__iomem g = gpio2controller(gpio);
@@ -242,7 +252,7 @@ static int __init davinci_gpio_irq_setup(void)
 	__raw_writel(0x1f, (void *__iomem)
 			IO_ADDRESS(DAVINCI_GPIO_BASE + 0x08));
 
-	printk(info1, irq - DAVINCI_GPIO_IRQ(0));
+	printk(info1, irq - gpio_to_irq(0));
 	return 0;
 }
 arch_initcall(davinci_gpio_irq_setup);

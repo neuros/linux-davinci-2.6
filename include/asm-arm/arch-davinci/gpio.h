@@ -19,7 +19,7 @@
  *  - GPIOV18(N) for 1.8V pins, N in 0..53; same as GPIO(0)..GPIO(53)
  *  - GPIOV33(N) for 3.3V pins, N in 0..17; same as GPIO(54)..GPIO(70)
  *
- * GPIO IRQs all use DAVINCI_GPIO_IRQ(N) or DAVINCI_GPIO_IRQ(GPIOV33(N)) etc
+ * For GPIO IRQs use gpio_to_irq(GPIO(N)) or gpio_to_irq(GPIOV33(N)) etc
  * for now, that's != GPIO(N)
  */
 #define	GPIO(X)		(X)		/* 0 <= X <= 71 */
@@ -47,6 +47,8 @@ struct gpio_controller {
  * You'd access the controller directly when reading or writing more than
  * one gpio value at a time, and to support wired logic where the value
  * being driven by the cpu need not match the value read back.
+ *
+ * These are NOT part of the cross-platform GPIO interface
  */
 static inline struct gpio_controller *__iomem
 gpio_to_controller(unsigned gpio)
@@ -81,48 +83,25 @@ extern int __error_inval_gpio(void);
 extern int __gpio_set(unsigned gpio, int value);
 extern int __gpio_get(unsigned gpio);
 
-static inline int gpio_set(unsigned gpio)
-{
-	struct gpio_controller	*__iomem g;
-
-	if (!__builtin_constant_p(gpio))
-		return __gpio_set(gpio, 1);
-
-	if (gpio >= DAVINCI_N_GPIO)
-		return __error_inval_gpio();
-
-	g = gpio_to_controller(gpio);
-	__raw_writel(gpio_mask(gpio), &g->set_data);
-	return 0;
-}
-
-static inline int gpio_clear(unsigned gpio)
-{
-	struct gpio_controller	*__iomem g;
-
-	if (!__builtin_constant_p(gpio))
-		return __gpio_set(gpio, 0);
-
-	if (gpio >= DAVINCI_N_GPIO)
-		return __error_inval_gpio();
-
-	g = gpio_to_controller(gpio);
-	__raw_writel(gpio_mask(gpio), &g->clr_data);
-	return 0;
-}
-
-static inline int gpio_set_value(unsigned gpio, int value)
+static inline void gpio_set_value(unsigned gpio, int value)
 {
 	if (__builtin_constant_p(value)) {
-		if (value)
-			return gpio_set(gpio);
-		else
-			return gpio_clear(gpio);
-	}
-	if (__builtin_constant_p(gpio) && gpio >= DAVINCI_N_GPIO)
-		return __error_inval_gpio();
+		struct gpio_controller	*__iomem g;
+		u32			mask;
 
-	return __gpio_set(gpio, value);
+		if (gpio >= DAVINCI_N_GPIO)
+			__error_inval_gpio();
+
+		g = gpio_to_controller(gpio);
+		mask = gpio_mask(gpio);
+		if (value)
+			__raw_writel(mask, &g->set_data);
+		else
+			__raw_writel(mask, &g->clr_data);
+		return;
+	}
+
+	__gpio_set(gpio, value);
 }
 
 /* Returns zero or nonzero, or negative on error; works for gpios
@@ -147,11 +126,32 @@ static inline int gpio_get_value(unsigned gpio)
 }
 
 /* powerup default direction is IN */
-extern int __init gpio_set_direction(unsigned gpio, int is_in);
+
+extern int gpio_direction_input(unsigned gpio);
+extern int gpio_direction_output(unsigned gpio, int value);
 
 
-/* NOTE:  currently there's no "claim/release" mechanism for GPIOs,
+/* NOTE:  currently there's no request/free implementation for GPIOs,
  * so drivers arguing over them will get errors much like they will
  * when the pin isn't muxed properly as gpio ...
  */
+static inline int gpio_request(unsigned gpio, const char *tag)
+{
+	return 0;
+}
+
+static inline void gpio_free(unsigned gpio)
+{
+}
+
+static inline int gpio_to_irq(unsigned gpio)
+{
+	return DAVINCI_N_AINTC_IRQ + gpio;
+}
+
+static inline int irq_to_gpio(unsigned irq)
+{
+	return irq - DAVINCI_N_AINTC_IRQ;
+}
+
 #endif	/* __DAVINCI_GPIO_H */
