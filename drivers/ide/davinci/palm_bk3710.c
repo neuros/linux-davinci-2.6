@@ -355,7 +355,7 @@ static int palm_bk3710_hostdma(ide_drive_t * drive, u8 xferspeed)
 
 static inline int palm_bk3710_drivedma(ide_drive_t * pDrive)
 {
-	u8 speed = ide_dma_speed(pDrive, 2);	/* We have a 76.5 MHz clock hence only UDMA66 is possible */
+	u8 speed = ide_rate_filter(pDrive, 2);	/* We have a 76.5 MHz clock hence only UDMA66 is possible */
 
 	/* If no DMA/single word DMA was available or the chipset has DMA bugs
 	   then disable DMA and use PIO */
@@ -407,7 +407,7 @@ static int palm_bk3710_checkdma(ide_drive_t * drive)
 	      fast_ata_pio:
 	      no_dma_set:
 		hwif->tuneproc(drive, 255);
-		return hwif->ide_dma_off_quietly(drive);
+		hwif->dma_off_quietly(drive);
 	}
 
 	return 0;
@@ -495,7 +495,7 @@ int palm_bk3710_init(void)
 		ide_ctlr_info.irq = IRQ_IDE;
 		ide_ctlr_info.chipset = ide_palm3710;
 		ide_ctlr_info.ack_intr = NULL;
-		if (ide_register_hw(&ide_ctlr_info, &palm_bk3710_hwif) < 0) {
+		if (ide_register_hw(&ide_ctlr_info, 0, &palm_bk3710_hwif) < 0) {
 			printk("Palm Chip BK3710 IDE Register Fail\n");
 			return -1;
 		}
