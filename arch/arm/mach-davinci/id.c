@@ -20,6 +20,10 @@
 
 #define DAVINCI_DEV_ID		0x01c40028
 
+#define DAVINCI_DM6443_CPU_ID	0x64430000
+#define DAVINCI_DM6467_CPU_ID	0x64670000
+#define DAVINCI_DM350_CPU_ID	0x03500000
+
 struct davinci_id {
 	u16	jtag_id;	/* Device Part No. (Unique JTAG id)*/
 	u8	dev_rev;	/* Processor revision */
@@ -29,7 +33,14 @@ struct davinci_id {
 
 /* Register values to detect the DaVinci version */
 static struct davinci_id davinci_ids[] __initdata = {
-	{ .jtag_id = 0xb700, .dev_rev = 0x2, .mfg_jtag_id = 0x017, .type = 0x64430000},
+	{ .jtag_id = 0xb700, .dev_rev = 0x2, .mfg_jtag_id = 0x017, 
+	  .type = DAVINCI_DM6443_CPU_ID }, /* DaVinci */
+
+	{ .jtag_id = 0xb770, .dev_rev = 0x0, .mfg_jtag_id = 0x017, 
+	  .type = DAVINCI_DM6467_CPU_ID }, /* DaVinci HD */
+
+	{ .jtag_id = 0xb73b, .dev_rev = 0x0, .mfg_jtag_id = 0x00f, 
+	  .type = DAVINCI_DM350_CPU_ID },
 };
 
 /*
