@@ -820,7 +820,8 @@ static int davincifb_ioctl(struct fb_info *info, unsigned int cmd,
 		break;
 	case FBIO_GETSTD:
 		std = ((dmparams.output << 16) | (dmparams.format));	//(NTSC <<16) | (COPOSITE);
-		copy_to_user(argp, &std, sizeof(u_int32_t));
+		if (copy_to_user(argp, &std, sizeof(u_int32_t)))
+			return -EFAULT;
 		return 0;
 		break;
 	}
@@ -1640,7 +1641,7 @@ static int davincifb_probe(struct platform_device *pdev)
 	}
 
 	/* install our interrupt service routine */
-	if (request_irq(IRQ_VENCINT, davincifb_isr, SA_SHIRQ, MODULE_NAME,
+	if (request_irq(IRQ_VENCINT, davincifb_isr, IRQF_SHARED, MODULE_NAME,
 			dm)) {
 		dev_err(dm->dev, MODULE_NAME
 			": could not install interrupt service routine\n");
