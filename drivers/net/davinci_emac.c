@@ -2729,7 +2729,9 @@ static int emac_p_write_stats(struct file *fp, const char *buf,
 		return -EFAULT;
 	}
 
-	copy_from_user(local_buf, buf, count);
+	ret_val = copy_from_user(local_buf, buf, count);
+	if(ret_val)
+		return ret_val;
 	local_buf[count - 1] = '\0';	/* ignoring last \n char */
 	ret_val = count;
 	if (strcmp("0", local_buf) == 0) {
@@ -3514,7 +3516,7 @@ static int emac_dev_open(struct net_device *netdev)
 		}
 	}
 
-	if (request_irq(dev->init_cfg.intr_line, emac_hal_isr, SA_INTERRUPT,
+	if (request_irq(dev->init_cfg.intr_line, emac_hal_isr, IRQF_DISABLED,
 			"EMAC", dev)) {
 		ERR("Failed to register the irq %d for TI DaVinci EMAC %s.\n",
 		    dev->init_cfg.intr_line, netdev->name);
@@ -6801,7 +6803,9 @@ static int __init emac_dev_probe(void)
 		return -1;
 	}
 
-	driver_create_file(&emac_driver, &driver_attr_version);
+	ret_val = driver_create_file(&emac_driver, &driver_attr_version);
+	if(ret_val)
+		return ret_val;
 	for (unit = 0; unit < instance_count; unit++) {
 		struct net_device *netdev;
 		emac_dev_t *dev;
