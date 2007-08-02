@@ -116,9 +116,9 @@ static int audio_remove(struct device *dev);
 
 static void audio_shutdown(struct device *dev);
 
-static int audio_suspend(struct device *dev, u32 state, u32 level);
+static int audio_suspend(struct device *dev, pm_message_t state);
 
-static int audio_resume(struct device *dev, u32 level);
+static int audio_resume(struct device *dev);
 
 static void audio_free(struct device *dev);
 
@@ -335,16 +335,13 @@ static void audio_shutdown(struct device *dev)
  * audio_suspend(): Function to handle suspend operations
  *
  ******************************************************************************/
-static int audio_suspend(struct device *dev, u32 state, u32 level)
+static int audio_suspend(struct device *dev, pm_message_t state)
 {
 	int ret = 0;
 
 #ifdef CONFIG_PM
 	void *data = dev->driver_data;
 	FN_IN;
-	if (level != 3) {
-		return 0;
-	}
 	if (audio_state.hw_suspend) {
 		ret = audio_ldm_suspend(data);
 		if (ret == 0)
@@ -366,16 +363,13 @@ static int audio_suspend(struct device *dev, u32 state, u32 level)
  * audio_resume(): Function to handle resume operations
  *
  ******************************************************************************/
-static int audio_resume(struct device *dev, u32 level)
+static int audio_resume(struct device *dev)
 {
 	int ret = 0;
 
 #ifdef  CONFIG_PM
 	void *data = dev->driver_data;
 	FN_IN;
-	if (level != 0) {
-		return 0;
-	}
 	if (audio_state.hw_resume) {
 		ret = audio_ldm_resume(data);
 		if (ret == 0)
