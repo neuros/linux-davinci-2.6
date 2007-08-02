@@ -663,7 +663,8 @@ int __init arch_dma_init(void)
 	edma_dev.dev.driver = &edma_driver;
 
 	ptr_edmacc_regs = get_edma_base();
-	dev_dbg(&edma_dev.dev, "DMA REG BASE ADDR=%x\n", ptr_edmacc_regs);
+	dev_dbg(&edma_dev.dev, "DMA REG BASE ADDR=%x\n", 
+	       (unsigned int)ptr_edmacc_regs);
 	memset(dma_chan, 0x00, sizeof(dma_chan));
 	memset((void *)&(ptr_edmacc_regs->paramentry[0]), 0x00,
 	       sizeof(ptr_edmacc_regs->paramentry));
