@@ -92,6 +92,7 @@ int die(const char * str, struct pt_regs * fp, long err)
 	if (nl)
 		printk("\n");
 	show_regs(fp);
+	add_taint(TAINT_DIE);
 	spin_unlock_irq(&die_lock);
 	/* do_exit() should take care of panic'ing from an interrupt
 	 * context so we don't handle it here
@@ -577,7 +578,7 @@ void program_check_exception(struct pt_regs *regs)
 	 * ESR_DST (!?) or 0.  In the process of chasing this with the
 	 * hardware people - not sure if it can happen on any illegal
 	 * instruction or only on FP instructions, whether there is a
-	 * pattern to occurences etc. -dgibson 31/Mar/2003 */
+	 * pattern to occurrences etc. -dgibson 31/Mar/2003 */
 	if (!(reason & REASON_TRAP) && do_mathemu(regs) == 0) {
 		emulate_single_step(regs);
 		return;
@@ -619,7 +620,7 @@ void program_check_exception(struct pt_regs *regs)
 			return;
 
 		if (!(regs->msr & MSR_PR) &&  /* not user-mode */
-		    report_bug(regs->nip) == BUG_TRAP_TYPE_WARN) {
+		    report_bug(regs->nip, regs) == BUG_TRAP_TYPE_WARN) {
 			regs->nip += 4;
 			return;
 		}
@@ -860,7 +861,7 @@ void SPEFloatingPointException(struct pt_regs *regs)
 	spefscr = current->thread.spefscr;
 	fpexc_mode = current->thread.fpexc_mode;
 
-	/* Hardware does not neccessarily set sticky
+	/* Hardware does not necessarily set sticky
 	 * underflow/overflow/invalid flags */
 	if ((spefscr & SPEFSCR_FOVF) && (fpexc_mode & PR_FP_EXC_OVF)) {
 		code = FPE_FLTOVF;

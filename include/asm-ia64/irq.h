@@ -11,8 +11,16 @@
  * 02/29/00     D.Mosberger	moved most things into hw_irq.h
  */
 
-#define NR_IRQS		256
-#define NR_IRQ_VECTORS	NR_IRQS
+#include <linux/types.h>
+#include <linux/cpumask.h>
+
+#define NR_VECTORS	256
+
+#if (NR_VECTORS + 32 * NR_CPUS) < 1024
+#define NR_IRQS (NR_VECTORS + 32 * NR_CPUS)
+#else
+#define NR_IRQS 1024
+#endif
 
 static __inline__ int
 irq_canonicalize (int irq)
@@ -25,9 +33,9 @@ irq_canonicalize (int irq)
 	return ((irq == 2) ? 9 : irq);
 }
 
-extern void disable_irq (unsigned int);
-extern void disable_irq_nosync (unsigned int);
-extern void enable_irq (unsigned int);
 extern void set_irq_affinity_info (unsigned int irq, int dest, int redir);
+bool is_affinity_mask_valid(cpumask_t cpumask);
+
+#define is_affinity_mask_valid is_affinity_mask_valid
 
 #endif /* _ASM_IA64_IRQ_H */

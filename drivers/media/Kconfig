@@ -3,6 +3,7 @@
 #
 
 menu "Multimedia devices"
+	depends on HAS_IOMEM
 
 config VIDEO_DEV
 	tristate "Video For Linux"
@@ -79,13 +80,25 @@ config VIDEO_BUF_DVB
 config VIDEO_BTCX
 	tristate
 
+config VIDEO_IR_I2C
+	tristate
+
 config VIDEO_IR
 	tristate
+	select VIDEO_IR_I2C if I2C
 
 config VIDEO_TVEEPROM
 	tristate
 	depends on I2C
 
+config DAB
+	boolean "DAB adapters"
+	default y
+	---help---
+	  Allow selecting support for for Digital Audio Broadcasting (DAB)
+	  Receiver adapters.
+
+if DAB
 config USB_DABUSB
 	tristate "DABUSB driver"
 	depends on USB
@@ -99,5 +112,6 @@ config USB_DABUSB
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called dabusb.
+endif # DAB
 
 endmenu

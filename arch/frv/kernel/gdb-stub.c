@@ -647,17 +647,11 @@ void debug_to_serial(const char *p, int n)
 }
 #endif
 
-#ifdef CONFIG_GDBSTUB_CONSOLE
-
-static kdev_t gdbstub_console_dev(struct console *con)
-{
-	return MKDEV(1,3); /* /dev/null */
-}
+#ifdef CONFIG_GDB_CONSOLE
 
 static struct console gdbstub_console = {
 	.name	= "gdb",
 	.write	= gdbstub_console_write,	/* in break.S */
-	.device	= gdbstub_console_dev,
 	.flags	= CON_PRINTBUFFER,
 	.index	= -1,
 };
@@ -1195,7 +1189,7 @@ static void gdbstub_check_breakpoint(void)
 /*
  *
  */
-static void __attribute__((unused)) gdbstub_show_regs(void)
+static void __maybe_unused gdbstub_show_regs(void)
 {
 	unsigned long *reg;
 	int loop;
@@ -1223,7 +1217,7 @@ static void __attribute__((unused)) gdbstub_show_regs(void)
 /*
  * dump debugging regs
  */
-static void __attribute__((unused)) gdbstub_dump_debugregs(void)
+static void __maybe_unused gdbstub_dump_debugregs(void)
 {
 	gdbstub_printk("DCR    %08lx  ", __debug_status.dcr);
 	gdbstub_printk("BRR    %08lx\n", __debug_status.brr);
@@ -2021,7 +2015,7 @@ void __init gdbstub_init(void)
 	ptr = mem2hex(gdbstub_banner, ptr, sizeof(gdbstub_banner) - 1, 0);
 	gdbstub_send_packet(output_buffer);
 #endif
-#if defined(CONFIG_GDBSTUB_CONSOLE) && defined(CONFIG_GDBSTUB_IMMEDIATE)
+#if defined(CONFIG_GDB_CONSOLE) && defined(CONFIG_GDBSTUB_IMMEDIATE)
 	register_console(&gdbstub_console);
 #endif
 
@@ -2031,7 +2025,7 @@ void __init gdbstub_init(void)
 /*
  * register the console at a more appropriate time
  */
-#if defined (CONFIG_GDBSTUB_CONSOLE) && !defined(CONFIG_GDBSTUB_IMMEDIATE)
+#if defined (CONFIG_GDB_CONSOLE) && !defined(CONFIG_GDBSTUB_IMMEDIATE)
 static int __init gdbstub_postinit(void)
 {
 	printk("registering console\n");
@@ -2079,25 +2073,25 @@ void gdbstub_exit(int status)
  * GDB wants to call malloc() and free() to allocate memory for calling kernel
  * functions directly from its command line
  */
-static void *malloc(size_t size) __attribute__((unused));
+static void *malloc(size_t size) __maybe_unused;
 static void *malloc(size_t size)
 {
 	return kmalloc(size, GFP_ATOMIC);
 }
 
-static void free(void *p) __attribute__((unused));
+static void free(void *p) __maybe_unused;
 static void free(void *p)
 {
 	kfree(p);
 }
 
-static uint32_t ___get_HSR0(void) __attribute__((unused));
+static uint32_t ___get_HSR0(void) __maybe_unused;
 static uint32_t ___get_HSR0(void)
 {
 	return __get_HSR(0);
 }
 
-static uint32_t ___set_HSR0(uint32_t x) __attribute__((unused));
+static uint32_t ___set_HSR0(uint32_t x) __maybe_unused;
 static uint32_t ___set_HSR0(uint32_t x)
 {
 	__set_HSR(0, x);

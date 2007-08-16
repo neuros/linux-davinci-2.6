@@ -74,7 +74,6 @@ struct mlog_attribute {
 #define define_mask(_name) {			\
 	.attr = {				\
 		.name = #_name,			\
-		.owner = THIS_MODULE,		\
 		.mode = S_IRUGO | S_IWUSR,	\
 	},					\
 	.mask = ML_##_name,			\
@@ -157,7 +156,7 @@ int mlog_sys_init(struct kset *o2cb_subsys)
 	}
 	mlog_attr_ptrs[i] = NULL;
 
-	kobj_set_kset_s(&mlog_kset, o2cb_subsys);
+	kobj_set_kset_s(&mlog_kset, *o2cb_subsys);
 	return kset_register(&mlog_kset);
 }
 

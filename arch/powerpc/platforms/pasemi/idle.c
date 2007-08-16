@@ -22,9 +22,11 @@
 
 #include <linux/kernel.h>
 #include <linux/string.h>
+#include <linux/irq.h>
 
 #include <asm/machdep.h>
 #include <asm/reg.h>
+#include <asm/smp.h>
 
 #include "pasemi.h"
 

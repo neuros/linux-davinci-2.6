@@ -184,16 +184,14 @@ static void init_once(void *foo, struct kmem_cache *cachep, unsigned long flags)
 {
 	struct metapage *mp = (struct metapage *)foo;
 
-	if (flags & SLAB_CTOR_CONSTRUCTOR) {
-		mp->lid = 0;
-		mp->lsn = 0;
-		mp->flag = 0;
-		mp->data = NULL;
-		mp->clsn = 0;
-		mp->log = NULL;
-		set_bit(META_free, &mp->flag);
-		init_waitqueue_head(&mp->wait);
-	}
+	mp->lid = 0;
+	mp->lsn = 0;
+	mp->flag = 0;
+	mp->data = NULL;
+	mp->clsn = 0;
+	mp->log = NULL;
+	set_bit(META_free, &mp->flag);
+	init_waitqueue_head(&mp->wait);
 }
 
 static inline struct metapage *alloc_metapage(gfp_t gfp_mask)
@@ -215,7 +213,7 @@ int __init metapage_init(void)
 	 * Allocate the metapage structures
 	 */
 	metapage_cache = kmem_cache_create("jfs_mp", sizeof(struct metapage),
-					   0, 0, init_once, NULL);
+					   0, 0, init_once);
 	if (metapage_cache == NULL)
 		return -ENOMEM;
 
@@ -474,7 +472,8 @@ add_failed:
 	printk(KERN_ERR "JFS: bio_add_page failed unexpectedly\n");
 	goto skip;
 dump_bio:
-	dump_mem("bio", bio, sizeof(*bio));
+	print_hex_dump(KERN_ERR, "JFS: dump of bio: ", DUMP_PREFIX_ADDRESS, 16,
+		       4, bio, sizeof(*bio), 0);
 skip:
 	bio_put(bio);
 	unlock_page(page);

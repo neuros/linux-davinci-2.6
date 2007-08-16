@@ -14,6 +14,7 @@
 #include <linux/prctl.h>
 #include <linux/highuid.h>
 #include <linux/fs.h>
+#include <linux/resource.h>
 #include <linux/kernel.h>
 #include <linux/kexec.h>
 #include <linux/workqueue.h>
@@ -29,10 +30,13 @@
 #include <linux/signal.h>
 #include <linux/cn_proc.h>
 #include <linux/getcpu.h>
+#include <linux/task_io_accounting_ops.h>
+#include <linux/seccomp.h>
 
 #include <linux/compat.h>
 #include <linux/syscalls.h>
 #include <linux/kprobes.h>
+#include <linux/user_namespace.h>
 
 #include <asm/uaccess.h>
 #include <asm/io.h>
@@ -94,6 +98,13 @@ EXPORT_SYMBOL(fs_overflowgid);
 int C_A_D = 1;
 struct pid *cad_pid;
 EXPORT_SYMBOL(cad_pid);
+
+/*
+ * If set, this is used for preparing the system to power off.
+ */
+
+void (*pm_power_off_prepare)(void);
+EXPORT_SYMBOL(pm_power_off_prepare);
 
 /*
  *	Notifier list for kernel code which wants to be called
@@ -658,7 +669,7 @@ asmlinkage long sys_setpriority(int which, int who, int niceval)
 	int error = -EINVAL;
 	struct pid *pgrp;
 
-	if (which > 2 || which < 0)
+	if (which > PRIO_USER || which < PRIO_PROCESS)
 		goto out;
 
 	/* normalize: avoid signed division (rounding problems) */
@@ -722,7 +733,7 @@ asmlinkage long sys_getpriority(int which, int who)
 	long niceval, retval = -ESRCH;
 	struct pid *pgrp;
 
-	if (which > 2 || which < 0)
+	if (which > PRIO_USER || which < PRIO_PROCESS)
 		return -EINVAL;
 
 	read_lock(&tasklist_lock);
@@ -793,6 +804,7 @@ static void kernel_restart_prepare(char *cmd)
 	blocking_notifier_call_chain(&reboot_notifier_list, SYS_RESTART, cmd);
 	system_state = SYSTEM_RESTART;
 	device_shutdown();
+	sysdev_shutdown();
 }
 
 /**
@@ -849,6 +861,7 @@ void kernel_shutdown_prepare(enum system_states state)
 void kernel_halt(void)
 {
 	kernel_shutdown_prepare(SYSTEM_HALT);
+	sysdev_shutdown();
 	printk(KERN_EMERG "System halted.\n");
 	machine_halt();
 }
@@ -863,6 +876,9 @@ EXPORT_SYMBOL_GPL(kernel_halt);
 void kernel_power_off(void)
 {
 	kernel_shutdown_prepare(SYSTEM_POWER_OFF);
+	if (pm_power_off_prepare)
+		pm_power_off_prepare();
+	sysdev_shutdown();
 	printk(KERN_EMERG "Power down.\n");
 	machine_power_off();
 }
@@ -938,7 +954,7 @@ asmlinkage long sys_reboot(int magic1, int magic2, unsigned int cmd, void __user
 		unlock_kernel();
 		return -EINVAL;
 
-#ifdef CONFIG_SOFTWARE_SUSPEND
+#ifdef CONFIG_HIBERNATION
 	case LINUX_REBOOT_CMD_SW_SUSPEND:
 		{
 			int ret = hibernate();
@@ -1023,7 +1039,7 @@ asmlinkage long sys_setregid(gid_t rgid, gid_t egid)
 			return -EPERM;
 	}
 	if (new_egid != old_egid) {
-		current->mm->dumpable = suid_dumpable;
+		set_dumpable(current->mm, suid_dumpable);
 		smp_wmb();
 	}
 	if (rgid != (gid_t) -1 ||
@@ -1053,13 +1069,13 @@ asmlinkage long sys_setgid(gid_t gid)
 
 	if (capable(CAP_SETGID)) {
 		if (old_egid != gid) {
-			current->mm->dumpable = suid_dumpable;
+			set_dumpable(current->mm, suid_dumpable);
 			smp_wmb();
 		}
 		current->gid = current->egid = current->sgid = current->fsgid = gid;
 	} else if ((gid == current->gid) || (gid == current->sgid)) {
 		if (old_egid != gid) {
-			current->mm->dumpable = suid_dumpable;
+			set_dumpable(current->mm, suid_dumpable);
 			smp_wmb();
 		}
 		current->egid = current->fsgid = gid;
@@ -1076,13 +1092,13 @@ static int set_user(uid_t new_ruid, int dumpclear)
 {
 	struct user_struct *new_user;
 
-	new_user = alloc_uid(new_ruid);
+	new_user = alloc_uid(current->nsproxy->user_ns, new_ruid);
 	if (!new_user)
 		return -EAGAIN;
 
 	if (atomic_read(&new_user->processes) >=
 				current->signal->rlim[RLIMIT_NPROC].rlim_cur &&
-			new_user != &root_user) {
+			new_user != current->nsproxy->user_ns->root_user) {
 		free_uid(new_user);
 		return -EAGAIN;
 	}
@@ -1090,7 +1106,7 @@ static int set_user(uid_t new_ruid, int dumpclear)
 	switch_uid(new_user);
 
 	if (dumpclear) {
-		current->mm->dumpable = suid_dumpable;
+		set_dumpable(current->mm, suid_dumpable);
 		smp_wmb();
 	}
 	current->uid = new_ruid;
@@ -1146,7 +1162,7 @@ asmlinkage long sys_setreuid(uid_t ruid, uid_t euid)
 		return -EAGAIN;
 
 	if (new_euid != old_euid) {
-		current->mm->dumpable = suid_dumpable;
+		set_dumpable(current->mm, suid_dumpable);
 		smp_wmb();
 	}
 	current->fsuid = current->euid = new_euid;
@@ -1196,7 +1212,7 @@ asmlinkage long sys_setuid(uid_t uid)
 		return -EPERM;
 
 	if (old_euid != uid) {
-		current->mm->dumpable = suid_dumpable;
+		set_dumpable(current->mm, suid_dumpable);
 		smp_wmb();
 	}
 	current->fsuid = current->euid = uid;
@@ -1241,7 +1257,7 @@ asmlinkage long sys_setresuid(uid_t ruid, uid_t euid, uid_t suid)
 	}
 	if (euid != (uid_t) -1) {
 		if (euid != current->euid) {
-			current->mm->dumpable = suid_dumpable;
+			set_dumpable(current->mm, suid_dumpable);
 			smp_wmb();
 		}
 		current->euid = euid;
@@ -1291,7 +1307,7 @@ asmlinkage long sys_setresgid(gid_t rgid, gid_t egid, gid_t sgid)
 	}
 	if (egid != (gid_t) -1) {
 		if (egid != current->egid) {
-			current->mm->dumpable = suid_dumpable;
+			set_dumpable(current->mm, suid_dumpable);
 			smp_wmb();
 		}
 		current->egid = egid;
@@ -1337,7 +1353,7 @@ asmlinkage long sys_setfsuid(uid_t uid)
 	    uid == current->suid || uid == current->fsuid || 
 	    capable(CAP_SETUID)) {
 		if (uid != old_fsuid) {
-			current->mm->dumpable = suid_dumpable;
+			set_dumpable(current->mm, suid_dumpable);
 			smp_wmb();
 		}
 		current->fsuid = uid;
@@ -1366,7 +1382,7 @@ asmlinkage long sys_setfsgid(gid_t gid)
 	    gid == current->sgid || gid == current->fsgid || 
 	    capable(CAP_SETGID)) {
 		if (gid != old_fsgid) {
-			current->mm->dumpable = suid_dumpable;
+			set_dumpable(current->mm, suid_dumpable);
 			smp_wmb();
 		}
 		current->fsgid = gid;
@@ -1486,7 +1502,7 @@ asmlinkage long sys_setpgid(pid_t pid, pid_t pgid)
 	if (process_group(p) != pgid) {
 		detach_pid(p, PIDTYPE_PGID);
 		p->signal->pgrp = pgid;
-		attach_pid(p, PIDTYPE_PGID, pgid);
+		attach_pid(p, PIDTYPE_PGID, find_pid(pgid));
 	}
 
 	err = 0;
@@ -2082,6 +2098,8 @@ static void k_getrusage(struct task_struct *p, int who, struct rusage *r)
 			r->ru_nivcsw = p->signal->cnivcsw;
 			r->ru_minflt = p->signal->cmin_flt;
 			r->ru_majflt = p->signal->cmaj_flt;
+			r->ru_inblock = p->signal->cinblock;
+			r->ru_oublock = p->signal->coublock;
 
 			if (who == RUSAGE_CHILDREN)
 				break;
@@ -2093,6 +2111,8 @@ static void k_getrusage(struct task_struct *p, int who, struct rusage *r)
 			r->ru_nivcsw += p->signal->nivcsw;
 			r->ru_minflt += p->signal->min_flt;
 			r->ru_majflt += p->signal->maj_flt;
+			r->ru_inblock += p->signal->inblock;
+			r->ru_oublock += p->signal->oublock;
 			t = p;
 			do {
 				utime = cputime_add(utime, t->utime);
@@ -2101,6 +2121,8 @@ static void k_getrusage(struct task_struct *p, int who, struct rusage *r)
 				r->ru_nivcsw += t->nivcsw;
 				r->ru_minflt += t->min_flt;
 				r->ru_majflt += t->maj_flt;
+				r->ru_inblock += task_io_get_inblock(t);
+				r->ru_oublock += task_io_get_oublock(t);
 				t = next_thread(t);
 			} while (t != p);
 			break;
@@ -2157,14 +2179,14 @@ asmlinkage long sys_prctl(int option, unsigned long arg2, unsigned long arg3,
 			error = put_user(current->pdeath_signal, (int __user *)arg2);
 			break;
 		case PR_GET_DUMPABLE:
-			error = current->mm->dumpable;
+			error = get_dumpable(current->mm);
 			break;
 		case PR_SET_DUMPABLE:
 			if (arg2 < 0 || arg2 > 1) {
 				error = -EINVAL;
 				break;
 			}
-			current->mm->dumpable = arg2;
+			set_dumpable(current->mm, arg2);
 			break;
 
 		case PR_SET_UNALIGN:
@@ -2233,6 +2255,13 @@ asmlinkage long sys_prctl(int option, unsigned long arg2, unsigned long arg3,
 			error = SET_ENDIAN(current, arg2);
 			break;
 
+		case PR_GET_SECCOMP:
+			error = prctl_get_seccomp();
+			break;
+		case PR_SET_SECCOMP:
+			error = prctl_set_seccomp(arg2);
+			break;
+
 		default:
 			error = -EINVAL;
 			break;
@@ -2269,3 +2298,61 @@ asmlinkage long sys_getcpu(unsigned __user *cpup, unsigned __user *nodep,
 	}
 	return err ? -EFAULT : 0;
 }
+
+char poweroff_cmd[POWEROFF_CMD_PATH_LEN] = "/sbin/poweroff";
+
+static void argv_cleanup(char **argv, char **envp)
+{
+	argv_free(argv);
+}
+
+/**
+ * orderly_poweroff - Trigger an orderly system poweroff
+ * @force: force poweroff if command execution fails
+ *
+ * This may be called from any context to trigger a system shutdown.
+ * If the orderly shutdown fails, it will force an immediate shutdown.
+ */
+int orderly_poweroff(bool force)
+{
+	int argc;
+	char **argv = argv_split(GFP_ATOMIC, poweroff_cmd, &argc);
+	static char *envp[] = {
+		"HOME=/",
+		"PATH=/sbin:/bin:/usr/sbin:/usr/bin",
+		NULL
+	};
+	int ret = -ENOMEM;
+	struct subprocess_info *info;
+
+	if (argv == NULL) {
+		printk(KERN_WARNING "%s failed to allocate memory for \"%s\"\n",
+		       __func__, poweroff_cmd);
+		goto out;
+	}
+
+	info = call_usermodehelper_setup(argv[0], argv, envp);
+	if (info == NULL) {
+		argv_free(argv);
+		goto out;
+	}
+
+	call_usermodehelper_setcleanup(info, argv_cleanup);
+
+	ret = call_usermodehelper_exec(info, UMH_NO_WAIT);
+
+  out:
+	if (ret && force) {
+		printk(KERN_WARNING "Failed to start orderly shutdown: "
+		       "forcing the issue\n");
+
+		/* I guess this should try to kick off some daemon to
+		   sync and poweroff asap.  Or not even bother syncing
+		   if we're doing an emergency shutdown? */
+		emergency_sync();
+		kernel_power_off();
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(orderly_poweroff);

@@ -1,6 +1,4 @@
 /*
- * linux/include/asm-arm/arch-davinci/uncompress.h
- *
  * Serial port stubs for kernel decompress status messages
  *
  *  Author:     Anant Gole
@@ -13,13 +11,13 @@
 
 #include <linux/types.h>
 #include <linux/serial_reg.h>
-#include <asm/hardware.h>
+#include <asm/arch/serial.h>
 
 /* PORT_16C550A, in polled non-fifo mode */
 
-static void putc(int c)
+static void putc(char c)
 {
-	volatile u32	*uart = (volatile void *) DAVINCI_UART0_BASE;
+	volatile u32 *uart = (volatile void *) DAVINCI_UART0_BASE;
 
 	while (!(uart[UART_LSR] & UART_LSR_THRE))
 		barrier();
@@ -28,7 +26,7 @@ static void putc(int c)
 
 static inline void flush(void)
 {
-	volatile u32	*uart = (volatile void *) DAVINCI_UART0_BASE;
+	volatile u32 *uart = (volatile void *) DAVINCI_UART0_BASE;
 	while (!(uart[UART_LSR] & UART_LSR_THRE))
 		barrier();
 }

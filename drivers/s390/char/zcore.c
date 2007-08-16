@@ -21,6 +21,7 @@
 #include <asm/debug.h>
 #include <asm/processor.h>
 #include <asm/irqflags.h>
+#include "sclp.h"
 
 #define TRACE(x...) debug_sprintf_event(zcore_dbf, 1, x)
 #define MSG(x...) printk( KERN_ALERT x )
@@ -155,7 +156,7 @@ static int memcpy_real(void *dest, unsigned long src, size_t count)
 	return rc;
 }
 
-static int memcpy_real_user(__user void *dest, unsigned long src, size_t count)
+static int memcpy_real_user(void __user *dest, unsigned long src, size_t count)
 {
 	static char buf[4096];
 	int offs = 0, size;
@@ -266,7 +267,9 @@ struct zcore_header {
 	u64 tod;
 	cpuid_t cpu_id;
 	u32 arch_id;
+	u32 volnr;
 	u32 build_arch;
+	u64 rmem_size;
 	char pad2[4016];
 } __attribute__((packed,__aligned__(16)));
 
@@ -558,13 +561,12 @@ static void __init zcore_header_init(int arch, struct zcore_header *hdr)
 	else
 		hdr->arch_id = DUMP_ARCH_S390;
 	hdr->mem_size = sys_info.mem_size;
+	hdr->rmem_size = sys_info.mem_size;
 	hdr->mem_end = sys_info.mem_size;
 	hdr->num_pages = sys_info.mem_size / PAGE_SIZE;
 	hdr->tod = get_clock();
 	get_cpu_id(&hdr->cpu_id);
 }
-
-extern int sdias_init(void);
 
 static int __init zcore_init(void)
 {
@@ -582,7 +584,7 @@ static int __init zcore_init(void)
 	TRACE("wwpn:   %llx\n", (unsigned long long) ipl_info.data.fcp.wwpn);
 	TRACE("lun:    %llx\n", (unsigned long long) ipl_info.data.fcp.lun);
 
-	rc = sdias_init();
+	rc = sclp_sdias_init();
 	if (rc)
 		goto fail;
 
@@ -634,12 +636,10 @@ fail:
 	return rc;
 }
 
-extern void sdias_exit(void);
-
 static void __exit zcore_exit(void)
 {
 	debug_unregister(zcore_dbf);
-	sdias_exit();
+	sclp_sdias_exit();
 	diag308(DIAG308_REL_HSA, NULL);
 }
 

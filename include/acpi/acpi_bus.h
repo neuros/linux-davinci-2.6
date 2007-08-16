@@ -91,7 +91,8 @@ typedef int (*acpi_op_remove) (struct acpi_device * device, int type);
 typedef int (*acpi_op_lock) (struct acpi_device * device, int type);
 typedef int (*acpi_op_start) (struct acpi_device * device);
 typedef int (*acpi_op_stop) (struct acpi_device * device, int type);
-typedef int (*acpi_op_suspend) (struct acpi_device * device, pm_message_t state);
+typedef int (*acpi_op_suspend) (struct acpi_device * device,
+				pm_message_t state);
 typedef int (*acpi_op_resume) (struct acpi_device * device);
 typedef int (*acpi_op_scan) (struct acpi_device * device);
 typedef int (*acpi_op_bind) (struct acpi_device * device);
@@ -130,7 +131,7 @@ struct acpi_device_ops {
 struct acpi_driver {
 	char name[80];
 	char class[80];
-	char *ids;		/* Supported Hardware IDs */
+	const struct acpi_device_id *ids; /* Supported Hardware IDs */
 	struct acpi_device_ops ops;
 	struct device_driver drv;
 	struct module *owner;
@@ -296,7 +297,7 @@ struct acpi_device {
 	void *driver_data;
 	struct device dev;
 	struct acpi_bus_ops bus_ops;	/* workaround for different code path for hotplug */
-	enum acpi_bus_removal_type removal_type; /* indicate for different removal type */
+	enum acpi_bus_removal_type removal_type;	/* indicate for different removal type */
 };
 
 #define acpi_driver_data(d)	((d)->driver_data)
@@ -320,7 +321,8 @@ struct acpi_bus_event {
 };
 
 extern struct kset acpi_subsys;
-
+extern int acpi_bus_generate_genetlink_event(struct acpi_device *device,
+						u8 type, int data);
 /*
  * External Functions
  */
@@ -338,8 +340,9 @@ int acpi_bus_add(struct acpi_device **child, struct acpi_device *parent,
 		 acpi_handle handle, int type);
 int acpi_bus_trim(struct acpi_device *start, int rmdevice);
 int acpi_bus_start(struct acpi_device *device);
-acpi_status acpi_bus_get_ejd(acpi_handle handle, acpi_handle *ejd);
-int acpi_match_ids(struct acpi_device *device, char *ids);
+acpi_status acpi_bus_get_ejd(acpi_handle handle, acpi_handle * ejd);
+int acpi_match_device_ids(struct acpi_device *device,
+			  const struct acpi_device_id *ids);
 int acpi_create_dir(struct acpi_device *);
 void acpi_remove_dir(struct acpi_device *);
 
@@ -363,6 +366,17 @@ acpi_handle acpi_get_child(acpi_handle, acpi_integer);
 acpi_handle acpi_get_pci_rootbridge_handle(unsigned int, unsigned int);
 #define DEVICE_ACPI_HANDLE(dev) ((acpi_handle)((dev)->archdata.acpi_handle))
 
-#endif /* CONFIG_ACPI */
+#ifdef CONFIG_PM_SLEEP
+int acpi_pm_device_sleep_state(struct device *, int, int *);
+#else /* !CONFIG_PM_SLEEP */
+static inline int acpi_pm_device_sleep_state(struct device *d, int w, int *p)
+{
+	if (p)
+		*p = ACPI_STATE_D0;
+	return ACPI_STATE_D3;
+}
+#endif /* !CONFIG_PM_SLEEP */
+
+#endif				/* CONFIG_ACPI */
 
 #endif /*__ACPI_BUS_H__*/

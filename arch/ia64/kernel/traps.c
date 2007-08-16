@@ -69,6 +69,7 @@ die (const char *str, struct pt_regs *regs, long err)
 
 	bust_spinlocks(0);
 	die.lock_owner = -1;
+	add_taint(TAINT_DIE);
 	spin_unlock_irq(&die.lock);
 
 	if (panic_on_oops)
@@ -304,7 +305,7 @@ handle_fpu_swa (int fp_fault, struct pt_regs *regs, unsigned long isr)
 			 * Lower 4 bits are used as a count. Upper bits are a sequence
 			 * number that is updated when count is reset. The cmpxchg will
 			 * fail is seqno has changed. This minimizes mutiple cpus
-			 * reseting the count.
+			 * resetting the count.
 			 */
 			if (current_jiffies > last.time)
 				(void) cmpxchg_acq(&last.count, count, 16 + (count & ~15));

@@ -63,6 +63,7 @@
 #include <linux/wireless.h>
 #include <linux/atalk.h>
 #include <linux/blktrace_api.h>
+#include <linux/loop.h>
 
 #include <net/bluetooth/bluetooth.h>
 #include <net/bluetooth/hci.h>
@@ -113,6 +114,10 @@
 #include <linux/dvb/frontend.h>
 #include <linux/dvb/video.h>
 #include <linux/lp.h>
+
+#ifdef CONFIG_SPARC
+#include <asm/fbio.h>
+#endif
 
 static int do_ioctl32_pointer(unsigned int fd, unsigned int cmd,
 			      unsigned long arg, struct file *f)
@@ -1194,6 +1199,7 @@ static int vt_check(struct file *file)
 {
 	struct tty_struct *tty;
 	struct inode *inode = file->f_path.dentry->d_inode;
+	struct vc_data *vc;
 	
 	if (file->f_op->ioctl != tty_ioctl)
 		return -EINVAL;
@@ -1204,12 +1210,16 @@ static int vt_check(struct file *file)
 	                                                
 	if (tty->driver->ioctl != vt_ioctl)
 		return -EINVAL;
-	
+
+	vc = (struct vc_data *)tty->driver_data;
+	if (!vc_cons_allocated(vc->vc_num)) 	/* impossible? */
+		return -ENOIOCTLCMD;
+
 	/*
 	 * To have permissions to do most of the vt ioctls, we either have
-	 * to be the owner of the tty, or super-user.
+	 * to be the owner of the tty, or have CAP_SYS_TTY_CONFIG.
 	 */
-	if (current->signal->tty == tty || capable(CAP_SYS_ADMIN))
+	if (current->signal->tty == tty || capable(CAP_SYS_TTY_CONFIG))
 		return 1;
 	return 0;                                                    
 }
@@ -1310,16 +1320,28 @@ static int do_unimap_ioctl(unsigned int fd, unsigned int cmd, unsigned long arg,
 	struct unimapdesc32 tmp;
 	struct unimapdesc32 __user *user_ud = compat_ptr(arg);
 	int perm = vt_check(file);
-	
-	if (perm < 0) return perm;
+	struct vc_data *vc;
+
+	if (perm < 0)
+		return perm;
 	if (copy_from_user(&tmp, user_ud, sizeof tmp))
 		return -EFAULT;
+	if (tmp.entries)
+		if (!access_ok(VERIFY_WRITE, compat_ptr(tmp.entries),
+				tmp.entry_ct*sizeof(struct unipair)))
+			return -EFAULT;
+	vc = ((struct tty_struct *)file->private_data)->driver_data;
 	switch (cmd) {
 	case PIO_UNIMAP:
-		if (!perm) return -EPERM;
-		return con_set_unimap(vc_cons[fg_console].d, tmp.entry_ct, compat_ptr(tmp.entries));
+		if (!perm)
+			return -EPERM;
+		return con_set_unimap(vc, tmp.entry_ct,
+						compat_ptr(tmp.entries));
 	case GIO_UNIMAP:
-		return con_get_unimap(vc_cons[fg_console].d, tmp.entry_ct, &(user_ud->entry_ct), compat_ptr(tmp.entries));
+		if (!perm && fg_console != vc->vc_num)
+			return -EPERM;
+		return con_get_unimap(vc, tmp.entry_ct, &(user_ud->entry_ct),
+						compat_ptr(tmp.entries));
 	}
 	return 0;
 }
@@ -3472,6 +3494,25 @@ HANDLE_IOCTL(LPSETTIMEOUT, lp_timeout_trans)
 
 IGNORE_IOCTL(VFAT_IOCTL_READDIR_BOTH32)
 IGNORE_IOCTL(VFAT_IOCTL_READDIR_SHORT32)
+
+/* loop */
+IGNORE_IOCTL(LOOP_CLR_FD)
+
+#ifdef CONFIG_SPARC
+/* Sparc framebuffers, handled in sbusfb_compat_ioctl() */
+IGNORE_IOCTL(FBIOGTYPE)
+IGNORE_IOCTL(FBIOSATTR)
+IGNORE_IOCTL(FBIOGATTR)
+IGNORE_IOCTL(FBIOSVIDEO)
+IGNORE_IOCTL(FBIOGVIDEO)
+IGNORE_IOCTL(FBIOSCURPOS)
+IGNORE_IOCTL(FBIOGCURPOS)
+IGNORE_IOCTL(FBIOGCURMAX)
+IGNORE_IOCTL(FBIOPUTCMAP32)
+IGNORE_IOCTL(FBIOGETCMAP32)
+IGNORE_IOCTL(FBIOSCURSOR32)
+IGNORE_IOCTL(FBIOGCURSOR32)
+#endif
 };
 
 #define IOCTL_HASHSIZE 256
@@ -3566,10 +3607,13 @@ asmlinkage long compat_sys_ioctl(unsigned int fd, unsigned int cmd,
 			goto found_handler;
 	}
 
+#ifdef CONFIG_NET
 	if (S_ISSOCK(filp->f_path.dentry->d_inode->i_mode) &&
 	    cmd >= SIOCDEVPRIVATE && cmd <= (SIOCDEVPRIVATE + 15)) {
 		error = siocdevprivate_ioctl(fd, cmd, arg);
-	} else {
+	} else
+#endif
+	{
 		static int count;
 
 		if (++count <= 50)

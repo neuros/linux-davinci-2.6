@@ -621,6 +621,17 @@ __SYSCALL(__NR_vmsplice, sys_vmsplice)
 __SYSCALL(__NR_move_pages, sys_move_pages)
 #define __NR_utimensat		280
 __SYSCALL(__NR_utimensat, sys_utimensat)
+#define __IGNORE_getcpu		/* implemented as a vsyscall */
+#define __NR_epoll_pwait	281
+__SYSCALL(__NR_epoll_pwait, sys_epoll_pwait)
+#define __NR_signalfd		282
+__SYSCALL(__NR_signalfd, sys_signalfd)
+#define __NR_timerfd		283
+__SYSCALL(__NR_timerfd, sys_timerfd)
+#define __NR_eventfd		284
+__SYSCALL(__NR_eventfd, sys_eventfd)
+#define __NR_fallocate		285
+__SYSCALL(__NR_fallocate, sys_fallocate)
 
 #ifndef __NO_STUBS
 #define __ARCH_WANT_OLD_READDIR

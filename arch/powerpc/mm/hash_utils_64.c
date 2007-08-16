@@ -87,7 +87,7 @@ extern unsigned long dart_tablebase;
 static unsigned long _SDR1;
 struct mmu_psize_def mmu_psize_defs[MMU_PAGE_COUNT];
 
-hpte_t *htab_address;
+struct hash_pte *htab_address;
 unsigned long htab_size_bytes;
 unsigned long htab_hash_mask;
 int mmu_linear_psize = MMU_PAGE_4K;
@@ -430,7 +430,7 @@ static void __init htab_finish_init(void)
 	make_bl(ht64_call_hpte_insert2, ppc_md.hpte_insert);
 	make_bl(ht64_call_hpte_remove, ppc_md.hpte_remove);
 	make_bl(ht64_call_hpte_updatepp, ppc_md.hpte_updatepp);
-#endif /* CONFIG_PPC_64K_PAGES */
+#endif /* CONFIG_PPC_HAS_HASH_64K */
 
 	make_bl(htab_call_hpte_insert1, ppc_md.hpte_insert);
 	make_bl(htab_call_hpte_insert2, ppc_md.hpte_insert);
@@ -609,7 +609,7 @@ static void demote_segment_4k(struct mm_struct *mm, unsigned long addr)
 	mm->context.sllp = SLB_VSID_USER | mmu_psize_defs[MMU_PAGE_4K].sllp;
 #endif /* CONFIG_PPC_MM_SLICES */
 
-#ifdef CONFIG_SPE_BASE
+#ifdef CONFIG_SPU_BASE
 	spu_flush_all_slbs(mm);
 #endif
 }
@@ -744,7 +744,7 @@ int hash_page(unsigned long ea, unsigned long access, unsigned long trap)
 			       "to 4kB pages because of "
 			       "non-cacheable mapping\n");
 			psize = mmu_vmalloc_psize = MMU_PAGE_4K;
-#ifdef CONFIG_SPE_BASE
+#ifdef CONFIG_SPU_BASE
 			spu_flush_all_slbs(mm);
 #endif
 		}
@@ -759,7 +759,7 @@ int hash_page(unsigned long ea, unsigned long access, unsigned long trap)
 		   mmu_psize_defs[mmu_vmalloc_psize].sllp) {
 		get_paca()->vmalloc_sllp =
 			mmu_psize_defs[mmu_vmalloc_psize].sllp;
-		slb_flush_and_rebolt();
+		slb_vmalloc_update();
 	}
 #endif /* CONFIG_PPC_64K_PAGES */
 
@@ -837,7 +837,7 @@ void hash_preload(struct mm_struct *mm, unsigned long ea,
 	if (mm->context.user_psize == MMU_PAGE_64K)
 		__hash_page_64K(ea, access, vsid, ptep, trap, local);
 	else
-#endif /* CONFIG_PPC_64K_PAGES */
+#endif /* CONFIG_PPC_HAS_HASH_64K */
 		__hash_page_4K(ea, access, vsid, ptep, trap, local);
 
 	local_irq_restore(flags);

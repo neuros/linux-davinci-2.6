@@ -16,7 +16,9 @@ struct kmem_cache_node {
 	unsigned long nr_partial;
 	atomic_long_t nr_slabs;
 	struct list_head partial;
+#ifdef CONFIG_SLUB_DEBUG
 	struct list_head full;
+#endif
 };
 
 /*
@@ -28,7 +30,7 @@ struct kmem_cache {
 	int size;		/* The size of an object including meta data */
 	int objsize;		/* The size of an object without meta data */
 	int offset;		/* Free pointer offset. */
-	unsigned int order;
+	int order;
 
 	/*
 	 * Avoid an extra cache line for UP, SMP and for the node local to
@@ -40,12 +42,13 @@ struct kmem_cache {
 	int objects;		/* Number of objects in slab */
 	int refcount;		/* Refcount for slab cache destroy */
 	void (*ctor)(void *, struct kmem_cache *, unsigned long);
-	void (*dtor)(void *, struct kmem_cache *, unsigned long);
 	int inuse;		/* Offset to metadata */
 	int align;		/* Alignment */
 	const char *name;	/* Name (only for display!) */
 	struct list_head list;	/* List of slab caches */
+#ifdef CONFIG_SLUB_DEBUG
 	struct kobject kobj;	/* For sysfs */
+#endif
 
 #ifdef CONFIG_NUMA
 	int defrag_ratio;
@@ -57,17 +60,13 @@ struct kmem_cache {
 /*
  * Kmalloc subsystem.
  */
-#define KMALLOC_SHIFT_LOW 3
+#if defined(ARCH_KMALLOC_MINALIGN) && ARCH_KMALLOC_MINALIGN > 8
+#define KMALLOC_MIN_SIZE ARCH_KMALLOC_MINALIGN
+#else
+#define KMALLOC_MIN_SIZE 8
+#endif
 
-#ifdef CONFIG_LARGE_ALLOCS
-#define KMALLOC_SHIFT_HIGH 25
-#else
-#if !defined(CONFIG_MMU) || NR_CPUS > 512 || MAX_NUMNODES > 256
-#define KMALLOC_SHIFT_HIGH 20
-#else
-#define KMALLOC_SHIFT_HIGH 18
-#endif
-#endif
+#define KMALLOC_SHIFT_LOW ilog2(KMALLOC_MIN_SIZE)
 
 /*
  * We keep the general caches in an array of slab caches that are used for
@@ -79,13 +78,16 @@ extern struct kmem_cache kmalloc_caches[KMALLOC_SHIFT_HIGH + 1];
  * Sorry that the following has to be that ugly but some versions of GCC
  * have trouble with constant propagation and loops.
  */
-static inline int kmalloc_index(int size)
+static inline int kmalloc_index(size_t size)
 {
-	/*
-	 * We should return 0 if size == 0 but we use the smallest object
-	 * here for SLAB legacy reasons.
-	 */
-	WARN_ON_ONCE(size == 0);
+	if (!size)
+		return 0;
+
+	if (size > KMALLOC_MAX_SIZE)
+		return -1;
+
+	if (size <= KMALLOC_MIN_SIZE)
+		return KMALLOC_SHIFT_LOW;
 
 	if (size > 64 && size <= 96)
 		return 1;
@@ -107,17 +109,13 @@ static inline int kmalloc_index(int size)
 	if (size <=  64 * 1024) return 16;
 	if (size <= 128 * 1024) return 17;
 	if (size <= 256 * 1024) return 18;
-#if KMALLOC_SHIFT_HIGH > 18
 	if (size <=  512 * 1024) return 19;
 	if (size <= 1024 * 1024) return 20;
-#endif
-#if KMALLOC_SHIFT_HIGH > 20
 	if (size <=  2 * 1024 * 1024) return 21;
 	if (size <=  4 * 1024 * 1024) return 22;
 	if (size <=  8 * 1024 * 1024) return 23;
 	if (size <= 16 * 1024 * 1024) return 24;
 	if (size <= 32 * 1024 * 1024) return 25;
-#endif
 	return -1;
 
 /*
@@ -142,7 +140,12 @@ static inline struct kmem_cache *kmalloc_slab(size_t size)
 	if (index == 0)
 		return NULL;
 
-	if (index < 0) {
+	/*
+	 * This function only gets expanded if __builtin_constant_p(size), so
+	 * testing it here shouldn't be needed.  But some versions of gcc need
+	 * help.
+	 */
+	if (__builtin_constant_p(size) && index < 0) {
 		/*
 		 * Generate a link failure. Would be great if we could
 		 * do something to stop the compile here.
@@ -157,8 +160,11 @@ static inline struct kmem_cache *kmalloc_slab(size_t size)
 #define SLUB_DMA __GFP_DMA
 #else
 /* Disable DMA functionality */
-#define SLUB_DMA 0
+#define SLUB_DMA (__force gfp_t)0
 #endif
+
+void *kmem_cache_alloc(struct kmem_cache *, gfp_t);
+void *__kmalloc(size_t size, gfp_t flags);
 
 static inline void *kmalloc(size_t size, gfp_t flags)
 {
@@ -166,28 +172,16 @@ static inline void *kmalloc(size_t size, gfp_t flags)
 		struct kmem_cache *s = kmalloc_slab(size);
 
 		if (!s)
-			return NULL;
+			return ZERO_SIZE_PTR;
 
 		return kmem_cache_alloc(s, flags);
 	} else
 		return __kmalloc(size, flags);
 }
 
-static inline void *kzalloc(size_t size, gfp_t flags)
-{
-	if (__builtin_constant_p(size) && !(flags & SLUB_DMA)) {
-		struct kmem_cache *s = kmalloc_slab(size);
-
-		if (!s)
-			return NULL;
-
-		return kmem_cache_zalloc(s, flags);
-	} else
-		return __kzalloc(size, flags);
-}
-
 #ifdef CONFIG_NUMA
-extern void *__kmalloc_node(size_t size, gfp_t flags, int node);
+void *__kmalloc_node(size_t size, gfp_t flags, int node);
+void *kmem_cache_alloc_node(struct kmem_cache *, gfp_t flags, int node);
 
 static inline void *kmalloc_node(size_t size, gfp_t flags, int node)
 {
@@ -195,7 +189,7 @@ static inline void *kmalloc_node(size_t size, gfp_t flags, int node)
 		struct kmem_cache *s = kmalloc_slab(size);
 
 		if (!s)
-			return NULL;
+			return ZERO_SIZE_PTR;
 
 		return kmem_cache_alloc_node(s, flags, node);
 	} else

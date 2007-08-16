@@ -1187,7 +1187,7 @@ dasd_end_request_cb(struct dasd_ccw_req * cqr, void *data)
 static void
 __dasd_process_blk_queue(struct dasd_device * device)
 {
-	request_queue_t *queue;
+	struct request_queue *queue;
 	struct request *req;
 	struct dasd_ccw_req *cqr;
 	int nr_queued;
@@ -1740,7 +1740,7 @@ dasd_cancel_req(struct dasd_ccw_req *cqr)
  * Dasd request queue function. Called from ll_rw_blk.c
  */
 static void
-do_dasd_request(request_queue_t * queue)
+do_dasd_request(struct request_queue * queue)
 {
 	struct dasd_device *device;
 
@@ -2174,9 +2174,10 @@ dasd_generic_notify(struct ccw_device *cdev, int event)
 	return ret;
 }
 
-struct dasd_ccw_req * dasd_generic_build_rdc(struct dasd_device *device,
-					     void *rdc_buffer,
-					     int rdc_buffer_size, char *magic)
+static struct dasd_ccw_req *dasd_generic_build_rdc(struct dasd_device *device,
+						   void *rdc_buffer,
+						   int rdc_buffer_size,
+						   char *magic)
 {
 	struct dasd_ccw_req *cqr;
 	struct ccw1 *ccw;
@@ -2219,6 +2220,7 @@ int dasd_generic_read_dev_chars(struct dasd_device *device, char *magic,
 	dasd_sfree_request(cqr, cqr->device);
 	return ret;
 }
+EXPORT_SYMBOL_GPL(dasd_generic_read_dev_chars);
 
 static int __init
 dasd_init(void)

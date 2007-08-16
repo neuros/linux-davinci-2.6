@@ -21,6 +21,9 @@
 #include <linux/input.h>
 #include <linux/err.h>
 #include <linux/clk.h>
+#include <linux/i2c.h>
+#include <linux/spi/spi.h>
+#include <linux/spi/tsc210x.h>
 
 #include <asm/hardware.h>
 #include <asm/mach-types.h>
@@ -39,7 +42,6 @@
 #include <asm/arch/menelaus.h>
 #include <asm/arch/dma.h>
 #include <asm/arch/gpmc.h>
-#include "prcm-regs.h"
 
 #include <asm/io.h>
 
@@ -418,7 +420,34 @@ static struct omap_usb_config h4_usb_config __initdata = {
 #endif
 };
 
-static struct omap_board_config_kernel h4_config[] = {
+/* ----------------------------------------------------------------------- */
+
+static struct tsc210x_config tsc_platform_data = {
+	.use_internal		= 1,
+	.monitor		= TSC_VBAT | TSC_TEMP,
+	/* REVISIT temp calibration data -- board-specific; from EEPROM? */
+	.mclk			= "sys_clkout",
+};
+
+static struct spi_board_info h4_spi_board_info[] __initdata = {
+	{
+		.modalias	= "tsc2101",
+		.bus_num	= 1,
+		.chip_select	= 0,
+		.mode		= SPI_MODE_1,
+		.irq		= OMAP_GPIO_IRQ(93),
+		.max_speed_hz	= 16000000,
+		.platform_data	= &tsc_platform_data,
+	},
+
+	/* nCS1 -- to lcd board, but unused
+	 * nCS2 -- to WLAN/miniPCI
+	 */
+};
+
+/* ----------------------------------------------------------------------- */
+
+static struct omap_board_config_kernel h4_config[] __initdata = {
 	{ OMAP_TAG_UART,	&h4_uart_config },
 	{ OMAP_TAG_MMC,		&h4_mmc_config },
 	{ OMAP_TAG_LCD,		&h4_lcd_config },
@@ -492,6 +521,18 @@ static void __init tusb_evm_setup(void)
 
 #endif
 
+static struct i2c_board_info __initdata h4_i2c_board_info[] = {
+	{
+		I2C_BOARD_INFO("rtc-rs5c372", 0x32),
+		.type = "rv5c387a",
+		/* no IRQ wired to OMAP; nINTB goes to AGPS */
+	},
+	{
+		I2C_BOARD_INFO("menelaus", 0x72),
+		.irq = INT_24XX_SYS_NIRQ,
+	},
+};
+
 static void __init omap_h4_init(void)
 {
 	/*
@@ -520,6 +561,12 @@ static void __init omap_h4_init(void)
 	omap_cfg_reg(V19_24XX_USB1_RCV);
 #endif
 
+	/* Menelaus interrupt */
+	omap_cfg_reg(W19_24XX_SYS_NIRQ);
+
+	i2c_register_board_info(1, h4_i2c_board_info,
+			ARRAY_SIZE(h4_i2c_board_info));
+
 	platform_add_devices(h4_devices, ARRAY_SIZE(h4_devices));
 	omap_board_config = h4_config;
 	omap_board_config_size = ARRAY_SIZE(h4_config);
@@ -532,6 +579,28 @@ static void __init omap_h4_init(void)
 	tusb_evm_setup();
 #endif
 
+	/* defaults seem ok for:
+	 * omap_cfg_reg(U18_24XX_SPI1_SCK);
+	 * omap_cfg_reg(V20_24XX_SPI1_MOSI);
+	 * omap_cfg_reg(T18_24XX_SPI1_MISO);
+	 * omap_cfg_reg(U19_24XX_SPI1_NCS0);
+	 */
+
+	/* TSC2101 */
+	omap_cfg_reg(P20_24XX_GPIO93);
+	gpio_request(93, "tsc_irq");
+	gpio_direction_input(93);
+
+	omap_cfg_reg(W14_24XX_SYS_CLKOUT);	/* mclk */
+	/* defaults seem ok for:
+	 * omap_cfg_reg(Y15_EAC_AC_SCLK);	// bclk
+	 * omap_cfg_reg(R14_EAC_AC_FS);
+	 * omap_cfg_reg(V15_EAC_AC_DOUT);
+	 * omap_cfg_reg(W15_EAC_AC_DIN);
+	 */
+
+	spi_register_board_info(h4_spi_board_info,
+				ARRAY_SIZE(h4_spi_board_info));
 }
 
 static void __init omap_h4_map_io(void)

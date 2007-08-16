@@ -205,293 +205,8 @@
 #define SABRE_MEMSPACE		0x100000000UL
 #define SABRE_MEMSPACE_SIZE	0x07fffffffUL
 
-/* UltraSparc-IIi Programmer's Manual, page 325, PCI
- * configuration space address format:
- * 
- *  32             24 23 16 15    11 10       8 7   2  1 0
- * ---------------------------------------------------------
- * |0 0 0 0 0 0 0 0 1| bus | device | function | reg | 0 0 |
- * ---------------------------------------------------------
- */
-#define SABRE_CONFIG_BASE(PBM)	\
-	((PBM)->config_space | (1UL << 24))
-#define SABRE_CONFIG_ENCODE(BUS, DEVFN, REG)	\
-	(((unsigned long)(BUS)   << 16) |	\
-	 ((unsigned long)(DEVFN) << 8)  |	\
-	 ((unsigned long)(REG)))
-
 static int hummingbird_p;
 static struct pci_bus *sabre_root_bus;
-
-static void *sabre_pci_config_mkaddr(struct pci_pbm_info *pbm,
-				     unsigned char bus,
-				     unsigned int devfn,
-				     int where)
-{
-	if (!pbm)
-		return NULL;
-	return (void *)
-		(SABRE_CONFIG_BASE(pbm) |
-		 SABRE_CONFIG_ENCODE(bus, devfn, where));
-}
-
-static int sabre_out_of_range(unsigned char devfn)
-{
-	if (hummingbird_p)
-		return 0;
-
-	return (((PCI_SLOT(devfn) == 0) && (PCI_FUNC(devfn) > 0)) ||
-		((PCI_SLOT(devfn) == 1) && (PCI_FUNC(devfn) > 1)) ||
-		(PCI_SLOT(devfn) > 1));
-}
-
-static int __sabre_out_of_range(struct pci_pbm_info *pbm,
-				unsigned char bus,
-				unsigned char devfn)
-{
-	if (hummingbird_p)
-		return 0;
-
-	return ((pbm->parent == 0) ||
-		((pbm == &pbm->parent->pbm_A) &&
-		 (bus == pbm->pci_first_busno) &&
-		 PCI_SLOT(devfn) > 8));
-}
-
-static int __sabre_read_pci_cfg(struct pci_bus *bus_dev, unsigned int devfn,
-				int where, int size, u32 *value)
-{
-	struct pci_pbm_info *pbm = bus_dev->sysdata;
-	unsigned char bus = bus_dev->number;
-	u32 *addr;
-	u16 tmp16;
-	u8 tmp8;
-
-	switch (size) {
-	case 1:
-		*value = 0xff;
-		break;
-	case 2:
-		*value = 0xffff;
-		break;
-	case 4:
-		*value = 0xffffffff;
-		break;
-	}
-
-	addr = sabre_pci_config_mkaddr(pbm, bus, devfn, where);
-	if (!addr)
-		return PCIBIOS_SUCCESSFUL;
-
-	if (__sabre_out_of_range(pbm, bus, devfn))
-		return PCIBIOS_SUCCESSFUL;
-
-	switch (size) {
-	case 1:
-		pci_config_read8((u8 *) addr, &tmp8);
-		*value = tmp8;
-		break;
-
-	case 2:
-		if (where & 0x01) {
-			printk("pci_read_config_word: misaligned reg [%x]\n",
-			       where);
-			return PCIBIOS_SUCCESSFUL;
-		}
-		pci_config_read16((u16 *) addr, &tmp16);
-		*value = tmp16;
-		break;
-
-	case 4:
-		if (where & 0x03) {
-			printk("pci_read_config_dword: misaligned reg [%x]\n",
-			       where);
-			return PCIBIOS_SUCCESSFUL;
-		}
-		pci_config_read32(addr, value);
-		break;
-	}
-
-	return PCIBIOS_SUCCESSFUL;
-}
-
-static int sabre_read_pci_cfg(struct pci_bus *bus, unsigned int devfn,
-			      int where, int size, u32 *value)
-{
-	struct pci_pbm_info *pbm = bus->sysdata;
-
-	if (bus == pbm->pci_bus && devfn == 0x00)
-		return pci_host_bridge_read_pci_cfg(bus, devfn, where,
-						    size, value);
-
-	if (!bus->number && sabre_out_of_range(devfn)) {
-		switch (size) {
-		case 1:
-			*value = 0xff;
-			break;
-		case 2:
-			*value = 0xffff;
-			break;
-		case 4:
-			*value = 0xffffffff;
-			break;
-		}
-		return PCIBIOS_SUCCESSFUL;
-	}
-
-	if (bus->number || PCI_SLOT(devfn))
-		return __sabre_read_pci_cfg(bus, devfn, where, size, value);
-
-	/* When accessing PCI config space of the PCI controller itself (bus
-	 * 0, device slot 0, function 0) there are restrictions.  Each
-	 * register must be accessed as it's natural size.  Thus, for example
-	 * the Vendor ID must be accessed as a 16-bit quantity.
-	 */
-
-	switch (size) {
-	case 1:
-		if (where < 8) {
-			u32 tmp32;
-			u16 tmp16;
-
-			__sabre_read_pci_cfg(bus, devfn, where & ~1, 2, &tmp32);
-			tmp16 = (u16) tmp32;
-			if (where & 1)
-				*value = tmp16 >> 8;
-			else
-				*value = tmp16 & 0xff;
-		} else
-			return __sabre_read_pci_cfg(bus, devfn, where, 1, value);
-		break;
-
-	case 2:
-		if (where < 8)
-			return __sabre_read_pci_cfg(bus, devfn, where, 2, value);
-		else {
-			u32 tmp32;
-			u8 tmp8;
-
-			__sabre_read_pci_cfg(bus, devfn, where, 1, &tmp32);
-			tmp8 = (u8) tmp32;
-			*value = tmp8;
-			__sabre_read_pci_cfg(bus, devfn, where + 1, 1, &tmp32);
-			tmp8 = (u8) tmp32;
-			*value |= tmp8 << 8;
-		}
-		break;
-
-	case 4: {
-		u32 tmp32;
-		u16 tmp16;
-
-		sabre_read_pci_cfg(bus, devfn, where, 2, &tmp32);
-		tmp16 = (u16) tmp32;
-		*value = tmp16;
-		sabre_read_pci_cfg(bus, devfn, where + 2, 2, &tmp32);
-		tmp16 = (u16) tmp32;
-		*value |= tmp16 << 16;
-		break;
-	}
-	}
-	return PCIBIOS_SUCCESSFUL;
-}
-
-static int __sabre_write_pci_cfg(struct pci_bus *bus_dev, unsigned int devfn,
-				 int where, int size, u32 value)
-{
-	struct pci_pbm_info *pbm = bus_dev->sysdata;
-	unsigned char bus = bus_dev->number;
-	u32 *addr;
-
-	addr = sabre_pci_config_mkaddr(pbm, bus, devfn, where);
-	if (!addr)
-		return PCIBIOS_SUCCESSFUL;
-
-	if (__sabre_out_of_range(pbm, bus, devfn))
-		return PCIBIOS_SUCCESSFUL;
-
-	switch (size) {
-	case 1:
-		pci_config_write8((u8 *) addr, value);
-		break;
-
-	case 2:
-		if (where & 0x01) {
-			printk("pci_write_config_word: misaligned reg [%x]\n",
-			       where);
-			return PCIBIOS_SUCCESSFUL;
-		}
-		pci_config_write16((u16 *) addr, value);
-		break;
-
-	case 4:
-		if (where & 0x03) {
-			printk("pci_write_config_dword: misaligned reg [%x]\n",
-			       where);
-			return PCIBIOS_SUCCESSFUL;
-		}
-		pci_config_write32(addr, value);
-		break;
-	}
-
-	return PCIBIOS_SUCCESSFUL;
-}
-
-static int sabre_write_pci_cfg(struct pci_bus *bus, unsigned int devfn,
-			       int where, int size, u32 value)
-{
-	struct pci_pbm_info *pbm = bus->sysdata;
-
-	if (bus == pbm->pci_bus && devfn == 0x00)
-		return pci_host_bridge_write_pci_cfg(bus, devfn, where,
-						     size, value);
-
-	if (bus->number)
-		return __sabre_write_pci_cfg(bus, devfn, where, size, value);
-
-	if (sabre_out_of_range(devfn))
-		return PCIBIOS_SUCCESSFUL;
-
-	switch (size) {
-	case 1:
-		if (where < 8) {
-			u32 tmp32;
-			u16 tmp16;
-
-			__sabre_read_pci_cfg(bus, devfn, where & ~1, 2, &tmp32);
-			tmp16 = (u16) tmp32;
-			if (where & 1) {
-				value &= 0x00ff;
-				value |= tmp16 << 8;
-			} else {
-				value &= 0xff00;
-				value |= tmp16;
-			}
-			tmp32 = (u32) tmp16;
-			return __sabre_write_pci_cfg(bus, devfn, where & ~1, 2, tmp32);
-		} else
-			return __sabre_write_pci_cfg(bus, devfn, where, 1, value);
-		break;
-	case 2:
-		if (where < 8)
-			return __sabre_write_pci_cfg(bus, devfn, where, 2, value);
-		else {
-			__sabre_write_pci_cfg(bus, devfn, where, 1, value & 0xff);
-			__sabre_write_pci_cfg(bus, devfn, where + 1, 1, value >> 8);
-		}
-		break;
-	case 4:
-		sabre_write_pci_cfg(bus, devfn, where, 2, value & 0xffff);
-		sabre_write_pci_cfg(bus, devfn, where + 2, 2, value >> 16);
-		break;
-	}
-	return PCIBIOS_SUCCESSFUL;
-}
-
-static struct pci_ops sabre_ops = {
-	.read =		sabre_read_pci_cfg,
-	.write =	sabre_write_pci_cfg,
-};
 
 /* SABRE error handling support. */
 static void sabre_check_iommu_error(struct pci_pbm_info *pbm,
@@ -921,13 +636,18 @@ static void apb_init(struct pci_bus *sabre_bus)
 static void sabre_scan_bus(struct pci_pbm_info *pbm)
 {
 	static int once;
-	struct pci_bus *pbus;
 
 	/* The APB bridge speaks to the Sabre host PCI bridge
 	 * at 66Mhz, but the front side of APB runs at 33Mhz
 	 * for both segments.
+	 *
+	 * Hummingbird systems do not use APB, so they run
+	 * at 66MHZ.
 	 */
-	pbm->is_66mhz_capable = 0;
+	if (hummingbird_p)
+		pbm->is_66mhz_capable = 1;
+	else
+		pbm->is_66mhz_capable = 0;
 
 	/* This driver has not been verified to handle
 	 * multiple SABREs yet, so trap this.
@@ -941,29 +661,31 @@ static void sabre_scan_bus(struct pci_pbm_info *pbm)
 	}
 	once++;
 
-	pbus = pci_scan_one_pbm(pbm);
-	if (!pbus)
+	pbm->pci_bus = pci_scan_one_pbm(pbm);
+	if (!pbm->pci_bus)
 		return;
 
-	sabre_root_bus = pbus;
+	sabre_root_bus = pbm->pci_bus;
 
-	apb_init(pbus);
+	apb_init(pbm->pci_bus);
 
 	sabre_register_error_handlers(pbm);
 }
 
-static void sabre_iommu_init(struct pci_pbm_info *pbm,
-			     int tsbsize, unsigned long dvma_offset,
-			     u32 dma_mask)
+static int sabre_iommu_init(struct pci_pbm_info *pbm,
+			    int tsbsize, unsigned long dvma_offset,
+			    u32 dma_mask)
 {
 	struct iommu *iommu = pbm->iommu;
 	unsigned long i;
 	u64 control;
+	int err;
 
 	/* Register addresses. */
 	iommu->iommu_control  = pbm->controller_regs + SABRE_IOMMU_CONTROL;
 	iommu->iommu_tsbbase  = pbm->controller_regs + SABRE_IOMMU_TSBBASE;
 	iommu->iommu_flush    = pbm->controller_regs + SABRE_IOMMU_FLUSH;
+	iommu->iommu_tags     = iommu->iommu_flush + (0xa580UL - 0x0210UL);
 	iommu->write_complete_reg = pbm->controller_regs + SABRE_WRSYNC;
 	/* Sabre's IOMMU lacks ctx flushing. */
 	iommu->iommu_ctxflush = 0;
@@ -981,7 +703,10 @@ static void sabre_iommu_init(struct pci_pbm_info *pbm,
 	/* Leave diag mode enabled for full-flushing done
 	 * in pci_iommu.c
 	 */
-	pci_iommu_table_init(iommu, tsbsize * 1024 * 8, dvma_offset, dma_mask);
+	err = iommu_table_init(iommu, tsbsize * 1024 * 8,
+			       dvma_offset, dma_mask);
+	if (err)
+		return err;
 
 	sabre_write(pbm->controller_regs + SABRE_IOMMU_TSBBASE,
 		    __pa(iommu->page_table));
@@ -1002,6 +727,8 @@ static void sabre_iommu_init(struct pci_pbm_info *pbm,
 		break;
 	}
 	sabre_write(pbm->controller_regs + SABRE_IOMMU_CONTROL, control);
+
+	return 0;
 }
 
 static void sabre_pbm_init(struct pci_controller_info *p, struct pci_pbm_info *pbm, struct device_node *dp)
@@ -1010,7 +737,8 @@ static void sabre_pbm_init(struct pci_controller_info *p, struct pci_pbm_info *p
 	printk("%s: SABRE PCI Bus Module\n", pbm->name);
 
 	pbm->scan_bus = sabre_scan_bus;
-	pbm->pci_ops = &sabre_ops;
+	pbm->pci_ops = &sun4u_pci_ops;
+	pbm->config_space_reg_bits = 8;
 
 	pbm->index = pci_num_pbms++;
 
@@ -1046,23 +774,20 @@ void sabre_init(struct device_node *dp, char *model_name)
 			/* Of course, Sun has to encode things a thousand
 			 * different ways, inconsistently.
 			 */
-			cpu_find_by_instance(0, &dp, NULL);
-			if (!strcmp(dp->name, "SUNW,UltraSPARC-IIe"))
-				hummingbird_p = 1;
+			for_each_node_by_type(dp, "cpu") {
+				if (!strcmp(dp->name, "SUNW,UltraSPARC-IIe"))
+					hummingbird_p = 1;
+			}
 		}
 	}
 
 	p = kzalloc(sizeof(*p), GFP_ATOMIC);
-	if (!p) {
-		prom_printf("SABRE: Error, kmalloc(pci_controller_info) failed.\n");
-		prom_halt();
-	}
+	if (!p)
+		goto fatal_memory_error;
 
 	iommu = kzalloc(sizeof(*iommu), GFP_ATOMIC);
-	if (!iommu) {
-		prom_printf("SABRE: Error, kmalloc(pci_iommu) failed.\n");
-		prom_halt();
-	}
+	if (!iommu)
+		goto fatal_memory_error;
 	pbm = &p->pbm_A;
 	pbm->iommu = iommu;
 
@@ -1125,10 +850,16 @@ void sabre_init(struct device_node *dp, char *model_name)
 			prom_halt();
 	}
 
-	sabre_iommu_init(pbm, tsbsize, vdma[0], dma_mask);
+	if (sabre_iommu_init(pbm, tsbsize, vdma[0], dma_mask))
+		goto fatal_memory_error;
 
 	/*
 	 * Look for APB underneath.
 	 */
 	sabre_pbm_init(p, pbm, dp);
+	return;
+
+fatal_memory_error:
+	prom_printf("SABRE: Fatal memory allocation error.\n");
+	prom_halt();
 }

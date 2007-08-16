@@ -434,8 +434,7 @@ static void hfs_init_once(void *p, struct kmem_cache *cachep, unsigned long flag
 {
 	struct hfs_inode_info *i = p;
 
-	if (flags & SLAB_CTOR_CONSTRUCTOR)
-		inode_init_once(&i->vfs_inode);
+	inode_init_once(&i->vfs_inode);
 }
 
 static int __init init_hfs_fs(void)
@@ -444,7 +443,7 @@ static int __init init_hfs_fs(void)
 
 	hfs_inode_cachep = kmem_cache_create("hfs_inode_cache",
 		sizeof(struct hfs_inode_info), 0, SLAB_HWCACHE_ALIGN,
-		hfs_init_once, NULL);
+		hfs_init_once);
 	if (!hfs_inode_cachep)
 		return -ENOMEM;
 	err = register_filesystem(&hfs_fs_type);

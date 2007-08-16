@@ -661,7 +661,7 @@ static struct transfer_info onyx_transfers[] = {
 		.tag = 2,
 	},
 #ifdef SNDRV_PCM_FMTBIT_COMPRESSED_16BE
-Once alsa gets supports for this kind of thing we can add it...
+	/* Once alsa gets supports for this kind of thing we can add it... */
 	{
 		/* digital compressed output */
 		.formats =  SNDRV_PCM_FMTBIT_COMPRESSED_16BE,
@@ -713,7 +713,7 @@ static int onyx_prepare(struct codec_info_item *cii,
 	if (substream->runtime->format == SNDRV_PCM_FMTBIT_COMPRESSED_16BE) {
 		/* mute and lock analog output */
 		onyx_read_register(onyx, ONYX_REG_DAC_CONTROL, &v);
-		if (onyx_write_register(onyx
+		if (onyx_write_register(onyx,
 					ONYX_REG_DAC_CONTROL,
 					v | ONYX_MUTE_RIGHT | ONYX_MUTE_LEFT))
 			goto out_unlock;
@@ -1018,7 +1018,7 @@ static int onyx_create(struct i2c_adapter *adapter,
 	onyx->i2c.driver = &onyx_driver;
 	onyx->i2c.adapter = adapter;
 	onyx->i2c.addr = addr & 0x7f;
-	strlcpy(onyx->i2c.name, "onyx audio codec", I2C_NAME_SIZE-1);
+	strlcpy(onyx->i2c.name, "onyx audio codec", I2C_NAME_SIZE);
 
 	if (i2c_attach_client(&onyx->i2c)) {
 		printk(KERN_ERR PFX "failed to attach to i2c\n");
@@ -1033,7 +1033,7 @@ static int onyx_create(struct i2c_adapter *adapter,
 		goto fail;
 	}
 
-	strlcpy(onyx->codec.name, "onyx", MAX_CODEC_NAME_LEN-1);
+	strlcpy(onyx->codec.name, "onyx", MAX_CODEC_NAME_LEN);
 	onyx->codec.owner = THIS_MODULE;
 	onyx->codec.init = onyx_init_codec;
 	onyx->codec.exit = onyx_exit_codec;

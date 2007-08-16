@@ -635,12 +635,11 @@ static void init_r_port(int board, int aiop, int chan, struct pci_dev *pci_dev)
 	ctlp = sCtlNumToCtlPtr(board);
 
 	/*  Get a r_port struct for the port, fill it in and save it globally, indexed by line number */
-	info = kmalloc(sizeof (struct r_port), GFP_KERNEL);
+	info = kzalloc(sizeof (struct r_port), GFP_KERNEL);
 	if (!info) {
 		printk(KERN_INFO "Couldn't allocate info struct for line #%d\n", line);
 		return;
 	}
-	memset(info, 0, sizeof (struct r_port));
 
 	info->magic = RPORT_MAGIC;
 	info->line = line;
@@ -1014,9 +1013,6 @@ static int rp_open(struct tty_struct *tty, struct file *filp)
 	/*
 	 * Info->count is now 1; so it's safe to sleep now.
 	 */
-	info->session = process_session(current);
-	info->pgrp = process_group(current);
-
 	if ((info->flags & ROCKET_INITIALIZED) == 0) {
 		cp = &info->channel;
 		sSetRxTrigger(cp, TRIG_1);
@@ -1705,7 +1701,8 @@ static int rp_write(struct tty_struct *tty,
 	if (count <= 0 || rocket_paranoia_check(info, "rp_write"))
 		return 0;
 
-	mutex_lock_interruptible(&info->write_mtx);
+	if (mutex_lock_interruptible(&info->write_mtx))
+		return -ERESTARTSYS;
 
 #ifdef ROCKET_DEBUG_WRITE
 	printk(KERN_INFO "rp_write %d chars...", count);

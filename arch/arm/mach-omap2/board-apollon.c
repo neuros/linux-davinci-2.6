@@ -39,12 +39,13 @@
 #include <asm/arch/board.h>
 #include <asm/arch/common.h>
 #include <asm/arch/gpmc.h>
-#include "prcm-regs.h"
 
 /* LED & Switch macros */
 #define LED0_GPIO13		13
 #define LED1_GPIO14		14
 #define LED2_GPIO15		15
+#define LED3_GPIO92		92
+#define LED4_GPIO93		93
 
 #define APOLLON_FLASH_CS	0
 #define APOLLON_ETH_CS		1
@@ -158,6 +159,20 @@ static struct omap_led_config apollon_led_config[] = {
 		},
 		.gpio	= LED2_GPIO15,
 	},
+#ifdef CONFIG_MACH_OMAP_APOLLON_PLUS
+	{
+		.cdev	= {
+			.name	= "apollon:led3",
+		},
+		.gpio	= LED3_GPIO92,
+	},
+	{
+		.cdev	= {
+			.name	= "apollon:led4",
+		},
+		.gpio	= LED4_GPIO93,
+	},
+#endif
 };
 
 static struct omap_led_platform_data apollon_led_data = {
@@ -252,6 +267,8 @@ static struct omap_mmc_config apollon_mmc_config __initdata = {
 	.mmc [0] = {
 		.enabled 	= 1,
 		.wire4		= 1,
+	/* Use internal loop-back in MMC/SDIO Module Input Clock selection */
+		.internal_clock	= 1,
 		.wp_pin		= -1,
 		.power_pin	= -1,
 	/* Note: If you want to detect card feature, please assign 37 */
@@ -270,7 +287,7 @@ static struct omap_lcd_config apollon_lcd_config __initdata = {
 	.ctrl_name	= "internal",
 };
 
-static struct omap_board_config_kernel apollon_config[] = {
+static struct omap_board_config_kernel apollon_config[] __initdata = {
 	{ OMAP_TAG_UART,	&apollon_uart_config },
 	{ OMAP_TAG_MMC,		&apollon_mmc_config },
 	{ OMAP_TAG_USB,		&apollon_usb_config },
@@ -294,6 +311,18 @@ static void __init apollon_led_init(void)
 	omap_request_gpio(LED2_GPIO15);
 	omap_set_gpio_direction(LED2_GPIO15, 0);
 	omap_set_gpio_dataout(LED2_GPIO15, 0);
+#ifdef CONFIG_MACH_OMAP_APOLLON_PLUS
+	/* LED3 - M15 */
+	omap_cfg_reg(M15_24XX_GPIO92);
+	omap_request_gpio(LED3_GPIO92);
+	omap_set_gpio_direction(LED3_GPIO92, 0);
+	omap_set_gpio_dataout(LED3_GPIO92, 0);
+	/* LED4 - P20 */
+	omap_cfg_reg(P20_24XX_GPIO93);
+	omap_request_gpio(LED4_GPIO93);
+	omap_set_gpio_direction(LED4_GPIO93, 0);
+	omap_set_gpio_dataout(LED4_GPIO93, 0);
+#endif
 }
 
 static void __init apollon_usb_init(void)
@@ -311,9 +340,6 @@ static void __init omap_apollon_init(void)
 	apollon_led_init();
 	apollon_flash_init();
 	apollon_usb_init();
-
-	/* Use Interal loop-back in MMC/SDIO Module Input Clock selection */
-	CONTROL_DEVCONF |= (1 << 24);
 
 	/*
  	 * Make sure the serial ports are muxed on at this point.

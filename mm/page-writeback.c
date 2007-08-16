@@ -476,15 +476,13 @@ static void wb_kupdate(unsigned long arg)
  * sysctl handler for /proc/sys/vm/dirty_writeback_centisecs
  */
 int dirty_writeback_centisecs_handler(ctl_table *table, int write,
-		struct file *file, void __user *buffer, size_t *length, loff_t *ppos)
+	struct file *file, void __user *buffer, size_t *length, loff_t *ppos)
 {
 	proc_dointvec_userhz_jiffies(table, write, file, buffer, length, ppos);
-	if (dirty_writeback_interval) {
-		mod_timer(&wb_timer,
-			jiffies + dirty_writeback_interval);
-		} else {
+	if (dirty_writeback_interval)
+		mod_timer(&wb_timer, jiffies + dirty_writeback_interval);
+	else
 		del_timer(&wb_timer);
-	}
 	return 0;
 }
 
@@ -588,31 +586,27 @@ void __init page_writeback_init(void)
 }
 
 /**
- * generic_writepages - walk the list of dirty pages of the given address space and writepage() all of them.
+ * write_cache_pages - walk the list of dirty pages of the given address space and write all of them.
  * @mapping: address space structure to write
  * @wbc: subtract the number of written pages from *@wbc->nr_to_write
+ * @writepage: function called for each page
+ * @data: data passed to writepage function
  *
- * This is a library function, which implements the writepages()
- * address_space_operation.
- *
- * If a page is already under I/O, generic_writepages() skips it, even
+ * If a page is already under I/O, write_cache_pages() skips it, even
  * if it's dirty.  This is desirable behaviour for memory-cleaning writeback,
  * but it is INCORRECT for data-integrity system calls such as fsync().  fsync()
  * and msync() need to guarantee that all the data which was dirty at the time
  * the call was made get new I/O started against them.  If wbc->sync_mode is
  * WB_SYNC_ALL then we were called for data integrity and we must wait for
  * existing IO to complete.
- *
- * Derived from mpage_writepages() - if you fix this you should check that
- * also!
  */
-int generic_writepages(struct address_space *mapping,
-		       struct writeback_control *wbc)
+int write_cache_pages(struct address_space *mapping,
+		      struct writeback_control *wbc, writepage_t writepage,
+		      void *data)
 {
 	struct backing_dev_info *bdi = mapping->backing_dev_info;
 	int ret = 0;
 	int done = 0;
-	int (*writepage)(struct page *page, struct writeback_control *wbc);
 	struct pagevec pvec;
 	int nr_pages;
 	pgoff_t index;
@@ -624,12 +618,6 @@ int generic_writepages(struct address_space *mapping,
 		wbc->encountered_congestion = 1;
 		return 0;
 	}
-
-	writepage = mapping->a_ops->writepage;
-
-	/* deal with chardevs and other special file */
-	if (!writepage)
-		return 0;
 
 	pagevec_init(&pvec, 0);
 	if (wbc->range_cyclic) {
@@ -682,8 +670,7 @@ retry:
 				continue;
 			}
 
-			ret = (*writepage)(page, wbc);
-			mapping_set_error(mapping, ret);
+			ret = (*writepage)(page, wbc, data);
 
 			if (unlikely(ret == AOP_WRITEPAGE_ACTIVATE))
 				unlock_page(page);
@@ -709,6 +696,38 @@ retry:
 	if (wbc->range_cyclic || (range_whole && wbc->nr_to_write > 0))
 		mapping->writeback_index = index;
 	return ret;
+}
+EXPORT_SYMBOL(write_cache_pages);
+
+/*
+ * Function used by generic_writepages to call the real writepage
+ * function and set the mapping flags on error
+ */
+static int __writepage(struct page *page, struct writeback_control *wbc,
+		       void *data)
+{
+	struct address_space *mapping = data;
+	int ret = mapping->a_ops->writepage(page, wbc);
+	mapping_set_error(mapping, ret);
+	return ret;
+}
+
+/**
+ * generic_writepages - walk the list of dirty pages of the given address space and writepage() all of them.
+ * @mapping: address space structure to write
+ * @wbc: subtract the number of written pages from *@wbc->nr_to_write
+ *
+ * This is a library function, which implements the writepages()
+ * address_space_operation.
+ */
+int generic_writepages(struct address_space *mapping,
+		       struct writeback_control *wbc)
+{
+	/* deal with chardevs and other special file */
+	if (!mapping->a_ops->writepage)
+		return 0;
+
+	return write_cache_pages(mapping, wbc, __writepage, mapping);
 }
 
 EXPORT_SYMBOL(generic_writepages);
@@ -805,6 +824,7 @@ int __set_page_dirty_nobuffers(struct page *page)
 		mapping2 = page_mapping(page);
 		if (mapping2) { /* Race with truncate? */
 			BUG_ON(mapping2 != mapping);
+			WARN_ON_ONCE(!PagePrivate(page) && !PageUptodate(page));
 			if (mapping_cap_account_dirty(mapping)) {
 				__inc_zone_page_state(page, NR_FILE_DIRTY);
 				task_io_account_write(PAGE_CACHE_SIZE);
@@ -898,6 +918,9 @@ int clear_page_dirty_for_io(struct page *page)
 {
 	struct address_space *mapping = page_mapping(page);
 
+	BUG_ON(!PageLocked(page));
+
+	ClearPageReclaim(page);
 	if (mapping && mapping_cap_account_dirty(mapping)) {
 		/*
 		 * Yes, Virginia, this is indeed insane.
@@ -923,14 +946,19 @@ int clear_page_dirty_for_io(struct page *page)
 		 * We basically use the page "master dirty bit"
 		 * as a serialization point for all the different
 		 * threads doing their things.
-		 *
-		 * FIXME! We still have a race here: if somebody
-		 * adds the page back to the page tables in
-		 * between the "page_mkclean()" and the "TestClearPageDirty()",
-		 * we might have it mapped without the dirty bit set.
 		 */
 		if (page_mkclean(page))
 			set_page_dirty(page);
+		/*
+		 * We carefully synchronise fault handlers against
+		 * installing a dirty pte and marking the page dirty
+		 * at this point. We do this by having them hold the
+		 * page lock at some point after installing their
+		 * pte, but before marking the page dirty.
+		 * Pages are always locked coming in here, so we get
+		 * the desired exclusion. See mm/memory.c:do_wp_page()
+		 * for more comments.
+		 */
 		if (TestClearPageDirty(page)) {
 			dec_zone_page_state(page, NR_FILE_DIRTY);
 			return 1;
@@ -959,6 +987,8 @@ int test_clear_page_writeback(struct page *page)
 	} else {
 		ret = TestClearPageWriteback(page);
 	}
+	if (ret)
+		dec_zone_page_state(page, NR_WRITEBACK);
 	return ret;
 }
 
@@ -984,6 +1014,8 @@ int test_set_page_writeback(struct page *page)
 	} else {
 		ret = TestSetPageWriteback(page);
 	}
+	if (!ret)
+		inc_zone_page_state(page, NR_WRITEBACK);
 	return ret;
 
 }

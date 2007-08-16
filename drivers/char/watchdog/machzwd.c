@@ -321,6 +321,7 @@ static int zf_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 		break;
 
 	case WDIOC_GETSTATUS:
+	case WDIOC_GETBOOTSTATUS:
 		return put_user(0, p);
 
 	case WDIOC_KEEPALIVE:
@@ -440,13 +441,6 @@ static int __init zf_init(void)
 	spin_lock_init(&zf_lock);
 	spin_lock_init(&zf_port_lock);
 
-	ret = misc_register(&zf_miscdev);
-	if (ret){
-		printk(KERN_ERR "can't misc_register on minor=%d\n",
-							WATCHDOG_MINOR);
-		goto out;
-	}
-
 	if(!request_region(ZF_IOBASE, 3, "MachZ ZFL WDT")){
 		printk(KERN_ERR "cannot reserve I/O ports at %d\n",
 							ZF_IOBASE);
@@ -461,16 +455,23 @@ static int __init zf_init(void)
 		goto no_reboot;
 	}
 
+	ret = misc_register(&zf_miscdev);
+	if (ret){
+		printk(KERN_ERR "can't misc_register on minor=%d\n",
+							WATCHDOG_MINOR);
+		goto no_misc;
+	}
+
 	zf_set_status(0);
 	zf_set_control(0);
 
 	return 0;
 
+no_misc:
+	unregister_reboot_notifier(&zf_notifier);
 no_reboot:
 	release_region(ZF_IOBASE, 3);
 no_region:
-	misc_deregister(&zf_miscdev);
-out:
 	return ret;
 }
 

@@ -5,7 +5,7 @@
  * Copyright (c) 2002 Pete Zaitcev (zaitcev@yahoo.com)
  *
  * We used to warn all over the code: DO NOT USE prom_printf(),
- * and yet people do. Anton's banking code was outputing banks
+ * and yet people do. Anton's banking code was outputting banks
  * with prom_printf for most of the 2.4 lifetime. Since an effective
  * stick is not available, we deployed a carrot: an early printk
  * through PROM by means of -p boot option. This ought to fix it.
@@ -13,6 +13,7 @@
  */
 
 #include <linux/kernel.h>
+#include <linux/module.h>
 
 #include <asm/openprom.h>
 #include <asm/oplib.h>
@@ -44,3 +45,4 @@ prom_printf(char *fmt, ...)
 
 	prom_write(ppbuf, i);
 }
+EXPORT_SYMBOL(prom_printf);

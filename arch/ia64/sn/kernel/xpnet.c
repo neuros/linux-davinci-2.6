@@ -343,8 +343,8 @@ xpnet_dev_open(struct net_device *dev)
 	enum xpc_retval ret;
 
 
-	dev_dbg(xpnet, "calling xpc_connect(%d, 0x%p, NULL, %ld, %ld, %d, "
-		"%d)\n", XPC_NET_CHANNEL, xpnet_connection_activity,
+	dev_dbg(xpnet, "calling xpc_connect(%d, 0x%p, NULL, %ld, %ld, %ld, "
+		"%ld)\n", XPC_NET_CHANNEL, xpnet_connection_activity,
 		XPNET_MSG_SIZE, XPNET_MSG_NENTRIES, XPNET_MAX_KTHREADS,
 		XPNET_MAX_IDLE_KTHREADS);
 
@@ -531,7 +531,7 @@ xpnet_dev_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	dev_dbg(xpnet, "destination Partitions mask (dp) = 0x%lx\n", dp);
 
 	/*
-	 * If we wanted to allow promiscous mode to work like an
+	 * If we wanted to allow promiscuous mode to work like an
 	 * unswitched network, this would be a good point to OR in a
 	 * mask of partitions which should be receiving all packets.
 	 */

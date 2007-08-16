@@ -73,8 +73,9 @@ extern char initial_stab[];
 
 #define HPTES_PER_GROUP 8
 
+#define HPTE_V_SSIZE_SHIFT	62
 #define HPTE_V_AVPN_SHIFT	7
-#define HPTE_V_AVPN		ASM_CONST(0xffffffffffffff80)
+#define HPTE_V_AVPN		ASM_CONST(0x3fffffffffffff80)
 #define HPTE_V_AVPN_VAL(x)	(((x) & HPTE_V_AVPN) >> HPTE_V_AVPN_SHIFT)
 #define HPTE_V_COMPARE(x,y)	(!(((x) ^ (y)) & HPTE_V_AVPN))
 #define HPTE_V_BOLTED		ASM_CONST(0x0000000000000010)
@@ -93,6 +94,9 @@ extern char initial_stab[];
 #define HPTE_R_C		ASM_CONST(0x0000000000000080)
 #define HPTE_R_R		ASM_CONST(0x0000000000000100)
 
+#define HPTE_V_1TB_SEG		ASM_CONST(0x4000000000000000)
+#define HPTE_V_VRMA_MASK	ASM_CONST(0x4001ffffff000000)
+
 /* Values for PP (assumes Ks=0, Kp=1) */
 /* pp0 will always be 0 for linux     */
 #define PP_RWXX	0	/* Supervisor read/write, User none */
@@ -102,12 +106,12 @@ extern char initial_stab[];
 
 #ifndef __ASSEMBLY__
 
-typedef struct {
+struct hash_pte {
 	unsigned long v;
 	unsigned long r;
-} hpte_t;
+};
 
-extern hpte_t *htab_address;
+extern struct hash_pte *htab_address;
 extern unsigned long htab_size_bytes;
 extern unsigned long htab_hash_mask;
 
@@ -150,6 +154,15 @@ struct mmu_psize_def
 #define MMU_PAGE_16M		4	/* 16M */
 #define MMU_PAGE_16G		5	/* 16G */
 #define MMU_PAGE_COUNT		6
+
+/*
+ * Segment sizes.
+ * These are the values used by hardware in the B field of
+ * SLB entries and the first dword of MMU hashtable entries.
+ * The B field is 2 bits; the values 2 and 3 are unused and reserved.
+ */
+#define MMU_SEGSIZE_256M	0
+#define MMU_SEGSIZE_1T		1
 
 #ifndef __ASSEMBLY__
 
@@ -249,6 +262,7 @@ extern void slb_initialize(void);
 extern void slb_flush_and_rebolt(void);
 extern void stab_initialize(unsigned long stab);
 
+extern void slb_vmalloc_update(void);
 #endif /* __ASSEMBLY__ */
 
 /*

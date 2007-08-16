@@ -16,6 +16,7 @@
 #include <linux/fs.h>
 #include <linux/pagemap.h>
 #include <linux/ctype.h>
+#include <linux/sched.h>
 #include "internal.h"
 
 static struct dentry *afs_lookup(struct inode *dir, struct dentry *dentry,
@@ -43,6 +44,7 @@ const struct file_operations afs_dir_file_operations = {
 	.open		= afs_dir_open,
 	.release	= afs_release,
 	.readdir	= afs_readdir,
+	.lock		= afs_lock,
 };
 
 const struct inode_operations afs_dir_inode_operations = {
@@ -497,7 +499,7 @@ static struct dentry *afs_lookup(struct inode *dir, struct dentry *dentry,
 
 	ASSERTCMP(dentry->d_inode, ==, NULL);
 
-	if (dentry->d_name.len > 255) {
+	if (dentry->d_name.len >= AFSNAMEMAX) {
 		_leave(" = -ENAMETOOLONG");
 		return ERR_PTR(-ENAMETOOLONG);
 	}
@@ -736,7 +738,7 @@ static int afs_mkdir(struct inode *dir, struct dentry *dentry, int mode)
 	       dvnode->fid.vid, dvnode->fid.vnode, dentry->d_name.name, mode);
 
 	ret = -ENAMETOOLONG;
-	if (dentry->d_name.len > 255)
+	if (dentry->d_name.len >= AFSNAMEMAX)
 		goto error;
 
 	key = afs_request_key(dvnode->volume->cell);
@@ -801,7 +803,7 @@ static int afs_rmdir(struct inode *dir, struct dentry *dentry)
 	       dvnode->fid.vid, dvnode->fid.vnode, dentry->d_name.name);
 
 	ret = -ENAMETOOLONG;
-	if (dentry->d_name.len > 255)
+	if (dentry->d_name.len >= AFSNAMEMAX)
 		goto error;
 
 	key = afs_request_key(dvnode->volume->cell);
@@ -847,7 +849,7 @@ static int afs_unlink(struct inode *dir, struct dentry *dentry)
 	       dvnode->fid.vid, dvnode->fid.vnode, dentry->d_name.name);
 
 	ret = -ENAMETOOLONG;
-	if (dentry->d_name.len > 255)
+	if (dentry->d_name.len >= AFSNAMEMAX)
 		goto error;
 
 	key = afs_request_key(dvnode->volume->cell);
@@ -921,7 +923,7 @@ static int afs_create(struct inode *dir, struct dentry *dentry, int mode,
 	       dvnode->fid.vid, dvnode->fid.vnode, dentry->d_name.name, mode);
 
 	ret = -ENAMETOOLONG;
-	if (dentry->d_name.len > 255)
+	if (dentry->d_name.len >= AFSNAMEMAX)
 		goto error;
 
 	key = afs_request_key(dvnode->volume->cell);
@@ -990,7 +992,7 @@ static int afs_link(struct dentry *from, struct inode *dir,
 	       dentry->d_name.name);
 
 	ret = -ENAMETOOLONG;
-	if (dentry->d_name.len > 255)
+	if (dentry->d_name.len >= AFSNAMEMAX)
 		goto error;
 
 	key = afs_request_key(dvnode->volume->cell);
@@ -1038,11 +1040,11 @@ static int afs_symlink(struct inode *dir, struct dentry *dentry,
 	       content);
 
 	ret = -ENAMETOOLONG;
-	if (dentry->d_name.len > 255)
+	if (dentry->d_name.len >= AFSNAMEMAX)
 		goto error;
 
 	ret = -EINVAL;
-	if (strlen(content) > 1023)
+	if (strlen(content) >= AFSPATHMAX)
 		goto error;
 
 	key = afs_request_key(dvnode->volume->cell);
@@ -1112,7 +1114,7 @@ static int afs_rename(struct inode *old_dir, struct dentry *old_dentry,
 	       new_dentry->d_name.name);
 
 	ret = -ENAMETOOLONG;
-	if (new_dentry->d_name.len > 255)
+	if (new_dentry->d_name.len >= AFSNAMEMAX)
 		goto error;
 
 	key = afs_request_key(orig_dvnode->volume->cell);

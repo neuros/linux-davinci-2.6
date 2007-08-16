@@ -23,6 +23,14 @@ config CRC16
 	  the kernel tree does. Such modules that use library CRC16
 	  functions require M here.
 
+config CRC_ITU_T
+	tristate "CRC ITU-T V.41 functions"
+	help
+	  This option is provided for the case where no in-kernel-tree
+	  modules require CRC ITU-T V.41 functions, but a module built outside
+	  the kernel tree does. Such modules that use library CRC ITU-T V.41
+	  functions require M here.
+
 config CRC32
 	tristate "CRC32 functions"
 	default y
@@ -32,6 +40,14 @@ config CRC32
 	  modules require CRC32 functions, but a module built outside the
 	  kernel tree does. Such modules that use library CRC32 functions
 	  require M here.
+
+config CRC7
+	tristate "CRC7 functions"
+	help
+	  This option is provided for the case where no in-kernel-tree
+	  modules require CRC7 functions, but a module built outside
+	  the kernel tree does. Such modules that use library CRC7
+	  functions require M here.
 
 config LIBCRC32C
 	tristate "CRC32c (Castagnoli, et al) Cyclic Redundancy-Check"
@@ -54,6 +70,12 @@ config ZLIB_INFLATE
 	tristate
 
 config ZLIB_DEFLATE
+	tristate
+
+config LZO_COMPRESS
+	tristate
+
+config LZO_DECOMPRESS
 	tristate
 
 #

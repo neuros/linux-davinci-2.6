@@ -1,12 +1,13 @@
 /*
  * drivers/net/ucc_geth_mii.c
  *
- * Gianfar Ethernet Driver -- MIIM bus implementation
- * Provides Bus interface for MIIM regs
+ * QE UCC Gigabit Ethernet Driver -- MII Management Bus Implementation
+ * Provides Bus interface for MII Management regs in the UCC register space
  *
- * Author: Li Yang
+ * Copyright (C) 2007 Freescale Semiconductor, Inc.
  *
- * Copyright (c) 2002-2004 Freescale Semiconductor, Inc.
+ * Authors: Li Yang <leoli@freescale.com>
+ *	    Kim Phillips <kim.phillips@freescale.com>
  *
  * This program is free software; you can redistribute  it and/or modify it
  * under  the terms of  the GNU General  Public License as published by the
@@ -53,8 +54,8 @@
 #define vdbg(format, arg...) do {} while(0)
 #endif
 
-#define DRV_DESC "QE UCC Ethernet Controller MII Bus"
-#define DRV_NAME "fsl-uec_mdio"
+#define MII_DRV_DESC "QE UCC Ethernet Controller MII Bus"
+#define MII_DRV_NAME "fsl-uec_mdio"
 
 /* Write value to the PHY for this device to the register at regnum, */
 /* waiting until the write is done before it returns.  All PHY */
@@ -259,10 +260,8 @@ static struct of_device_id uec_mdio_match[] = {
 	{},
 };
 
-MODULE_DEVICE_TABLE(of, uec_mdio_match);
-
 static struct of_platform_driver uec_mdio_driver = {
-	.name	= DRV_NAME,
+	.name	= MII_DRV_NAME,
 	.probe	= uec_mdio_probe,
 	.remove	= uec_mdio_remove,
 	.match_table	= uec_mdio_match,

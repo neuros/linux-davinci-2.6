@@ -71,12 +71,6 @@ INIT_MAP_BEYOND_END = BOOTBITMAP_SIZE + (PAGE_TABLE_SIZE + ALLOCATOR_SLOP)*PAGE_
 .section .text.head,"ax",@progbits
 ENTRY(startup_32)
 
-#ifdef CONFIG_PARAVIRT
-        movl %cs, %eax
-        testl $0x3, %eax
-        jnz startup_paravirt
-#endif
-
 /*
  * Set segments to known values.
  */
@@ -173,6 +167,12 @@ page_pde_offset = (__PAGE_OFFSET >> 20);
 #else
 .section .init.text,"ax",@progbits
 #endif
+
+	/* Do an early initialization of the fixmap area */
+	movl $(swapper_pg_dir - __PAGE_OFFSET), %edx
+	movl $(swapper_pg_pmd - __PAGE_OFFSET), %eax
+	addl $0x007, %eax			/* 0x007 = PRESENT+RW+USER */
+	movl %eax, 4092(%edx)
 
 #ifdef CONFIG_SMP
 ENTRY(startup_32_smp)
@@ -501,38 +501,6 @@ ignore_int:
 	iret
 
 .section .text
-#ifdef CONFIG_PARAVIRT
-startup_paravirt:
-	cld
- 	movl $(init_thread_union+THREAD_SIZE),%esp
-
-	/* We take pains to preserve all the regs. */
-	pushl	%edx
-	pushl	%ecx
-	pushl	%eax
-
-	pushl	$__start_paravirtprobe
-1:
-	movl	0(%esp), %eax
-	cmpl	$__stop_paravirtprobe, %eax
-	je	unhandled_paravirt
-	pushl	(%eax)
-	movl	8(%esp), %eax
-	call	*(%esp)
-	popl	%eax
-
-	movl	4(%esp), %eax
-	movl	8(%esp), %ecx
-	movl	12(%esp), %edx
-
-	addl	$4, (%esp)
-	jmp	1b
-
-unhandled_paravirt:
-	/* Nothing wanted us: we're screwed. */
-	ud2
-#endif
-
 /*
  * Real beginning of normal "text" segment
  */
@@ -542,8 +510,11 @@ ENTRY(_stext)
 /*
  * BSS section
  */
-.section ".bss.page_aligned","w"
+.section ".bss.page_aligned","wa"
+	.align PAGE_SIZE_asm
 ENTRY(swapper_pg_dir)
+	.fill 1024,4,0
+ENTRY(swapper_pg_pmd)
 	.fill 1024,4,0
 ENTRY(empty_zero_page)
 	.fill 4096,1,0
@@ -567,6 +538,8 @@ int_msg:
 fault_msg:
 	.ascii "Int %d: CR2 %p  err %p  EIP %p  CS %p  flags %p\n"
 	.asciz "Stack: %p %p %p %p %p %p %p %p\n"
+
+#include "../xen/xen-head.S"
 
 /*
  * The IDT and GDT 'descriptors' are a strange 48-bit object

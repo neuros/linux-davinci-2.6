@@ -114,9 +114,6 @@ config GENERIC_CALIBRATE_DELAY
 	bool
 	default y
 
-config GENERIC_BUST_SPINLOCK
-	bool
-
 config ARCH_MAY_HAVE_PC_FDC
 	bool
 
@@ -244,8 +241,20 @@ config ARCH_H720X
 
 config ARCH_IMX
 	bool "IMX"
+	select GENERIC_GPIO
+	select GENERIC_TIME
+	select GENERIC_CLOCKEVENTS
 	help
 	  Support for Motorola's i.MX family of processors (MX1, MXL).
+
+config ARCH_IOP13XX
+	bool "IOP13xx-based"
+	depends on MMU
+	select PLAT_IOP
+	select PCI
+	select ARCH_SUPPORTS_MSI
+	help
+	  Support for Intel's IOP13XX (XScale) family of processors.
 
 config ARCH_IOP32X
 	bool "IOP32x-based"
@@ -264,22 +273,12 @@ config ARCH_IOP33X
 	help
 	  Support for Intel's IOP33X (XScale) family of processors.
 
-config ARCH_IOP13XX
-	bool "IOP13xx-based"
+config ARCH_IXP23XX
+ 	bool "IXP23XX-based"
 	depends on MMU
-	select PLAT_IOP
-	select PCI
-	select ARCH_SUPPORTS_MSI
+ 	select PCI
 	help
-	  Support for Intel's IOP13XX (XScale) family of processors.
-
-config ARCH_IXP4XX
-	bool "IXP4xx-based"
-	depends on MMU
-	select GENERIC_TIME
-	select GENERIC_CLOCKEVENTS
-	help
-	  Support for Intel's IXP4XX (XScale) family of processors.
+	  Support for Intel's IXP23xx (XScale) family of processors.
 
 config ARCH_IXP2000
 	bool "IXP2400/2800-based"
@@ -288,12 +287,14 @@ config ARCH_IXP2000
 	help
 	  Support for Intel's IXP2400/2800 (XScale) family of processors.
 
-config ARCH_IXP23XX
- 	bool "IXP23XX-based"
+config ARCH_IXP4XX
+	bool "IXP4xx-based"
 	depends on MMU
- 	select PCI
+	select GENERIC_GPIO
+	select GENERIC_TIME
+	select GENERIC_CLOCKEVENTS
 	help
-	  Support for Intel's IXP23xx (XScale) family of processors.
+	  Support for Intel's IXP4XX (XScale) family of processors.
 
 config ARCH_L7200
 	bool "LinkUp-L7200"
@@ -308,6 +309,13 @@ config ARCH_L7200
 	  If you have any questions or comments about the Linux kernel port
 	  to this board, send e-mail to <sjhill@cotw.com>.
 
+config ARCH_KS8695
+	bool "Micrel/Kendin KS8695"
+	select GENERIC_GPIO
+	help
+	  Support for Micrel/Kendin KS8695 "Centaur" (ARM922T) based
+	  System-on-Chip devices.
+
 config ARCH_NS9XXX
 	bool "NetSilicon NS9xxx"
 	help
@@ -315,6 +323,12 @@ config ARCH_NS9XXX
 	  System.
 
 	  <http://www.digi.com/products/microprocessors/index.jsp>
+
+config ARCH_MXC
+	bool "Freescale MXC/iMX-based"
+	select ARCH_MTD_XIP
+	help
+	  Support for Freescale MXC/iMX-based family of processors
 
 config ARCH_PNX4008
 	bool "Philips Nexperia PNX4008 Mobile"
@@ -327,6 +341,7 @@ config ARCH_PXA
 	select ARCH_MTD_XIP
 	select GENERIC_GPIO
 	select GENERIC_TIME
+	select GENERIC_CLOCKEVENTS
 	help
 	  Support for Intel's PXA2XX processor line.
 
@@ -354,7 +369,6 @@ config ARCH_SA1100
 config ARCH_S3C2410
 	bool "Samsung S3C2410, S3C2412, S3C2413, S3C2440, S3C2442, S3C2443"
 	select GENERIC_GPIO
-	select GENERIC_TIME
 	help
 	  Samsung S3C2410X CPU based systems, such as the Simtec Electronics
 	  BAST (<http://www.simtec.co.uk/products/EB110ITX/>), the IPAQ 1940 or
@@ -377,16 +391,21 @@ config ARCH_LH7A40X
 	  core with a wide array of integrated devices for
 	  hand-held and low-power applications.
 
+config ARCH_DAVINCI
+	bool "TI DaVinci"
+	select GENERIC_TIME
+	select GENERIC_CLOCKEVENTS
+	select GENERIC_GPIO
+	help
+	  Support for TI's DaVinci platform.
+
 config ARCH_OMAP
 	bool "TI OMAP"
 	select GENERIC_GPIO
 	select GENERIC_TIME
+	select GENERIC_CLOCKEVENTS
 	help
-	  Support for TI's OMAP platform (OMAP1 and OMAP2).
-
-config ARCH_DAVINCI
-	bool "TI DaVinci"
-	select GENERIC_GPIO
+	  Support for TI's OMAP platform (OMAP1, OMAP2 and OMAP3).
 
 endchoice
 
@@ -421,6 +440,7 @@ source "arch/arm/mach-omap1/Kconfig"
 source "arch/arm/mach-omap2/Kconfig"
 
 source "arch/arm/plat-s3c24xx/Kconfig"
+source "arch/arm/plat-s3c/Kconfig"
 
 if ARCH_S3C2410
 source "arch/arm/mach-s3c2400/Kconfig"
@@ -445,11 +465,15 @@ source "arch/arm/mach-realview/Kconfig"
 
 source "arch/arm/mach-at91/Kconfig"
 
+source "arch/arm/plat-mxc/Kconfig"
+
 source "arch/arm/mach-netx/Kconfig"
 
 source "arch/arm/mach-ns9xxx/Kconfig"
 
 source "arch/arm/mach-davinci/Kconfig"
+
+source "arch/arm/mach-ks8695/Kconfig"
 
 # Definitions to make life easier
 config ARCH_ACORN
@@ -511,7 +535,7 @@ config ISA_DMA_API
 	bool
 
 config PCI
-	bool "PCI support" if ARCH_INTEGRATOR_AP || ARCH_VERSATILE_PB || ARCH_IXP4XX
+	bool "PCI support" if ARCH_INTEGRATOR_AP || ARCH_VERSATILE_PB || ARCH_IXP4XX || ARCH_KS8695
 	help
 	  Find out whether you have a PCI motherboard. PCI is the name of a
 	  bus system, i.e. the way the CPU talks to the other stuff inside
@@ -522,6 +546,9 @@ config PCI
 	  <http://www.tldp.org/docs.html#howto>, contains valuable
 	  information about which PCI hardware does work under Linux and which
 	  doesn't.
+
+config PCI_SYSCALL
+	def_bool PCI
 
 # Select the host bridge type
 config PCI_HOST_VIA82C505
@@ -680,7 +707,8 @@ config LEDS
 		   ARCH_LUBBOCK || MACH_MAINSTONE || ARCH_NETWINDER || \
 		   ARCH_OMAP || ARCH_P720T || ARCH_PXA_IDP || \
 		   ARCH_SA1100 || ARCH_SHARK || ARCH_VERSATILE || \
-		   ARCH_AT91 || MACH_TRIZEPS4 || ARCH_DAVINCI
+		   ARCH_AT91 || MACH_TRIZEPS4 || ARCH_DAVINCI || \
+		   ARCH_KS8695
 	help
 	  If you say Y here, the LEDs on your machine will be used
 	  to provide useful information about your current system status.
@@ -916,7 +944,7 @@ config FPE_FASTFPE
 
 config VFP
 	bool "VFP-format floating point maths"
-	depends on CPU_V6 || CPU_ARM926T
+	depends on CPU_V6 || CPU_ARM926T || CPU_V7
 	help
 	  Say Y to include VFP support code in the kernel. This is needed
 	  if your hardware includes a VFP unit.
@@ -925,6 +953,18 @@ config VFP
 	  release notes and additional status information.
 
 	  Say N if your target does not have VFP hardware.
+
+config VFPv3
+	bool
+	depends on VFP
+	default y if CPU_V7
+
+config NEON
+	bool "NEON Advanced SIMD Extension support"
+	depends on VFPv3 && CPU_V7
+	help
+	  Say Y to include support code for NEON, the ARMv7 Advanced SIMD
+	  Extensions.
 
 endmenu
 
@@ -967,8 +1007,6 @@ source "drivers/parport/Kconfig"
 source "drivers/pnp/Kconfig"
 
 source "drivers/block/Kconfig"
-
-source "drivers/acorn/block/Kconfig"
 
 if PCMCIA || ARCH_CLPS7500 || ARCH_IOP32X || ARCH_IOP33X || ARCH_IXP4XX \
 	|| ARCH_L7200 || ARCH_LH7A40X || ARCH_PXA || ARCH_RPC \
@@ -1028,6 +1066,8 @@ source "drivers/usb/Kconfig"
 source "drivers/mmc/Kconfig"
 
 source "drivers/rtc/Kconfig"
+
+source "drivers/dma/Kconfig"
 
 if ARCH_OMAP
 source "drivers/cbus/Kconfig"

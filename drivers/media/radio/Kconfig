@@ -2,8 +2,14 @@
 # Multimedia Video device configuration
 #
 
-menu "Radio Adapters"
+menuconfig RADIO_ADAPTERS
+	bool "Radio Adapters"
 	depends on VIDEO_DEV
+	default y
+	---help---
+	  Say Y here to enable selecting AM/FM radio adapters.
+
+if RADIO_ADAPTERS && VIDEO_DEV
 
 config RADIO_CADET
 	tristate "ADS Cadet AM/FM Tuner"
@@ -333,8 +339,8 @@ config RADIO_TEA5761
 	  module will be called radio-tea5761.
 
 config USB_DSBR
-	tristate "D-Link USB FM radio support (EXPERIMENTAL)"
-	depends on USB && VIDEO_V4L2 && EXPERIMENTAL
+	tristate "D-Link/GemTek USB FM radio support"
+	depends on USB && VIDEO_V4L2
 	---help---
 	  Say Y here if you want to connect this type of radio to your
 	  computer's USB port. Note that the audio is not digital, and
@@ -343,4 +349,5 @@ config USB_DSBR
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called dsbr100.
-endmenu
+
+endif # RADIO_ADAPTERS

@@ -21,6 +21,7 @@
 #include <linux/init.h>
 #include <linux/blkdev.h>
 #include <linux/buffer_head.h>
+#include <linux/exportfs.h>
 #include <linux/vfs.h>
 #include <linux/mnt_namespace.h>
 #include <linux/mount.h>
@@ -511,14 +512,12 @@ static void init_once(void *foo, struct kmem_cache * cachep, unsigned long flags
 {
 	struct reiserfs_inode_info *ei = (struct reiserfs_inode_info *)foo;
 
-	if (flags & SLAB_CTOR_CONSTRUCTOR) {
-		INIT_LIST_HEAD(&ei->i_prealloc_list);
-		inode_init_once(&ei->vfs_inode);
+	INIT_LIST_HEAD(&ei->i_prealloc_list);
+	inode_init_once(&ei->vfs_inode);
 #ifdef CONFIG_REISERFS_FS_POSIX_ACL
-		ei->i_acl_access = NULL;
-		ei->i_acl_default = NULL;
+	ei->i_acl_access = NULL;
+	ei->i_acl_default = NULL;
 #endif
-	}
 }
 
 static int init_inodecache(void)
@@ -528,7 +527,7 @@ static int init_inodecache(void)
 							 reiserfs_inode_info),
 						  0, (SLAB_RECLAIM_ACCOUNT|
 							SLAB_MEM_SPREAD),
-						  init_once, NULL);
+						  init_once);
 	if (reiserfs_inode_cachep == NULL)
 		return -ENOMEM;
 	return 0;

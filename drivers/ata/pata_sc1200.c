@@ -40,7 +40,7 @@
 #include <linux/libata.h>
 
 #define DRV_NAME	"sc1200"
-#define DRV_VERSION	"0.2.4"
+#define DRV_VERSION	"0.2.5"
 
 #define SC1200_REV_A	0x00
 #define SC1200_REV_B1	0x01
@@ -185,7 +185,7 @@ static struct scsi_host_template sc1200_sht = {
 	.queuecommand		= ata_scsi_queuecmd,
 	.can_queue		= ATA_DEF_QUEUE,
 	.this_id		= ATA_SHT_THIS_ID,
-	.sg_tablesize		= LIBATA_MAX_PRD,
+	.sg_tablesize		= LIBATA_DUMB_MAX_PRD,
 	.cmd_per_lun		= ATA_SHT_CMD_PER_LUN,
 	.emulated		= ATA_SHT_EMULATED,
 	.use_clustering		= ATA_SHT_USE_CLUSTERING,
@@ -194,10 +194,6 @@ static struct scsi_host_template sc1200_sht = {
 	.slave_configure	= ata_scsi_slave_config,
 	.slave_destroy		= ata_scsi_slave_destroy,
 	.bios_param		= ata_std_bios_param,
-#ifdef CONFIG_PM
-	.resume			= ata_scsi_device_resume,
-	.suspend		= ata_scsi_device_suspend,
-#endif
 };
 
 static struct ata_port_operations sc1200_port_ops = {
@@ -223,7 +219,7 @@ static struct ata_port_operations sc1200_port_ops = {
 	.bmdma_stop	= ata_bmdma_stop,
 	.bmdma_status 	= ata_bmdma_status,
 
-	.qc_prep 	= ata_qc_prep,
+	.qc_prep 	= ata_dumb_qc_prep,
 	.qc_issue	= sc1200_qc_issue_prot,
 
 	.data_xfer	= ata_data_xfer,
@@ -247,18 +243,18 @@ static struct ata_port_operations sc1200_port_ops = {
 
 static int sc1200_init_one(struct pci_dev *dev, const struct pci_device_id *id)
 {
-	static struct ata_port_info info = {
+	static const struct ata_port_info info = {
 		.sht = &sc1200_sht,
-		.flags = ATA_FLAG_SLAVE_POSS|ATA_FLAG_SRST,
+		.flags = ATA_FLAG_SLAVE_POSS,
 		.pio_mask = 0x1f,
 		.mwdma_mask = 0x07,
 		.udma_mask = 0x07,
 		.port_ops = &sc1200_port_ops
 	};
-	static struct ata_port_info *port_info[2] = { &info, &info };
-
 	/* Can't enable port 2 yet, see top comments */
-	return ata_pci_init_one(dev, port_info, 1);
+	const struct ata_port_info *ppi[] = { &info, &ata_dummy_port_info };
+
+	return ata_pci_init_one(dev, ppi);
 }
 
 static const struct pci_device_id sc1200[] = {

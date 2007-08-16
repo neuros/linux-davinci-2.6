@@ -27,138 +27,6 @@
 			       "i" (ASI_PHYS_BYPASS_EC_E) \
 			     : "memory")
 
-/* Fire config space address format is nearly identical to
- * that of SCHIZO and PSYCHO, except that in order to accomodate
- * PCI-E extended config space the encoding can handle 12 bits
- * of register address:
- *
- *  32     28 27 20 19    15 14      12 11  2  1 0
- * -------------------------------------------------
- * |0 0 0 0 0| bus | device | function | reg | 0 0 |
- * -------------------------------------------------
- */
-#define FIRE_CONFIG_BASE(PBM)	((PBM)->config_space)
-#define FIRE_CONFIG_ENCODE(BUS, DEVFN, REG)	\
-	(((unsigned long)(BUS)   << 20) |	\
-	 ((unsigned long)(DEVFN) << 12)  |	\
-	 ((unsigned long)(REG)))
-
-static void *fire_pci_config_mkaddr(struct pci_pbm_info *pbm,
-				      unsigned char bus,
-				      unsigned int devfn,
-				      int where)
-{
-	if (!pbm)
-		return NULL;
-	return (void *)
-		(FIRE_CONFIG_BASE(pbm) |
-		 FIRE_CONFIG_ENCODE(bus, devfn, where));
-}
-
-/* FIRE PCI configuration space accessors. */
-
-static int fire_read_pci_cfg(struct pci_bus *bus_dev, unsigned int devfn,
-			     int where, int size, u32 *value)
-{
-	struct pci_pbm_info *pbm = bus_dev->sysdata;
-	unsigned char bus = bus_dev->number;
-	u32 *addr;
-	u16 tmp16;
-	u8 tmp8;
-
-	if (bus_dev == pbm->pci_bus && devfn == 0x00)
-		return pci_host_bridge_read_pci_cfg(bus_dev, devfn, where,
-						    size, value);
-	switch (size) {
-	case 1:
-		*value = 0xff;
-		break;
-	case 2:
-		*value = 0xffff;
-		break;
-	case 4:
-		*value = 0xffffffff;
-		break;
-	}
-
-	addr = fire_pci_config_mkaddr(pbm, bus, devfn, where);
-	if (!addr)
-		return PCIBIOS_SUCCESSFUL;
-
-	switch (size) {
-	case 1:
-		pci_config_read8((u8 *)addr, &tmp8);
-		*value = tmp8;
-		break;
-
-	case 2:
-		if (where & 0x01) {
-			printk("pci_read_config_word: misaligned reg [%x]\n",
-			       where);
-			return PCIBIOS_SUCCESSFUL;
-		}
-		pci_config_read16((u16 *)addr, &tmp16);
-		*value = tmp16;
-		break;
-
-	case 4:
-		if (where & 0x03) {
-			printk("pci_read_config_dword: misaligned reg [%x]\n",
-			       where);
-			return PCIBIOS_SUCCESSFUL;
-		}
-
-		pci_config_read32(addr, value);
-		break;
-	}
-	return PCIBIOS_SUCCESSFUL;
-}
-
-static int fire_write_pci_cfg(struct pci_bus *bus_dev, unsigned int devfn,
-			      int where, int size, u32 value)
-{
-	struct pci_pbm_info *pbm = bus_dev->sysdata;
-	unsigned char bus = bus_dev->number;
-	u32 *addr;
-
-	if (bus_dev == pbm->pci_bus && devfn == 0x00)
-		return pci_host_bridge_write_pci_cfg(bus_dev, devfn, where,
-						     size, value);
-	addr = fire_pci_config_mkaddr(pbm, bus, devfn, where);
-	if (!addr)
-		return PCIBIOS_SUCCESSFUL;
-
-	switch (size) {
-	case 1:
-		pci_config_write8((u8 *)addr, value);
-		break;
-
-	case 2:
-		if (where & 0x01) {
-			printk("pci_write_config_word: misaligned reg [%x]\n",
-			       where);
-			return PCIBIOS_SUCCESSFUL;
-		}
-		pci_config_write16((u16 *)addr, value);
-		break;
-
-	case 4:
-		if (where & 0x03) {
-			printk("pci_write_config_dword: misaligned reg [%x]\n",
-			       where);
-			return PCIBIOS_SUCCESSFUL;
-		}
-
-		pci_config_write32(addr, value);
-	}
-	return PCIBIOS_SUCCESSFUL;
-}
-
-static struct pci_ops pci_fire_ops = {
-	.read	=	fire_read_pci_cfg,
-	.write	=	fire_write_pci_cfg,
-};
-
 static void pci_fire_scan_bus(struct pci_pbm_info *pbm)
 {
 	pbm->pci_bus = pci_scan_one_pbm(pbm);
@@ -169,14 +37,14 @@ static void pci_fire_scan_bus(struct pci_pbm_info *pbm)
 #define FIRE_IOMMU_CONTROL	0x40000UL
 #define FIRE_IOMMU_TSBBASE	0x40008UL
 #define FIRE_IOMMU_FLUSH	0x40100UL
-#define FIRE_IOMMU_FLUSHINV	0x40100UL
+#define FIRE_IOMMU_FLUSHINV	0x40108UL
 
-static void pci_fire_pbm_iommu_init(struct pci_pbm_info *pbm)
+static int pci_fire_pbm_iommu_init(struct pci_pbm_info *pbm)
 {
 	struct iommu *iommu = pbm->iommu;
 	u32 vdma[2], dma_mask;
 	u64 control;
-	int tsbsize;
+	int tsbsize, err;
 
 	/* No virtual-dma property on these guys, use largest size.  */
 	vdma[0] = 0xc0000000; /* base */
@@ -200,7 +68,9 @@ static void pci_fire_pbm_iommu_init(struct pci_pbm_info *pbm)
 	 */
 	fire_write(iommu->iommu_flushinv, ~(u64)0);
 
-	pci_iommu_table_init(iommu, tsbsize * 8 * 1024, vdma[0], dma_mask);
+	err = iommu_table_init(iommu, tsbsize * 8 * 1024, vdma[0], dma_mask);
+	if (err)
+		return err;
 
 	fire_write(iommu->iommu_tsbbase, __pa(iommu->page_table) | 0x7UL);
 
@@ -210,6 +80,8 @@ static void pci_fire_pbm_iommu_init(struct pci_pbm_info *pbm)
 		    0x00000002 /* Bypass enable */		|
 		    0x00000001 /* Translation enable */);
 	fire_write(iommu->iommu_control, control);
+
+	return 0;
 }
 
 /* Based at pbm->controller_regs */
@@ -299,8 +171,8 @@ static void pci_fire_hw_init(struct pci_pbm_info *pbm)
 	fire_write(pbm->pbm_regs + FIRE_PEC_IENAB, ~(u64)0);
 }
 
-static void pci_fire_pbm_init(struct pci_controller_info *p,
-			      struct device_node *dp, u32 portid)
+static int pci_fire_pbm_init(struct pci_controller_info *p,
+			     struct device_node *dp, u32 portid)
 {
 	const struct linux_prom64_registers *regs;
 	struct pci_pbm_info *pbm;
@@ -314,7 +186,8 @@ static void pci_fire_pbm_init(struct pci_controller_info *p,
 	pci_pbm_root = pbm;
 
 	pbm->scan_bus = pci_fire_scan_bus;
-	pbm->pci_ops = &pci_fire_ops;
+	pbm->pci_ops = &sun4u_pci_ops;
+	pbm->config_space_reg_bits = 12;
 
 	pbm->index = pci_num_pbms++;
 
@@ -334,7 +207,8 @@ static void pci_fire_pbm_init(struct pci_controller_info *p,
 	pci_get_pbm_props(pbm);
 
 	pci_fire_hw_init(pbm);
-	pci_fire_pbm_iommu_init(pbm);
+
+	return pci_fire_pbm_iommu_init(pbm);
 }
 
 static inline int portid_compare(u32 x, u32 y)
@@ -353,7 +227,8 @@ void fire_pci_init(struct device_node *dp, const char *model_name)
 
 	for (pbm = pci_pbm_root; pbm; pbm = pbm->next) {
 		if (portid_compare(pbm->portid, portid)) {
-			pci_fire_pbm_init(pbm->parent, dp, portid);
+			if (pci_fire_pbm_init(pbm->parent, dp, portid))
+				goto fatal_memory_error;
 			return;
 		}
 	}
@@ -381,7 +256,9 @@ void fire_pci_init(struct device_node *dp, const char *model_name)
 	 */
 	pci_memspace_mask = 0x7fffffffUL;
 
-	pci_fire_pbm_init(p, dp, portid);
+	if (pci_fire_pbm_init(p, dp, portid))
+		goto fatal_memory_error;
+
 	return;
 
 fatal_memory_error:

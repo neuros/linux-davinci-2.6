@@ -51,7 +51,6 @@
 #include <linux/types.h>
 #include <linux/fcntl.h>
 #include <linux/interrupt.h>
-#include <linux/ptrace.h>
 #include <linux/ioport.h>
 #include <linux/in.h>
 #include <linux/slab.h>
@@ -69,7 +68,7 @@
 #include <asm/ecard.h>
 #include <asm/io.h>
 
-static char version[] __initdata = "ether3 ethernet driver (c) 1995-2000 R.M.King v1.17\n";
+static char version[] __devinitdata = "ether3 ethernet driver (c) 1995-2000 R.M.King v1.17\n";
 
 #include "ether3.h"
 
@@ -464,7 +463,7 @@ static void ether3_setmulticastlist(struct net_device *dev)
 	if (dev->flags & IFF_PROMISC) {
 		/* promiscuous mode */
 		priv(dev)->regs.config1 |= CFG1_RECVPROMISC;
-	} else if (dev->flags & IFF_ALLMULTI) {
+	} else if (dev->flags & IFF_ALLMULTI || dev->mc_count) {
 		priv(dev)->regs.config1 |= CFG1_RECVSPECBRMULTI;
 	} else
 		priv(dev)->regs.config1 |= CFG1_RECVSPECBROAD;
@@ -793,8 +792,7 @@ ether3_probe(struct expansion_card *ec, const struct ecard_id *id)
 	SET_MODULE_OWNER(dev);
 	SET_NETDEV_DEV(dev, &ec->dev);
 
-	priv(dev)->base = ioremap(ecard_resource_start(ec, ECARD_RES_MEMC),
-				  ecard_resource_len(ec, ECARD_RES_MEMC));
+	priv(dev)->base = ecardm_iomap(ec, ECARD_RES_MEMC, 0, 0);
 	if (!priv(dev)->base) {
 		ret = -ENOMEM;
 		goto free;
@@ -869,8 +867,6 @@ ether3_probe(struct expansion_card *ec, const struct ecard_id *id)
 	return 0;
 
  free:
-	if (priv(dev)->base)
-		iounmap(priv(dev)->base);
 	free_netdev(dev);
  release:
 	ecard_release_resources(ec);
@@ -885,7 +881,6 @@ static void __devexit ether3_remove(struct expansion_card *ec)
 	ecard_set_drvdata(ec, NULL);
 
 	unregister_netdev(dev);
-	iounmap(priv(dev)->base);
 	free_netdev(dev);
 	ecard_release_resources(ec);
 }

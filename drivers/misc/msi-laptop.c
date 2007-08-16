@@ -23,6 +23,8 @@
  * msi-laptop.c - MSI S270 laptop support. This laptop is sold under
  * various brands, including "Cytron/TCM/Medion/Tchibo MD96100".
  *
+ * Driver also supports S271, S420 models.
+ *
  * This driver exports a few files in /sys/devices/platform/msi-laptop-pf/:
  *
  *   lcd_level - Screen brightness: contains a single integer in the
@@ -85,7 +87,7 @@ static int set_lcd_level(int level)
 	buf[0] = 0x80;
 	buf[1] = (u8) (level*31);
 
-	return ec_transaction(MSI_EC_COMMAND_LCD_LEVEL, buf, sizeof(buf), NULL, 0);
+	return ec_transaction(MSI_EC_COMMAND_LCD_LEVEL, buf, sizeof(buf), NULL, 0, 1);
 }
 
 static int get_lcd_level(void)
@@ -93,7 +95,7 @@ static int get_lcd_level(void)
 	u8 wdata = 0, rdata;
 	int result;
 
-	result = ec_transaction(MSI_EC_COMMAND_LCD_LEVEL, &wdata, 1, &rdata, 1);
+	result = ec_transaction(MSI_EC_COMMAND_LCD_LEVEL, &wdata, 1, &rdata, 1, 1);
 	if (result < 0)
 		return result;
 
@@ -105,7 +107,7 @@ static int get_auto_brightness(void)
 	u8 wdata = 4, rdata;
 	int result;
 
-	result = ec_transaction(MSI_EC_COMMAND_LCD_LEVEL, &wdata, 1, &rdata, 1);
+	result = ec_transaction(MSI_EC_COMMAND_LCD_LEVEL, &wdata, 1, &rdata, 1, 1);
 	if (result < 0)
 		return result;
 
@@ -119,14 +121,14 @@ static int set_auto_brightness(int enable)
 
 	wdata[0] = 4;
 
-	result = ec_transaction(MSI_EC_COMMAND_LCD_LEVEL, wdata, 1, &rdata, 1);
+	result = ec_transaction(MSI_EC_COMMAND_LCD_LEVEL, wdata, 1, &rdata, 1, 1);
 	if (result < 0)
 		return result;
 
 	wdata[0] = 0x84;
 	wdata[1] = (rdata & 0xF7) | (enable ? 8 : 0);
 
-	return ec_transaction(MSI_EC_COMMAND_LCD_LEVEL, wdata, 2, NULL, 0);
+	return ec_transaction(MSI_EC_COMMAND_LCD_LEVEL, wdata, 2, NULL, 0, 1);
 }
 
 static int get_wireless_state(int *wlan, int *bluetooth)
@@ -134,7 +136,7 @@ static int get_wireless_state(int *wlan, int *bluetooth)
 	u8 wdata = 0, rdata;
 	int result;
 
-	result = ec_transaction(MSI_EC_COMMAND_WIRELESS, &wdata, 1, &rdata, 1);
+	result = ec_transaction(MSI_EC_COMMAND_WIRELESS, &wdata, 1, &rdata, 1, 1);
 	if (result < 0)
 		return -1;
 
@@ -281,24 +283,55 @@ static struct platform_device *msipf_device;
 
 /* Initialization */
 
+static int dmi_check_cb(struct dmi_system_id *id)
+{
+        printk("msi-laptop: Identified laptop model '%s'.\n", id->ident);
+        return 0;
+}
+
 static struct dmi_system_id __initdata msi_dmi_table[] = {
 	{
 		.ident = "MSI S270",
 		.matches = {
 			DMI_MATCH(DMI_SYS_VENDOR, "MICRO-STAR INT'L CO.,LTD"),
 			DMI_MATCH(DMI_PRODUCT_NAME, "MS-1013"),
-		}
+			DMI_MATCH(DMI_PRODUCT_VERSION, "0131"),
+			DMI_MATCH(DMI_CHASSIS_VENDOR, "MICRO-STAR INT'L CO.,LTD")
+		},
+		.callback = dmi_check_cb
+	},
+	{
+		.ident = "MSI S271",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "Micro-Star International"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "MS-1058"),
+			DMI_MATCH(DMI_PRODUCT_VERSION, "0581"),
+			DMI_MATCH(DMI_BOARD_NAME, "MS-1058")
+		},
+		.callback = dmi_check_cb
+	},
+	{
+		.ident = "MSI S420",
+		.matches = {
+			DMI_MATCH(DMI_SYS_VENDOR, "Micro-Star International"),
+			DMI_MATCH(DMI_PRODUCT_NAME, "MS-1412"),
+			DMI_MATCH(DMI_BOARD_VENDOR, "MSI"),
+			DMI_MATCH(DMI_BOARD_NAME, "MS-1412")
+		},
+		.callback = dmi_check_cb
 	},
 	{
 		.ident = "Medion MD96100",
 		.matches = {
 			DMI_MATCH(DMI_SYS_VENDOR, "NOTEBOOK"),
 			DMI_MATCH(DMI_PRODUCT_NAME, "SAM2000"),
-		}
+			DMI_MATCH(DMI_PRODUCT_VERSION, "0131"),
+			DMI_MATCH(DMI_CHASSIS_VENDOR, "MICRO-STAR INT'L CO.,LTD")
+		},
+		.callback = dmi_check_cb
 	},
 	{ }
 };
-
 
 static int __init msi_init(void)
 {
@@ -394,3 +427,8 @@ MODULE_AUTHOR("Lennart Poettering");
 MODULE_DESCRIPTION("MSI Laptop Support");
 MODULE_VERSION(MSI_DRIVER_VERSION);
 MODULE_LICENSE("GPL");
+
+MODULE_ALIAS("dmi:*:svnMICRO-STARINT'LCO.,LTD:pnMS-1013:pvr0131*:cvnMICRO-STARINT'LCO.,LTD:ct10:*");
+MODULE_ALIAS("dmi:*:svnMicro-StarInternational:pnMS-1058:pvr0581:rvnMSI:rnMS-1058:*:ct10:*");
+MODULE_ALIAS("dmi:*:svnMicro-StarInternational:pnMS-1412:*:rvnMSI:rnMS-1412:*:cvnMICRO-STARINT'LCO.,LTD:ct10:*");
+MODULE_ALIAS("dmi:*:svnNOTEBOOK:pnSAM2000:pvr0131*:cvnMICRO-STARINT'LCO.,LTD:ct10:*");

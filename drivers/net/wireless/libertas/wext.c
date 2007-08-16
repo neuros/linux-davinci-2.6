@@ -17,10 +17,17 @@
 #include "defs.h"
 #include "dev.h"
 #include "join.h"
-#include "version.h"
 #include "wext.h"
 #include "assoc.h"
 
+
+/**
+ * the rates supported by the card
+ */
+static u8 libertas_wlan_data_rates[WLAN_SUPPORTED_RATES] =
+    { 0x02, 0x04, 0x0B, 0x16, 0x00, 0x0C, 0x12,
+      0x18, 0x24, 0x30, 0x48, 0x60, 0x6C, 0x00
+};
 
 /**
  *  @brief Convert mw value to dbm value
@@ -103,8 +110,8 @@ struct chan_freq_power *libertas_find_cfp_by_band_and_channel(wlan_adapter * ada
 	}
 
 	if (!cfp && channel)
-		lbs_pr_debug(1, "libertas_find_cfp_by_band_and_channel(): cannot find "
-		       "cfp by band %d & channel %d\n", band, channel);
+		lbs_deb_wext("libertas_find_cfp_by_band_and_channel: can't find "
+		       "cfp by band %d / channel %d\n", band, channel);
 
 	return cfp;
 }
@@ -144,113 +151,12 @@ static struct chan_freq_power *find_cfp_by_band_and_freq(wlan_adapter * adapter,
 	}
 
 	if (!cfp && freq)
-		lbs_pr_debug(1, "find_cfp_by_band_and_freql(): cannot find cfp by "
-		       "band %d & freq %d\n", band, freq);
+		lbs_deb_wext("find_cfp_by_band_and_freql: can't find cfp by "
+		       "band %d / freq %d\n", band, freq);
 
 	return cfp;
 }
 
-static int updatecurrentchannel(wlan_private * priv)
-{
-	int ret;
-
-	/*
-	 ** the channel in f/w could be out of sync, get the current channel
-	 */
-	ret = libertas_prepare_and_send_command(priv, cmd_802_11_rf_channel,
-				    cmd_opt_802_11_rf_channel_get,
-				    cmd_option_waitforrsp, 0, NULL);
-
-	lbs_pr_debug(1, "Current channel = %d\n",
-	       priv->adapter->curbssparams.channel);
-
-	return ret;
-}
-
-static int setcurrentchannel(wlan_private * priv, int channel)
-{
-	lbs_pr_debug(1, "Set channel = %d\n", channel);
-
-	/*
-	 **  Current channel is not set to adhocchannel requested, set channel
-	 */
-	return (libertas_prepare_and_send_command(priv, cmd_802_11_rf_channel,
-				      cmd_opt_802_11_rf_channel_set,
-				      cmd_option_waitforrsp, 0, &channel));
-}
-
-static int changeadhocchannel(wlan_private * priv, int channel)
-{
-	int ret = 0;
-	wlan_adapter *adapter = priv->adapter;
-
-	adapter->adhocchannel = channel;
-
-	updatecurrentchannel(priv);
-
-	if (adapter->curbssparams.channel == adapter->adhocchannel) {
-		/* adhocchannel is set to the current channel already */
-		LEAVE();
-		return 0;
-	}
-
-	lbs_pr_debug(1, "Updating channel from %d to %d\n",
-	       adapter->curbssparams.channel, adapter->adhocchannel);
-
-	setcurrentchannel(priv, adapter->adhocchannel);
-
-	updatecurrentchannel(priv);
-
-	if (adapter->curbssparams.channel != adapter->adhocchannel) {
-		lbs_pr_debug(1, "failed to updated channel to %d, channel = %d\n",
-		       adapter->adhocchannel, adapter->curbssparams.channel);
-		LEAVE();
-		return -1;
-	}
-
-	if (adapter->connect_status == libertas_connected) {
-		int i;
-		struct WLAN_802_11_SSID curadhocssid;
-
-		lbs_pr_debug(1, "channel Changed while in an IBSS\n");
-
-		/* Copy the current ssid */
-		memcpy(&curadhocssid, &adapter->curbssparams.ssid,
-		       sizeof(struct WLAN_802_11_SSID));
-
-		/* Exit Adhoc mode */
-		lbs_pr_debug(1, "In changeadhocchannel(): Sending Adhoc Stop\n");
-		ret = libertas_stop_adhoc_network(priv);
-
-		if (ret) {
-			LEAVE();
-			return ret;
-		}
-		/* Scan for the network, do not save previous results.  Stale
-		 *   scan data will cause us to join a non-existant adhoc network
-		 */
-		libertas_send_specific_SSID_scan(priv, &curadhocssid, 0);
-
-		// find out the BSSID that matches the current SSID
-		i = libertas_find_SSID_in_list(adapter, &curadhocssid, NULL,
-				   wlan802_11ibss);
-
-		if (i >= 0) {
-			lbs_pr_debug(1, "SSID found at %d in List,"
-			       "so join\n", i);
-			libertas_join_adhoc_network(priv, &adapter->scantable[i]);
-		} else {
-			// else send START command
-			lbs_pr_debug(1, "SSID not found in list, "
-			       "so creating adhoc with ssid = %s\n",
-			       curadhocssid.ssid);
-			libertas_start_adhoc_network(priv, &curadhocssid);
-		}		// end of else (START command)
-	}
-
-	LEAVE();
-	return 0;
-}
 
 /**
  *  @brief Set Radio On/OFF
@@ -264,10 +170,10 @@ int wlan_radio_ioctl(wlan_private * priv, u8 option)
 	int ret = 0;
 	wlan_adapter *adapter = priv->adapter;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	if (adapter->radioon != option) {
-		lbs_pr_debug(1, "Switching %s the Radio\n", option ? "On" : "Off");
+		lbs_deb_wext("switching radio %s\n", option ? "on" : "off");
 		adapter->radioon = option;
 
 		ret = libertas_prepare_and_send_command(priv,
@@ -276,7 +182,7 @@ int wlan_radio_ioctl(wlan_private * priv, u8 option)
 					    cmd_option_waitforrsp, 0, NULL);
 	}
 
-	LEAVE();
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
 	return ret;
 }
 
@@ -313,17 +219,15 @@ static int get_active_data_rates(wlan_adapter * adapter,
 {
 	int k = 0;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	if (adapter->connect_status != libertas_connected) {
-		if (adapter->inframode == wlan802_11infrastructure) {
-			//Infra. mode
-			lbs_pr_debug(1, "Infra\n");
+		if (adapter->mode == IW_MODE_INFRA) {
+			lbs_deb_wext("infra\n");
 			k = copyrates(rates, k, libertas_supported_rates,
 				      sizeof(libertas_supported_rates));
 		} else {
-			//ad-hoc mode
-			lbs_pr_debug(1, "Adhoc G\n");
+			lbs_deb_wext("Adhoc G\n");
 			k = copyrates(rates, k, libertas_adhoc_rates_g,
 				      sizeof(libertas_adhoc_rates_g));
 		}
@@ -332,8 +236,7 @@ static int get_active_data_rates(wlan_adapter * adapter,
 			      adapter->curbssparams.numofrates);
 	}
 
-	LEAVE();
-
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", k);
 	return k;
 }
 
@@ -345,7 +248,7 @@ static int wlan_get_name(struct net_device *dev, struct iw_request_info *info,
 	char mrvl[6] = { "MRVL-" };
 	int cnt;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	strcpy(cwrq, mrvl);
 
@@ -363,8 +266,7 @@ static int wlan_get_name(struct net_device *dev, struct iw_request_info *info,
 	}
 	*cwrq = '\0';
 
-	LEAVE();
-
+	lbs_deb_leave(LBS_DEB_WEXT);
 	return 0;
 }
 
@@ -375,14 +277,14 @@ static int wlan_get_freq(struct net_device *dev, struct iw_request_info *info,
 	wlan_adapter *adapter = priv->adapter;
 	struct chan_freq_power *cfp;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	cfp = libertas_find_cfp_by_band_and_channel(adapter, 0,
 					   adapter->curbssparams.channel);
 
 	if (!cfp) {
 		if (adapter->curbssparams.channel)
-			lbs_pr_debug(1, "Invalid channel=%d\n",
+			lbs_deb_wext("invalid channel %d\n",
 			       adapter->curbssparams.channel);
 		return -EINVAL;
 	}
@@ -390,9 +292,8 @@ static int wlan_get_freq(struct net_device *dev, struct iw_request_info *info,
 	fwrq->m = (long)cfp->freq * 100000;
 	fwrq->e = 1;
 
-	lbs_pr_debug(1, "freq=%u\n", fwrq->m);
-
-	LEAVE();
+	lbs_deb_wext("freq %u\n", fwrq->m);
+	lbs_deb_leave(LBS_DEB_WEXT);
 	return 0;
 }
 
@@ -402,7 +303,7 @@ static int wlan_get_wap(struct net_device *dev, struct iw_request_info *info,
 	wlan_private *priv = dev->priv;
 	wlan_adapter *adapter = priv->adapter;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	if (adapter->connect_status == libertas_connected) {
 		memcpy(awrq->sa_data, adapter->curbssparams.bssid, ETH_ALEN);
@@ -411,7 +312,7 @@ static int wlan_get_wap(struct net_device *dev, struct iw_request_info *info,
 	}
 	awrq->sa_family = ARPHRD_ETHER;
 
-	LEAVE();
+	lbs_deb_leave(LBS_DEB_WEXT);
 	return 0;
 }
 
@@ -421,7 +322,7 @@ static int wlan_set_nick(struct net_device *dev, struct iw_request_info *info,
 	wlan_private *priv = dev->priv;
 	wlan_adapter *adapter = priv->adapter;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	/*
 	 * Check the size of the string
@@ -436,7 +337,7 @@ static int wlan_set_nick(struct net_device *dev, struct iw_request_info *info,
 	memcpy(adapter->nodename, extra, dwrq->length);
 	mutex_unlock(&adapter->lock);
 
-	LEAVE();
+	lbs_deb_leave(LBS_DEB_WEXT);
 	return 0;
 }
 
@@ -446,7 +347,7 @@ static int wlan_get_nick(struct net_device *dev, struct iw_request_info *info,
 	wlan_private *priv = dev->priv;
 	wlan_adapter *adapter = priv->adapter;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	/*
 	 * Get the Nick Name saved
@@ -467,19 +368,43 @@ static int wlan_get_nick(struct net_device *dev, struct iw_request_info *info,
 	 */
 	dwrq->length = strlen(extra) + 1;
 
-	LEAVE();
+	lbs_deb_leave(LBS_DEB_WEXT);
 	return 0;
 }
 
+static int mesh_get_nick(struct net_device *dev, struct iw_request_info *info,
+			 struct iw_point *dwrq, char *extra)
+{
+	wlan_private *priv = dev->priv;
+	wlan_adapter *adapter = priv->adapter;
+
+	lbs_deb_enter(LBS_DEB_WEXT);
+
+	/* Use nickname to indicate that mesh is on */
+
+	if (adapter->connect_status == libertas_connected) {
+		strncpy(extra, "Mesh", 12);
+		extra[12] = '\0';
+		dwrq->length = strlen(extra) + 1;
+	}
+
+	else {
+		extra[0] = '\0';
+		dwrq->length = 1 ;
+	}
+
+	lbs_deb_leave(LBS_DEB_WEXT);
+	return 0;
+}
 static int wlan_set_rts(struct net_device *dev, struct iw_request_info *info,
 			struct iw_param *vwrq, char *extra)
 {
 	int ret = 0;
 	wlan_private *priv = dev->priv;
 	wlan_adapter *adapter = priv->adapter;
-	int rthr = vwrq->value;
+	u32 rthr = vwrq->value;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	if (vwrq->disabled) {
 		adapter->rtsthsd = rthr = MRVDRV_RTS_MAX_VALUE;
@@ -493,7 +418,7 @@ static int wlan_set_rts(struct net_device *dev, struct iw_request_info *info,
 				    cmd_act_set, cmd_option_waitforrsp,
 				    OID_802_11_RTS_THRESHOLD, &rthr);
 
-	LEAVE();
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
 	return ret;
 }
 
@@ -504,35 +429,34 @@ static int wlan_get_rts(struct net_device *dev, struct iw_request_info *info,
 	wlan_private *priv = dev->priv;
 	wlan_adapter *adapter = priv->adapter;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	adapter->rtsthsd = 0;
 	ret = libertas_prepare_and_send_command(priv, cmd_802_11_snmp_mib,
 				    cmd_act_get, cmd_option_waitforrsp,
 				    OID_802_11_RTS_THRESHOLD, NULL);
-	if (ret) {
-		LEAVE();
-		return ret;
-	}
+	if (ret)
+		goto out;
 
 	vwrq->value = adapter->rtsthsd;
 	vwrq->disabled = ((vwrq->value < MRVDRV_RTS_MIN_VALUE)
 			  || (vwrq->value > MRVDRV_RTS_MAX_VALUE));
 	vwrq->fixed = 1;
 
-	LEAVE();
-	return 0;
+out:
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
+	return ret;
 }
 
 static int wlan_set_frag(struct net_device *dev, struct iw_request_info *info,
 			 struct iw_param *vwrq, char *extra)
 {
 	int ret = 0;
-	int fthr = vwrq->value;
+	u32 fthr = vwrq->value;
 	wlan_private *priv = dev->priv;
 	wlan_adapter *adapter = priv->adapter;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	if (vwrq->disabled) {
 		adapter->fragthsd = fthr = MRVDRV_FRAG_MAX_VALUE;
@@ -546,7 +470,8 @@ static int wlan_set_frag(struct net_device *dev, struct iw_request_info *info,
 	ret = libertas_prepare_and_send_command(priv, cmd_802_11_snmp_mib,
 				    cmd_act_set, cmd_option_waitforrsp,
 				    OID_802_11_FRAGMENTATION_THRESHOLD, &fthr);
-	LEAVE();
+
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
 	return ret;
 }
 
@@ -557,24 +482,23 @@ static int wlan_get_frag(struct net_device *dev, struct iw_request_info *info,
 	wlan_private *priv = dev->priv;
 	wlan_adapter *adapter = priv->adapter;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	adapter->fragthsd = 0;
 	ret = libertas_prepare_and_send_command(priv,
 				    cmd_802_11_snmp_mib,
 				    cmd_act_get, cmd_option_waitforrsp,
 				    OID_802_11_FRAGMENTATION_THRESHOLD, NULL);
-	if (ret) {
-		LEAVE();
-		return ret;
-	}
+	if (ret)
+		goto out;
 
 	vwrq->value = adapter->fragthsd;
 	vwrq->disabled = ((vwrq->value < MRVDRV_FRAG_MIN_VALUE)
 			  || (vwrq->value > MRVDRV_FRAG_MAX_VALUE));
 	vwrq->fixed = 1;
 
-	LEAVE();
+out:
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
 	return ret;
 }
 
@@ -584,24 +508,23 @@ static int wlan_get_mode(struct net_device *dev,
 	wlan_private *priv = dev->priv;
 	wlan_adapter *adapter = priv->adapter;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
-	switch (adapter->inframode) {
-	case wlan802_11ibss:
-		*uwrq = IW_MODE_ADHOC;
-		break;
+	*uwrq = adapter->mode;
 
-	case wlan802_11infrastructure:
-		*uwrq = IW_MODE_INFRA;
-		break;
+	lbs_deb_leave(LBS_DEB_WEXT);
+	return 0;
+}
 
-	default:
-	case wlan802_11autounknown:
-		*uwrq = IW_MODE_AUTO;
-		break;
-	}
+static int mesh_wlan_get_mode(struct net_device *dev,
+		              struct iw_request_info *info, u32 * uwrq,
+			      char *extra)
+{
+	lbs_deb_enter(LBS_DEB_WEXT);
 
-	LEAVE();
+	*uwrq = IW_MODE_REPEAT ;
+
+	lbs_deb_leave(LBS_DEB_WEXT);
 	return 0;
 }
 
@@ -613,19 +536,17 @@ static int wlan_get_txpow(struct net_device *dev,
 	wlan_private *priv = dev->priv;
 	wlan_adapter *adapter = priv->adapter;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	ret = libertas_prepare_and_send_command(priv,
 				    cmd_802_11_rf_tx_power,
 				    cmd_act_tx_power_opt_get,
 				    cmd_option_waitforrsp, 0, NULL);
 
-	if (ret) {
-		LEAVE();
-		return ret;
-	}
+	if (ret)
+		goto out;
 
-	lbs_pr_debug(1, "TXPOWER GET %d dbm.\n", adapter->txpowerlevel);
+	lbs_deb_wext("tx power level %d dbm\n", adapter->txpowerlevel);
 	vwrq->value = adapter->txpowerlevel;
 	vwrq->fixed = 1;
 	if (adapter->radioon) {
@@ -635,8 +556,9 @@ static int wlan_get_txpow(struct net_device *dev,
 		vwrq->disabled = 1;
 	}
 
-	LEAVE();
-	return 0;
+out:
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
+	return ret;
 }
 
 static int wlan_set_retry(struct net_device *dev, struct iw_request_info *info,
@@ -646,7 +568,7 @@ static int wlan_set_retry(struct net_device *dev, struct iw_request_info *info,
 	wlan_private *priv = dev->priv;
 	wlan_adapter *adapter = priv->adapter;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	if (vwrq->flags == IW_RETRY_LIMIT) {
 		/* The MAC has a 4-bit Total_Tx_Count register
@@ -664,16 +586,15 @@ static int wlan_set_retry(struct net_device *dev, struct iw_request_info *info,
 					    cmd_option_waitforrsp,
 					    OID_802_11_TX_RETRYCOUNT, NULL);
 
-		if (ret) {
-			LEAVE();
-			return ret;
-		}
+		if (ret)
+			goto out;
 	} else {
 		return -EOPNOTSUPP;
 	}
 
-	LEAVE();
-	return 0;
+out:
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
+	return ret;
 }
 
 static int wlan_get_retry(struct net_device *dev, struct iw_request_info *info,
@@ -683,16 +604,16 @@ static int wlan_get_retry(struct net_device *dev, struct iw_request_info *info,
 	wlan_adapter *adapter = priv->adapter;
 	int ret = 0;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
+
 	adapter->txretrycount = 0;
 	ret = libertas_prepare_and_send_command(priv,
 				    cmd_802_11_snmp_mib,
 				    cmd_act_get, cmd_option_waitforrsp,
 				    OID_802_11_TX_RETRYCOUNT, NULL);
-	if (ret) {
-		LEAVE();
-		return ret;
-	}
+	if (ret)
+		goto out;
+
 	vwrq->disabled = 0;
 	if (!vwrq->flags) {
 		vwrq->flags = IW_RETRY_LIMIT;
@@ -700,8 +621,9 @@ static int wlan_get_retry(struct net_device *dev, struct iw_request_info *info,
 		vwrq->value = adapter->txretrycount - 1;
 	}
 
-	LEAVE();
-	return 0;
+out:
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
+	return ret;
 }
 
 static inline void sort_channels(struct iw_freq *freq, int num)
@@ -755,7 +677,7 @@ static int wlan_get_range(struct net_device *dev, struct iw_request_info *info,
 
 	u8 flag = 0;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	dwrq->length = sizeof(struct iw_range);
 	memset(range, 0, sizeof(struct iw_range));
@@ -771,7 +693,7 @@ static int wlan_get_range(struct net_device *dev, struct iw_request_info *info,
 		range->bitrate[i] = (rates[i] & 0x7f) * 500000;
 	}
 	range->num_bitrates = i;
-	lbs_pr_debug(1, "IW_MAX_BITRATES=%d num_bitrates=%d\n", IW_MAX_BITRATES,
+	lbs_deb_wext("IW_MAX_BITRATES %d, num_bitrates %d\n", IW_MAX_BITRATES,
 	       range->num_bitrates);
 
 	range->num_frequency = 0;
@@ -784,18 +706,17 @@ static int wlan_get_range(struct net_device *dev, struct iw_request_info *info,
 		    &adapter->parsed_region_chan;
 
 		if (parsed_region_chan == NULL) {
-			lbs_pr_debug(1, "11D:parsed_region_chan is NULL\n");
-			LEAVE();
-			return 0;
+			lbs_deb_wext("11d: parsed_region_chan is NULL\n");
+			goto out;
 		}
 		band = parsed_region_chan->band;
-		lbs_pr_debug(1, "band=%d NoOfChan=%d\n", band,
+		lbs_deb_wext("band %d, nr_char %d\n", band,
 		       parsed_region_chan->nr_chan);
 
 		for (i = 0; (range->num_frequency < IW_MAX_FREQUENCIES)
 		     && (i < parsed_region_chan->nr_chan); i++) {
 			chan_no = parsed_region_chan->chanpwr[i].chan;
-			lbs_pr_debug(1, "chan_no=%d\n", chan_no);
+			lbs_deb_wext("chan_no %d\n", chan_no);
 			range->freq[range->num_frequency].i = (long)chan_no;
 			range->freq[range->num_frequency].m =
 			    (long)libertas_chan_2_freq(chan_no, band) * 100000;
@@ -824,7 +745,7 @@ static int wlan_get_range(struct net_device *dev, struct iw_request_info *info,
 		}
 	}
 
-	lbs_pr_debug(1, "IW_MAX_FREQUENCIES=%d num_frequency=%d\n",
+	lbs_deb_wext("IW_MAX_FREQUENCIES %d, num_frequency %d\n",
 	       IW_MAX_FREQUENCIES, range->num_frequency);
 
 	range->num_channels = range->num_frequency;
@@ -919,7 +840,8 @@ static int wlan_get_range(struct net_device *dev, struct iw_request_info *info,
 		                  | IW_ENC_CAPA_CIPHER_CCMP;
 	}
 
-	LEAVE();
+out:
+	lbs_deb_leave(LBS_DEB_WEXT);
 	return 0;
 }
 
@@ -929,7 +851,7 @@ static int wlan_set_power(struct net_device *dev, struct iw_request_info *info,
 	wlan_private *priv = dev->priv;
 	wlan_adapter *adapter = priv->adapter;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	/* PS is currently supported only in Infrastructure mode
 	 * Remove this check if it is to be supported in IBSS mode also
@@ -945,11 +867,11 @@ static int wlan_set_power(struct net_device *dev, struct iw_request_info *info,
 	}
 
 	if ((vwrq->flags & IW_POWER_TYPE) == IW_POWER_TIMEOUT) {
-		lbs_pr_debug(1,
-		       "Setting power timeout command is not supported\n");
+		lbs_deb_wext(
+		       "setting power timeout is not supported\n");
 		return -EINVAL;
 	} else if ((vwrq->flags & IW_POWER_TYPE) == IW_POWER_PERIOD) {
-		lbs_pr_debug(1, "Setting power period command is not supported\n");
+		lbs_deb_wext("setting power period not supported\n");
 		return -EINVAL;
 	}
 
@@ -963,7 +885,7 @@ static int wlan_set_power(struct net_device *dev, struct iw_request_info *info,
 		libertas_ps_sleep(priv, cmd_option_waitforrsp);
 	}
 
-	LEAVE();
+	lbs_deb_leave(LBS_DEB_WEXT);
 	return 0;
 }
 
@@ -974,444 +896,22 @@ static int wlan_get_power(struct net_device *dev, struct iw_request_info *info,
 	wlan_adapter *adapter = priv->adapter;
 	int mode;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	mode = adapter->psmode;
 
 	if ((vwrq->disabled = (mode == wlan802_11powermodecam))
-	    || adapter->connect_status == libertas_disconnected) {
-		LEAVE();
-		return 0;
+	    || adapter->connect_status == libertas_disconnected)
+	{
+		goto out;
 	}
 
 	vwrq->value = 0;
 
-	LEAVE();
+out:
+	lbs_deb_leave(LBS_DEB_WEXT);
 	return 0;
 }
-
-/*
- * iwpriv settable callbacks
- */
-
-static const iw_handler wlan_private_handler[] = {
-	NULL,			/* SIOCIWFIRSTPRIV */
-};
-
-static const struct iw_priv_args wlan_private_args[] = {
-	/*
-	 * { cmd, set_args, get_args, name }
-	 */
-	{
-	 WLANSCAN_TYPE,
-	 IW_PRIV_TYPE_CHAR | 8,
-	 IW_PRIV_TYPE_CHAR | 8,
-	 "scantype"},
-
-	{
-	 WLAN_SETINT_GETINT,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 ""},
-	{
-	 WLANNF,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 "getNF"},
-	{
-	 WLANRSSI,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 "getRSSI"},
-	{
-	 WLANENABLE11D,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 "enable11d"},
-	{
-	 WLANADHOCGRATE,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 "adhocgrate"},
-
-	{
-	 WLAN_SUBCMD_SET_PRESCAN,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 "prescan"},
-	{
-	 WLAN_SETONEINT_GETONEINT,
-	 IW_PRIV_TYPE_INT | 1,
-	 IW_PRIV_TYPE_INT | 1,
-	 ""},
-	{
-	 WLAN_BEACON_INTERVAL,
-	 IW_PRIV_TYPE_INT | 1,
-	 IW_PRIV_TYPE_INT | 1,
-	 "bcninterval"},
-	{
-	 WLAN_LISTENINTRVL,
-	 IW_PRIV_TYPE_INT | 1,
-	 IW_PRIV_TYPE_INT | 1,
-	 "lolisteninter"},
-	{
-	 WLAN_TXCONTROL,
-	 IW_PRIV_TYPE_INT | 1,
-	 IW_PRIV_TYPE_INT | 1,
-	 "txcontrol"},
-	{
-	 WLAN_NULLPKTINTERVAL,
-	 IW_PRIV_TYPE_INT | 1,
-	 IW_PRIV_TYPE_INT | 1,
-	 "psnullinterval"},
-	/* Using iwpriv sub-command feature */
-	{
-	 WLAN_SETONEINT_GETNONE,	/* IOCTL: 24 */
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_NONE,
-	 ""},
-
-	{
-	 WLAN_SUBCMD_SETRXANTENNA,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_NONE,
-	 "setrxant"},
-	{
-	 WLAN_SUBCMD_SETTXANTENNA,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_NONE,
-	 "settxant"},
-	{
-	 WLANSETAUTHALG,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_NONE,
-	 "authalgs",
-	 },
-	{
-	 WLANSET8021XAUTHALG,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_NONE,
-	 "8021xauthalgs",
-	 },
-	{
-	 WLANSETENCRYPTIONMODE,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_NONE,
-	 "encryptionmode",
-	 },
-	{
-	 WLANSETREGION,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_NONE,
-	 "setregioncode"},
-	{
-	 WLAN_SET_LISTEN_INTERVAL,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_NONE,
-	 "setlisteninter"},
-	{
-	 WLAN_SET_MULTIPLE_DTIM,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_NONE,
-	 "setmultipledtim"},
-	{
-	 WLAN_SET_ATIM_WINDOW,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_NONE,
-	 "atimwindow"},
-	{
-	 WLANSETBCNAVG,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_NONE,
-	 "setbcnavg"},
-	{
-	 WLANSETDATAAVG,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_NONE,
-	 "setdataavg"},
-	{
-	 WLAN_SET_LINKMODE,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_NONE,
-	 "linkmode"},
-	{
-	 WLAN_SET_RADIOMODE,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_NONE,
-	 "radiomode"},
-	{
-	 WLAN_SET_DEBUGMODE,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_NONE,
-	 "debugmode"},
-	{
-	 WLAN_SUBCMD_MESH_SET_TTL,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 IW_PRIV_TYPE_NONE,
-	 "mesh_set_ttl"},
-	{
-	 WLAN_SETNONE_GETONEINT,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 ""},
-	{
-	 WLANGETREGION,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 "getregioncode"},
-	{
-	 WLAN_GET_LISTEN_INTERVAL,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 "getlisteninter"},
-	{
-	 WLAN_GET_MULTIPLE_DTIM,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 "getmultipledtim"},
-	{
-	 WLAN_GET_TX_RATE,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 "gettxrate"},
-	{
-	 WLANGETBCNAVG,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 "getbcnavg"},
-	{
-	 WLAN_GET_LINKMODE,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 "get_linkmode"},
-	{
-	 WLAN_GET_RADIOMODE,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 "get_radiomode"},
-	{
-	 WLAN_GET_DEBUGMODE,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 "get_debugmode"},
-	{
-	 WLAN_SUBCMD_FWT_CLEANUP,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 "fwt_cleanup"},
-	{
-	 WLAN_SUBCMD_FWT_TIME,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 "fwt_time"},
-	{
-	 WLAN_SUBCMD_MESH_GET_TTL,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_INT | IW_PRIV_SIZE_FIXED | 1,
-	 "mesh_get_ttl"},
-	{
-	 WLAN_SETNONE_GETTWELVE_CHAR,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_CHAR | 12,
-	 ""},
-	{
-	 WLAN_SUBCMD_GETRXANTENNA,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_CHAR | 12,
-	 "getrxant"},
-	{
-	 WLAN_SUBCMD_GETTXANTENNA,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_CHAR | 12,
-	 "gettxant"},
-	{
-	 WLAN_GET_TSF,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_CHAR | 12,
-	 "gettsf"},
-	{
-	 WLAN_SETNONE_GETNONE,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_NONE,
-	 ""},
-	{
-	 WLANDEAUTH,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_NONE,
-	 "deauth"},
-	{
-	 WLANADHOCSTOP,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_NONE,
-	 "adhocstop"},
-	{
-	 WLANRADIOON,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_NONE,
-	 "radioon"},
-	{
-	 WLANRADIOOFF,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_NONE,
-	 "radiooff"},
-	{
-	 WLANWLANIDLEON,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_NONE,
-	 "wlanidle-on"},
-	{
-	 WLANWLANIDLEOFF,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_NONE,
-	 "wlanidle-off"},
-	{
-	 WLAN_SUBCMD_FWT_RESET,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_NONE,
-	 "fwt_reset"},
-	{
-	 WLAN_SUBCMD_BT_RESET,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_NONE,
-	 "bt_reset"},
-	{
-	 WLAN_SET128CHAR_GET128CHAR,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 ""},
-	/* BT Management */
-	{
-	 WLAN_SUBCMD_BT_ADD,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 "bt_add"},
-	{
-	 WLAN_SUBCMD_BT_DEL,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 "bt_del"},
-	{
-	 WLAN_SUBCMD_BT_LIST,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 "bt_list"},
-	/* FWT Management */
-	{
-	 WLAN_SUBCMD_FWT_ADD,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 "fwt_add"},
-	{
-	 WLAN_SUBCMD_FWT_DEL,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 "fwt_del"},
-	{
-	 WLAN_SUBCMD_FWT_LOOKUP,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 "fwt_lookup"},
-	{
-	 WLAN_SUBCMD_FWT_LIST_NEIGHBOR,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 "fwt_list_neigh"},
-	{
-	 WLAN_SUBCMD_FWT_LIST,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 "fwt_list"},
-	{
-	 WLAN_SUBCMD_FWT_LIST_ROUTE,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 "fwt_list_route"},
-	{
-	 WLANSCAN_MODE,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 "scanmode"},
-	{
-	 WLAN_GET_ADHOC_STATUS,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 "getadhocstatus"},
-	{
-	 WLAN_SETNONE_GETWORDCHAR,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_CHAR | 128,
-	 ""},
-	{
-	 WLANSETWPAIE,
-	 IW_PRIV_TYPE_CHAR | IW_PRIV_SIZE_FIXED | 24,
-	 IW_PRIV_TYPE_NONE,
-	 "setwpaie"},
-	{
-	 WLANGETLOG,
-	 IW_PRIV_TYPE_NONE,
-	 IW_PRIV_TYPE_CHAR | GETLOG_BUFSIZE,
-	 "getlog"},
-	{
-	 WLAN_SET_GET_SIXTEEN_INT,
-	 IW_PRIV_TYPE_INT | 16,
-	 IW_PRIV_TYPE_INT | 16,
-	 ""},
-	{
-	 WLAN_TPCCFG,
-	 IW_PRIV_TYPE_INT | 16,
-	 IW_PRIV_TYPE_INT | 16,
-	 "tpccfg"},
-	{
-	 WLAN_POWERCFG,
-	 IW_PRIV_TYPE_INT | 16,
-	 IW_PRIV_TYPE_INT | 16,
-	 "powercfg"},
-	{
-	 WLAN_AUTO_FREQ_SET,
-	 IW_PRIV_TYPE_INT | 16,
-	 IW_PRIV_TYPE_INT | 16,
-	 "setafc"},
-	{
-	 WLAN_AUTO_FREQ_GET,
-	 IW_PRIV_TYPE_INT | 16,
-	 IW_PRIV_TYPE_INT | 16,
-	 "getafc"},
-	{
-	 WLAN_SCANPROBES,
-	 IW_PRIV_TYPE_INT | 16,
-	 IW_PRIV_TYPE_INT | 16,
-	 "scanprobes"},
-	{
-	 WLAN_LED_GPIO_CTRL,
-	 IW_PRIV_TYPE_INT | 16,
-	 IW_PRIV_TYPE_INT | 16,
-	 "ledgpio"},
-	{
-	 WLAN_ADAPT_RATESET,
-	 IW_PRIV_TYPE_INT | 16,
-	 IW_PRIV_TYPE_INT | 16,
-	 "rateadapt"},
-	{
-	 WLAN_INACTIVITY_TIMEOUT,
-	 IW_PRIV_TYPE_INT | 16,
-	 IW_PRIV_TYPE_INT | 16,
-	 "inactivityto"},
-	{
-	 WLANSNR,
-	 IW_PRIV_TYPE_INT | 16,
-	 IW_PRIV_TYPE_INT | 16,
-	 "getSNR"},
-	{
-	 WLAN_GET_RATE,
-	 IW_PRIV_TYPE_INT | 16,
-	 IW_PRIV_TYPE_INT | 16,
-	 "getrate"},
-	{
-	 WLAN_GET_RXINFO,
-	 IW_PRIV_TYPE_INT | 16,
-	 IW_PRIV_TYPE_INT | 16,
-	 "getrxinfo"},
-};
 
 static struct iw_statistics *wlan_get_wireless_stats(struct net_device *dev)
 {
@@ -1432,9 +932,9 @@ static struct iw_statistics *wlan_get_wireless_stats(struct net_device *dev)
 	u8 rssi;
 	u32 tx_retries;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
-	priv->wstats.status = adapter->inframode;
+	priv->wstats.status = adapter->mode;
 
 	/* If we're not associated, all quality values are meaningless */
 	if (adapter->connect_status != libertas_connected)
@@ -1452,8 +952,8 @@ static struct iw_statistics *wlan_get_wireless_stats(struct net_device *dev)
 		    CAL_NF(adapter->NF[TYPE_BEACON][TYPE_NOAVG]);
 	}
 
-	lbs_pr_debug(1, "Signal Level = %#x\n", priv->wstats.qual.level);
-	lbs_pr_debug(1, "Noise = %#x\n", priv->wstats.qual.noise);
+	lbs_deb_wext("signal level %#x\n", priv->wstats.qual.level);
+	lbs_deb_wext("noise %#x\n", priv->wstats.qual.noise);
 
 	rssi = priv->wstats.qual.level - priv->wstats.qual.noise;
 	if (rssi < 15)
@@ -1473,7 +973,7 @@ static struct iw_statistics *wlan_get_wireless_stats(struct net_device *dev)
 	/* Quality by TX errors */
 	priv->wstats.discard.retries = priv->stats.tx_errors;
 
-	tx_retries = adapter->logmsg.retry;
+	tx_retries = le16_to_cpu(adapter->logmsg.retry);
 
 	if (tx_retries > 75)
 		tx_qual = (90 - tx_retries) * POOR / 15;
@@ -1489,10 +989,10 @@ static struct iw_statistics *wlan_get_wireless_stats(struct net_device *dev)
 		    (PERFECT - VERY_GOOD) / 50 + VERY_GOOD;
 	quality = min(quality, tx_qual);
 
-	priv->wstats.discard.code = adapter->logmsg.wepundecryptable;
-	priv->wstats.discard.fragment = adapter->logmsg.fcserror;
+	priv->wstats.discard.code = le16_to_cpu(adapter->logmsg.wepundecryptable);
+	priv->wstats.discard.fragment = le16_to_cpu(adapter->logmsg.rxfrag);
 	priv->wstats.discard.retries = tx_retries;
-	priv->wstats.discard.misc = adapter->logmsg.ackfailure;
+	priv->wstats.discard.misc = le16_to_cpu(adapter->logmsg.ackfailure);
 
 	/* Calculate quality */
 	priv->wstats.qual.qual = max(quality, (u32)100);
@@ -1516,7 +1016,7 @@ out:
 		    IW_QUAL_QUAL_INVALID | IW_QUAL_LEVEL_INVALID;
 	}
 
-	LEAVE ();
+	lbs_deb_leave(LBS_DEB_WEXT);
 	return &priv->wstats;
 
 
@@ -1525,82 +1025,59 @@ out:
 static int wlan_set_freq(struct net_device *dev, struct iw_request_info *info,
 		  struct iw_freq *fwrq, char *extra)
 {
-	int ret = 0;
+	int ret = -EINVAL;
 	wlan_private *priv = dev->priv;
 	wlan_adapter *adapter = priv->adapter;
-	int rc = -EINPROGRESS;	/* Call commit handler */
 	struct chan_freq_power *cfp;
+	struct assoc_request * assoc_req;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
-	/*
-	 * If setting by frequency, convert to a channel
-	 */
+	mutex_lock(&adapter->lock);
+	assoc_req = wlan_get_association_request(adapter);
+	if (!assoc_req) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	/* If setting by frequency, convert to a channel */
 	if (fwrq->e == 1) {
-
 		long f = fwrq->m / 100000;
-		int c = 0;
 
 		cfp = find_cfp_by_band_and_freq(adapter, 0, f);
 		if (!cfp) {
-			lbs_pr_debug(1, "Invalid freq=%ld\n", f);
-			return -EINVAL;
+			lbs_deb_wext("invalid freq %ld\n", f);
+			goto out;
 		}
-
-		c = (int)cfp->channel;
-
-		if (c < 0)
-			return -EINVAL;
 
 		fwrq->e = 0;
-		fwrq->m = c;
+		fwrq->m = (int) cfp->channel;
 	}
 
-	/*
-	 * Setting by channel number
-	 */
+	/* Setting by channel number */
 	if (fwrq->m > 1000 || fwrq->e > 0) {
-		rc = -EOPNOTSUPP;
-	} else {
-		int channel = fwrq->m;
-
-		cfp = libertas_find_cfp_by_band_and_channel(adapter, 0, channel);
-		if (!cfp) {
-			rc = -EINVAL;
-		} else {
-			if (adapter->inframode == wlan802_11ibss) {
-				rc = changeadhocchannel(priv, channel);
-				/*  If station is WEP enabled, send the
-				 *  command to set WEP in firmware
-				 */
-				if (adapter->secinfo.WEPstatus ==
-				    wlan802_11WEPenabled) {
-					lbs_pr_debug(1, "set_freq: WEP enabled\n");
-					ret = libertas_prepare_and_send_command(priv,
-								    cmd_802_11_set_wep,
-								    cmd_act_add,
-								    cmd_option_waitforrsp,
-								    0,
-								    NULL);
-
-					if (ret) {
-						LEAVE();
-						return ret;
-					}
-
-					adapter->currentpacketfilter |=
-					    cmd_act_mac_wep_enable;
-
-					libertas_set_mac_packet_filter(priv);
-				}
-			} else {
-				rc = -EOPNOTSUPP;
-			}
-		}
+		goto out;
 	}
 
-	LEAVE();
-	return rc;
+	cfp = libertas_find_cfp_by_band_and_channel(adapter, 0, fwrq->m);
+	if (!cfp) {
+		goto out;
+	}
+
+	assoc_req->channel = fwrq->m;
+	ret = 0;
+
+out:
+	if (ret == 0) {
+		set_bit(ASSOC_FLAG_CHANNEL, &assoc_req->flags);
+		wlan_postpone_association_work(priv);
+	} else {
+		wlan_cancel_association_work(priv);
+	}
+	mutex_unlock(&adapter->lock);
+
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
+	return ret;
 }
 
 /**
@@ -1646,9 +1123,9 @@ static int wlan_set_rate(struct net_device *dev, struct iw_request_info *info,
 	u8 rates[WLAN_SUPPORTED_RATES];
 	u8 *rate;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
-	lbs_pr_debug(1, "Vwrq->value = %d\n", vwrq->value);
+	lbs_deb_wext("vwrq->value %d\n", vwrq->value);
 
 	if (vwrq->value == -1) {
 		action = cmd_act_set_tx_auto;	// Auto
@@ -1665,15 +1142,15 @@ static int wlan_set_rate(struct net_device *dev, struct iw_request_info *info,
 		get_active_data_rates(adapter, rates);
 		rate = rates;
 		while (*rate) {
-			lbs_pr_debug(1, "Rate=0x%X  Wanted=0x%X\n", *rate,
+			lbs_deb_wext("rate=0x%X, wanted data_rate 0x%X\n", *rate,
 			       data_rate);
 			if ((*rate & 0x7f) == (data_rate & 0x7f))
 				break;
 			rate++;
 		}
 		if (!*rate) {
-			lbs_pr_alert( "The fixed data rate 0x%X is out "
-			       "of range.\n", data_rate);
+			lbs_pr_alert("fixed data rate 0x%X out "
+			       "of range\n", data_rate);
 			return -EINVAL;
 		}
 
@@ -1685,7 +1162,7 @@ static int wlan_set_rate(struct net_device *dev, struct iw_request_info *info,
 	ret = libertas_prepare_and_send_command(priv, cmd_802_11_data_rate,
 				    action, cmd_option_waitforrsp, 0, NULL);
 
-	LEAVE();
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
 	return ret;
 }
 
@@ -1695,7 +1172,7 @@ static int wlan_get_rate(struct net_device *dev, struct iw_request_info *info,
 	wlan_private *priv = dev->priv;
 	wlan_adapter *adapter = priv->adapter;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	if (adapter->is_datarate_auto) {
 		vwrq->fixed = 0;
@@ -1705,7 +1182,7 @@ static int wlan_get_rate(struct net_device *dev, struct iw_request_info *info,
 
 	vwrq->value = adapter->datarate * 500000;
 
-	LEAVE();
+	lbs_deb_leave(LBS_DEB_WEXT);
 	return 0;
 }
 
@@ -1716,50 +1193,32 @@ static int wlan_set_mode(struct net_device *dev,
 	wlan_private *priv = dev->priv;
 	wlan_adapter *adapter = priv->adapter;
 	struct assoc_request * assoc_req;
-	enum WLAN_802_11_NETWORK_INFRASTRUCTURE new_mode;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
-	switch (*uwrq) {
-	case IW_MODE_ADHOC:
-		lbs_pr_debug(1, "Wanted mode is ad-hoc: current datarate=%#x\n",
-		       adapter->datarate);
-		new_mode = wlan802_11ibss;
-		adapter->adhocchannel = DEFAULT_AD_HOC_CHANNEL;
-		break;
-
-	case IW_MODE_INFRA:
-		lbs_pr_debug(1, "Wanted mode is Infrastructure\n");
-		new_mode = wlan802_11infrastructure;
-		break;
-
-	case IW_MODE_AUTO:
-		lbs_pr_debug(1, "Wanted mode is Auto\n");
-		new_mode = wlan802_11autounknown;
-		break;
-
-	default:
-		lbs_pr_debug(1, "Wanted mode is Unknown: 0x%x\n", *uwrq);
-		return -EINVAL;
+	if (   (*uwrq != IW_MODE_ADHOC)
+	    && (*uwrq != IW_MODE_INFRA)
+	    && (*uwrq != IW_MODE_AUTO)) {
+		lbs_deb_wext("Invalid mode: 0x%x\n", *uwrq);
+		ret = -EINVAL;
+		goto out;
 	}
 
 	mutex_lock(&adapter->lock);
 	assoc_req = wlan_get_association_request(adapter);
 	if (!assoc_req) {
 		ret = -ENOMEM;
+		wlan_cancel_association_work(priv);
 	} else {
-		assoc_req->mode = new_mode;
-	}
-
-	if (ret == 0) {
+		assoc_req->mode = *uwrq;
 		set_bit(ASSOC_FLAG_MODE, &assoc_req->flags);
 		wlan_postpone_association_work(priv);
-	} else {
-		wlan_cancel_association_work(priv);
+		lbs_deb_wext("Switching to mode: 0x%x\n", *uwrq);
 	}
 	mutex_unlock(&adapter->lock);
 
-	LEAVE();
+out:
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
 	return ret;
 }
 
@@ -1781,21 +1240,21 @@ static int wlan_get_encode(struct net_device *dev,
 	wlan_adapter *adapter = priv->adapter;
 	int index = (dwrq->flags & IW_ENCODE_INDEX) - 1;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
-	lbs_pr_debug(1, "flags=0x%x index=%d length=%d wep_tx_keyidx=%d\n",
+	lbs_deb_wext("flags 0x%x, index %d, length %d, wep_tx_keyidx %d\n",
 	       dwrq->flags, index, dwrq->length, adapter->wep_tx_keyidx);
 
 	dwrq->flags = 0;
 
 	/* Authentication method */
-	switch (adapter->secinfo.authmode) {
-	case wlan802_11authmodeopen:
+	switch (adapter->secinfo.auth_mode) {
+	case IW_AUTH_ALG_OPEN_SYSTEM:
 		dwrq->flags = IW_ENCODE_OPEN;
 		break;
 
-	case wlan802_11authmodeshared:
-	case wlan802_11authmodenetworkEAP:
+	case IW_AUTH_ALG_SHARED_KEY:
+	case IW_AUTH_ALG_LEAP:
 		dwrq->flags = IW_ENCODE_RESTRICTED;
 		break;
 	default:
@@ -1803,8 +1262,9 @@ static int wlan_get_encode(struct net_device *dev,
 		break;
 	}
 
-	if ((adapter->secinfo.WEPstatus == wlan802_11WEPenabled)
-	    || adapter->secinfo.WPAenabled || adapter->secinfo.WPA2enabled) {
+	if (   adapter->secinfo.wep_enabled
+	    || adapter->secinfo.WPAenabled
+	    || adapter->secinfo.WPA2enabled) {
 		dwrq->flags &= ~IW_ENCODE_DISABLED;
 	} else {
 		dwrq->flags |= IW_ENCODE_DISABLED;
@@ -1818,8 +1278,7 @@ static int wlan_get_encode(struct net_device *dev,
 	if (index < 0)
 		index = adapter->wep_tx_keyidx;
 
-	if ((adapter->wep_keys[index].len) &&
-	    (adapter->secinfo.WEPstatus == wlan802_11WEPenabled)) {
+	if ((adapter->wep_keys[index].len) && adapter->secinfo.wep_enabled) {
 		memcpy(extra, adapter->wep_keys[index].key,
 		       adapter->wep_keys[index].len);
 		dwrq->length = adapter->wep_keys[index].len;
@@ -1839,13 +1298,13 @@ static int wlan_get_encode(struct net_device *dev,
 
 	dwrq->flags |= IW_ENCODE_NOKEY;
 
-	lbs_pr_debug(1, "key:%02x:%02x:%02x:%02x:%02x:%02x keylen=%d\n",
+	lbs_deb_wext("key: " MAC_FMT ", keylen %d\n",
 	       extra[0], extra[1], extra[2],
 	       extra[3], extra[4], extra[5], dwrq->length);
 
-	lbs_pr_debug(1, "Return flags=0x%x\n", dwrq->flags);
+	lbs_deb_wext("return flags 0x%x\n", dwrq->flags);
 
-	LEAVE();
+	lbs_deb_leave(LBS_DEB_WEXT);
 	return 0;
 }
 
@@ -1865,20 +1324,21 @@ static int wlan_set_wep_key(struct assoc_request *assoc_req,
 			    u16 index,
 			    int set_tx_key)
 {
+	int ret = 0;
 	struct WLAN_802_11_KEY *pkey;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	/* Paranoid validation of key index */
 	if (index > 3) {
-		LEAVE();
-		return -EINVAL;
+		ret = -EINVAL;
+		goto out;
 	}
 
 	/* validate max key length */
 	if (key_length > KEY_LEN_WEP_104) {
-		LEAVE();
-		return -EINVAL;
+		ret = -EINVAL;
+		goto out;
 	}
 
 	pkey = &assoc_req->wep_keys[index];
@@ -1896,17 +1356,18 @@ static int wlan_set_wep_key(struct assoc_request *assoc_req,
 	if (set_tx_key) {
 		/* Ensure the chosen key is valid */
 		if (!pkey->len) {
-			lbs_pr_debug(1, "key not set, so cannot enable it\n");
-			LEAVE();
-			return -EINVAL;
+			lbs_deb_wext("key not set, so cannot enable it\n");
+			ret = -EINVAL;
+			goto out;
 		}
 		assoc_req->wep_tx_keyidx = index;
 	}
 
-	assoc_req->secinfo.WEPstatus = wlan802_11WEPenabled;
+	assoc_req->secinfo.wep_enabled = 1;
 
-	LEAVE();
-	return 0;
+out:
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
+	return ret;
 }
 
 static int validate_key_index(u16 def_index, u16 raw_index,
@@ -1931,16 +1392,39 @@ static void disable_wep(struct assoc_request *assoc_req)
 {
 	int i;
 
+	lbs_deb_enter(LBS_DEB_WEXT);
+
 	/* Set Open System auth mode */
-	assoc_req->secinfo.authmode = wlan802_11authmodeopen;
+	assoc_req->secinfo.auth_mode = IW_AUTH_ALG_OPEN_SYSTEM;
 
 	/* Clear WEP keys and mark WEP as disabled */
-	assoc_req->secinfo.WEPstatus = wlan802_11WEPdisabled;
+	assoc_req->secinfo.wep_enabled = 0;
 	for (i = 0; i < 4; i++)
 		assoc_req->wep_keys[i].len = 0;
 
 	set_bit(ASSOC_FLAG_SECINFO, &assoc_req->flags);
 	set_bit(ASSOC_FLAG_WEP_KEYS, &assoc_req->flags);
+
+	lbs_deb_leave(LBS_DEB_WEXT);
+}
+
+static void disable_wpa(struct assoc_request *assoc_req)
+{
+	lbs_deb_enter(LBS_DEB_WEXT);
+
+	memset(&assoc_req->wpa_mcast_key, 0, sizeof (struct WLAN_802_11_KEY));
+	assoc_req->wpa_mcast_key.flags = KEY_INFO_WPA_MCAST;
+	set_bit(ASSOC_FLAG_WPA_MCAST_KEY, &assoc_req->flags);
+
+	memset(&assoc_req->wpa_unicast_key, 0, sizeof (struct WLAN_802_11_KEY));
+	assoc_req->wpa_unicast_key.flags = KEY_INFO_WPA_UNICAST;
+	set_bit(ASSOC_FLAG_WPA_UCAST_KEY, &assoc_req->flags);
+
+	assoc_req->secinfo.WPAenabled = 0;
+	assoc_req->secinfo.WPA2enabled = 0;
+	set_bit(ASSOC_FLAG_SECINFO, &assoc_req->flags);
+
+	lbs_deb_leave(LBS_DEB_WEXT);
 }
 
 /**
@@ -1962,7 +1446,7 @@ static int wlan_set_encode(struct net_device *dev,
 	struct assoc_request * assoc_req;
 	u16 is_default = 0, index = 0, set_tx_key = 0;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	mutex_lock(&adapter->lock);
 	assoc_req = wlan_get_association_request(adapter);
@@ -1973,6 +1457,7 @@ static int wlan_set_encode(struct net_device *dev,
 
 	if (dwrq->flags & IW_ENCODE_DISABLED) {
 		disable_wep (assoc_req);
+		disable_wpa (assoc_req);
 		goto out;
 	}
 
@@ -1987,8 +1472,7 @@ static int wlan_set_encode(struct net_device *dev,
 	/* If WEP isn't enabled, or if there is no key data but a valid
 	 * index, set the TX key.
 	 */
-	if ((assoc_req->secinfo.WEPstatus != wlan802_11WEPenabled)
-	    || (dwrq->length == 0 && !is_default))
+	if (!assoc_req->secinfo.wep_enabled || (dwrq->length == 0 && !is_default))
 		set_tx_key = 1;
 
 	ret = wlan_set_wep_key(assoc_req, extra, dwrq->length, index, set_tx_key);
@@ -2001,9 +1485,9 @@ static int wlan_set_encode(struct net_device *dev,
 		set_bit(ASSOC_FLAG_WEP_TX_KEYIDX, &assoc_req->flags);
 
 	if (dwrq->flags & IW_ENCODE_RESTRICTED) {
-		assoc_req->secinfo.authmode = wlan802_11authmodeshared;
+		assoc_req->secinfo.auth_mode = IW_AUTH_ALG_SHARED_KEY;
 	} else if (dwrq->flags & IW_ENCODE_OPEN) {
-		assoc_req->secinfo.authmode = wlan802_11authmodeopen;
+		assoc_req->secinfo.auth_mode = IW_AUTH_ALG_OPEN_SYSTEM;
 	}
 
 out:
@@ -2015,7 +1499,7 @@ out:
 	}
 	mutex_unlock(&adapter->lock);
 
-	LEAVE();
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
 	return ret;
 }
 
@@ -2039,7 +1523,7 @@ static int wlan_get_encodeext(struct net_device *dev,
 	struct iw_encode_ext *ext = (struct iw_encode_ext *)extra;
 	int index, max_key_len;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	max_key_len = dwrq->length - sizeof(*ext);
 	if (max_key_len < 0)
@@ -2056,33 +1540,54 @@ static int wlan_get_encodeext(struct net_device *dev,
 
 	if (!ext->ext_flags & IW_ENCODE_EXT_GROUP_KEY &&
 	    ext->alg != IW_ENCODE_ALG_WEP) {
-		if (index != 0 || adapter->inframode != wlan802_11infrastructure)
+		if (index != 0 || adapter->mode != IW_MODE_INFRA)
 			goto out;
 	}
 
 	dwrq->flags = index + 1;
 	memset(ext, 0, sizeof(*ext));
 
-	if ((adapter->secinfo.WEPstatus == wlan802_11WEPdisabled)
-	    && !adapter->secinfo.WPAenabled && !adapter->secinfo.WPA2enabled) {
+	if (   !adapter->secinfo.wep_enabled
+	    && !adapter->secinfo.WPAenabled
+	    && !adapter->secinfo.WPA2enabled) {
 		ext->alg = IW_ENCODE_ALG_NONE;
 		ext->key_len = 0;
 		dwrq->flags |= IW_ENCODE_DISABLED;
 	} else {
 		u8 *key = NULL;
 
-		if ((adapter->secinfo.WEPstatus == wlan802_11WEPenabled)
+		if (   adapter->secinfo.wep_enabled
 		    && !adapter->secinfo.WPAenabled
 		    && !adapter->secinfo.WPA2enabled) {
+			/* WEP */
 			ext->alg = IW_ENCODE_ALG_WEP;
 			ext->key_len = adapter->wep_keys[index].len;
 			key = &adapter->wep_keys[index].key[0];
-		} else if ((adapter->secinfo.WEPstatus == wlan802_11WEPdisabled) &&
-		           (adapter->secinfo.WPAenabled ||
-		            adapter->secinfo.WPA2enabled)) {
+		} else if (   !adapter->secinfo.wep_enabled
+		           && (adapter->secinfo.WPAenabled ||
+		               adapter->secinfo.WPA2enabled)) {
 			/* WPA */
-			ext->alg = IW_ENCODE_ALG_TKIP;
-			ext->key_len = 0;
+			struct WLAN_802_11_KEY * pkey = NULL;
+
+			if (   adapter->wpa_mcast_key.len
+			    && (adapter->wpa_mcast_key.flags & KEY_INFO_WPA_ENABLED))
+				pkey = &adapter->wpa_mcast_key;
+			else if (   adapter->wpa_unicast_key.len
+			         && (adapter->wpa_unicast_key.flags & KEY_INFO_WPA_ENABLED))
+				pkey = &adapter->wpa_unicast_key;
+
+			if (pkey) {
+				if (pkey->type == KEY_TYPE_ID_AES) {
+					ext->alg = IW_ENCODE_ALG_CCMP;
+				} else {
+					ext->alg = IW_ENCODE_ALG_TKIP;
+				}
+				ext->key_len = pkey->len;
+				key = &pkey->key[0];
+			} else {
+				ext->alg = IW_ENCODE_ALG_TKIP;
+				ext->key_len = 0;
+			}
 		} else {
 			goto out;
 		}
@@ -2101,7 +1606,7 @@ static int wlan_get_encodeext(struct net_device *dev,
 	ret = 0;
 
 out:
-	LEAVE();
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
 	return ret;
 }
 
@@ -2126,7 +1631,7 @@ static int wlan_set_encodeext(struct net_device *dev,
 	int alg = ext->alg;
 	struct assoc_request * assoc_req;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	mutex_lock(&adapter->lock);
 	assoc_req = wlan_get_association_request(adapter);
@@ -2137,6 +1642,7 @@ static int wlan_set_encodeext(struct net_device *dev,
 
 	if ((alg == IW_ENCODE_ALG_NONE) || (dwrq->flags & IW_ENCODE_DISABLED)) {
 		disable_wep (assoc_req);
+		disable_wpa (assoc_req);
 	} else if (alg == IW_ENCODE_ALG_WEP) {
 		u16 is_default = 0, index, set_tx_key = 0;
 
@@ -2149,7 +1655,7 @@ static int wlan_set_encodeext(struct net_device *dev,
 		/* If WEP isn't enabled, or if there is no key data but a valid
 		 * index, or if the set-TX-key flag was passed, set the TX key.
 		 */
-		if ((assoc_req->secinfo.WEPstatus != wlan802_11WEPenabled)
+		if (   !assoc_req->secinfo.wep_enabled
 		    || (dwrq->length == 0 && !is_default)
 		    || (ext->ext_flags & IW_ENCODE_EXT_SET_TX_KEY))
 			set_tx_key = 1;
@@ -2161,11 +1667,9 @@ static int wlan_set_encodeext(struct net_device *dev,
 			goto out;
 
 		if (dwrq->flags & IW_ENCODE_RESTRICTED) {
-			assoc_req->secinfo.authmode =
-			    wlan802_11authmodeshared;
+			assoc_req->secinfo.auth_mode = IW_AUTH_ALG_SHARED_KEY;
 		} else if (dwrq->flags & IW_ENCODE_OPEN) {
-			assoc_req->secinfo.authmode =
-			    wlan802_11authmodeopen;
+			assoc_req->secinfo.auth_mode = IW_AUTH_ALG_OPEN_SYSTEM;
 		}
 
 		/* Mark the various WEP bits as modified */
@@ -2174,7 +1678,6 @@ static int wlan_set_encodeext(struct net_device *dev,
 			set_bit(ASSOC_FLAG_WEP_KEYS, &assoc_req->flags);
 		if (set_tx_key)
 			set_bit(ASSOC_FLAG_WEP_TX_KEYIDX, &assoc_req->flags);
-
 	} else if ((alg == IW_ENCODE_ALG_TKIP) || (alg == IW_ENCODE_ALG_CCMP)) {
 		struct WLAN_802_11_KEY * pkey;
 
@@ -2183,36 +1686,40 @@ static int wlan_set_encodeext(struct net_device *dev,
 			&& (ext->key_len != KEY_LEN_WPA_TKIP))
 		    || ((alg == IW_ENCODE_ALG_CCMP)
 		        && (ext->key_len != KEY_LEN_WPA_AES))) {
-				lbs_pr_debug(1, "Invalid size %d for key of alg"
-				       "type %d.\n",
+				lbs_deb_wext("invalid size %d for key of alg"
+				       "type %d\n",
 				       ext->key_len,
 				       alg);
 				ret = -EINVAL;
 				goto out;
 		}
 
-		if (ext->ext_flags & IW_ENCODE_EXT_GROUP_KEY)
+		if (ext->ext_flags & IW_ENCODE_EXT_GROUP_KEY) {
 			pkey = &assoc_req->wpa_mcast_key;
-		else
+			set_bit(ASSOC_FLAG_WPA_MCAST_KEY, &assoc_req->flags);
+		} else {
 			pkey = &assoc_req->wpa_unicast_key;
+			set_bit(ASSOC_FLAG_WPA_UCAST_KEY, &assoc_req->flags);
+		}
 
 		memset(pkey, 0, sizeof (struct WLAN_802_11_KEY));
 		memcpy(pkey->key, ext->key, ext->key_len);
 		pkey->len = ext->key_len;
-		pkey->flags = KEY_INFO_WPA_ENABLED;
+		if (pkey->len)
+			pkey->flags |= KEY_INFO_WPA_ENABLED;
 
+		/* Do this after zeroing key structure */
 		if (ext->ext_flags & IW_ENCODE_EXT_GROUP_KEY) {
 			pkey->flags |= KEY_INFO_WPA_MCAST;
-			set_bit(ASSOC_FLAG_WPA_MCAST_KEY, &assoc_req->flags);
 		} else {
 			pkey->flags |= KEY_INFO_WPA_UNICAST;
-			set_bit(ASSOC_FLAG_WPA_UCAST_KEY, &assoc_req->flags);
 		}
 
-		if (alg == IW_ENCODE_ALG_TKIP)
+		if (alg == IW_ENCODE_ALG_TKIP) {
 			pkey->type = KEY_TYPE_ID_TKIP;
-		else if (alg == IW_ENCODE_ALG_CCMP)
+		} else if (alg == IW_ENCODE_ALG_CCMP) {
 			pkey->type = KEY_TYPE_ID_AES;
+		}
 
 		/* If WPA isn't enabled yet, do that now */
 		if (   assoc_req->secinfo.WPAenabled == 0
@@ -2233,7 +1740,7 @@ out:
 	}
 	mutex_unlock(&adapter->lock);
 
-	LEAVE();
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
 	return ret;
 }
 
@@ -2248,7 +1755,7 @@ static int wlan_set_genie(struct net_device *dev,
 	int ret = 0;
 	struct assoc_request * assoc_req;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	mutex_lock(&adapter->lock);
 	assoc_req = wlan_get_association_request(adapter);
@@ -2280,7 +1787,7 @@ out:
 	}
 	mutex_unlock(&adapter->lock);
 
-	LEAVE();
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
 	return ret;
 }
 
@@ -2289,27 +1796,28 @@ static int wlan_get_genie(struct net_device *dev,
 			  struct iw_point *dwrq,
 			  char *extra)
 {
+	int ret = 0;
 	wlan_private *priv = dev->priv;
 	wlan_adapter *adapter = priv->adapter;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	if (adapter->wpa_ie_len == 0) {
 		dwrq->length = 0;
-		LEAVE();
-		return 0;
+		goto out;
 	}
 
 	if (dwrq->length < adapter->wpa_ie_len) {
-		LEAVE();
-		return -E2BIG;
+		ret = -E2BIG;
+		goto out;
 	}
 
 	dwrq->length = adapter->wpa_ie_len;
 	memcpy(extra, &adapter->wpa_ie[0], adapter->wpa_ie_len);
 
-	LEAVE();
-	return 0;
+out:
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
+	return ret;
 }
 
 
@@ -2324,7 +1832,7 @@ static int wlan_set_auth(struct net_device *dev,
 	int ret = 0;
 	int updated = 0;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	mutex_lock(&adapter->lock);
 	assoc_req = wlan_get_association_request(adapter);
@@ -2338,6 +1846,7 @@ static int wlan_set_auth(struct net_device *dev,
 	case IW_AUTH_CIPHER_PAIRWISE:
 	case IW_AUTH_CIPHER_GROUP:
 	case IW_AUTH_KEY_MGMT:
+	case IW_AUTH_DROP_UNENCRYPTED:
 		/*
 		 * libertas does not use these parameters
 		 */
@@ -2347,43 +1856,28 @@ static int wlan_set_auth(struct net_device *dev,
 		if (dwrq->value & IW_AUTH_WPA_VERSION_DISABLED) {
 			assoc_req->secinfo.WPAenabled = 0;
 			assoc_req->secinfo.WPA2enabled = 0;
+			disable_wpa (assoc_req);
 		}
 		if (dwrq->value & IW_AUTH_WPA_VERSION_WPA) {
 			assoc_req->secinfo.WPAenabled = 1;
-			assoc_req->secinfo.WEPstatus = wlan802_11WEPdisabled;
-			assoc_req->secinfo.authmode =
-			    wlan802_11authmodeopen;
+			assoc_req->secinfo.wep_enabled = 0;
+			assoc_req->secinfo.auth_mode = IW_AUTH_ALG_OPEN_SYSTEM;
 		}
 		if (dwrq->value & IW_AUTH_WPA_VERSION_WPA2) {
 			assoc_req->secinfo.WPA2enabled = 1;
-			assoc_req->secinfo.WEPstatus = wlan802_11WEPdisabled;
-			assoc_req->secinfo.authmode =
-			    wlan802_11authmodeopen;
-		}
-		updated = 1;
-		break;
-
-	case IW_AUTH_DROP_UNENCRYPTED:
-		if (dwrq->value) {
-			adapter->currentpacketfilter |=
-			    cmd_act_mac_strict_protection_enable;
-		} else {
-			adapter->currentpacketfilter &=
-			    ~cmd_act_mac_strict_protection_enable;
+			assoc_req->secinfo.wep_enabled = 0;
+			assoc_req->secinfo.auth_mode = IW_AUTH_ALG_OPEN_SYSTEM;
 		}
 		updated = 1;
 		break;
 
 	case IW_AUTH_80211_AUTH_ALG:
 		if (dwrq->value & IW_AUTH_ALG_SHARED_KEY) {
-			assoc_req->secinfo.authmode =
-			    wlan802_11authmodeshared;
+			assoc_req->secinfo.auth_mode = IW_AUTH_ALG_SHARED_KEY;
 		} else if (dwrq->value & IW_AUTH_ALG_OPEN_SYSTEM) {
-			assoc_req->secinfo.authmode =
-			    wlan802_11authmodeopen;
+			assoc_req->secinfo.auth_mode = IW_AUTH_ALG_OPEN_SYSTEM;
 		} else if (dwrq->value & IW_AUTH_ALG_LEAP) {
-			assoc_req->secinfo.authmode =
-			    wlan802_11authmodenetworkEAP;
+			assoc_req->secinfo.auth_mode = IW_AUTH_ALG_LEAP;
 		} else {
 			ret = -EINVAL;
 		}
@@ -2396,13 +1890,13 @@ static int wlan_set_auth(struct net_device *dev,
 			    !assoc_req->secinfo.WPA2enabled) {
 				assoc_req->secinfo.WPAenabled = 1;
 				assoc_req->secinfo.WPA2enabled = 1;
-				assoc_req->secinfo.WEPstatus = wlan802_11WEPdisabled;
-				assoc_req->secinfo.authmode =
-				    wlan802_11authmodeopen;
+				assoc_req->secinfo.wep_enabled = 0;
+				assoc_req->secinfo.auth_mode = IW_AUTH_ALG_OPEN_SYSTEM;
 			}
 		} else {
 			assoc_req->secinfo.WPAenabled = 0;
 			assoc_req->secinfo.WPA2enabled = 0;
+			disable_wpa (assoc_req);
 		}
 		updated = 1;
 		break;
@@ -2422,7 +1916,7 @@ out:
 	}
 	mutex_unlock(&adapter->lock);
 
-	LEAVE();
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
 	return ret;
 }
 
@@ -2431,10 +1925,11 @@ static int wlan_get_auth(struct net_device *dev,
 			 struct iw_param *dwrq,
 			 char *extra)
 {
+	int ret = 0;
 	wlan_private *priv = dev->priv;
 	wlan_adapter *adapter = priv->adapter;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	switch (dwrq->flags & IW_AUTH_INDEX) {
 	case IW_AUTH_WPA_VERSION:
@@ -2447,27 +1942,8 @@ static int wlan_get_auth(struct net_device *dev,
 			dwrq->value |= IW_AUTH_WPA_VERSION_DISABLED;
 		break;
 
-	case IW_AUTH_DROP_UNENCRYPTED:
-		dwrq->value = 0;
-		if (adapter->currentpacketfilter &
-		    cmd_act_mac_strict_protection_enable)
-			dwrq->value = 1;
-		break;
-
 	case IW_AUTH_80211_AUTH_ALG:
-		switch (adapter->secinfo.authmode) {
-		case wlan802_11authmodeshared:
-			dwrq->value = IW_AUTH_ALG_SHARED_KEY;
-			break;
-		case wlan802_11authmodeopen:
-			dwrq->value = IW_AUTH_ALG_OPEN_SYSTEM;
-			break;
-		case wlan802_11authmodenetworkEAP:
-			dwrq->value = IW_AUTH_ALG_LEAP;
-			break;
-		default:
-			break;
-		}
+		dwrq->value = adapter->secinfo.auth_mode;
 		break;
 
 	case IW_AUTH_WPA_ENABLED:
@@ -2476,12 +1952,11 @@ static int wlan_get_auth(struct net_device *dev,
 		break;
 
 	default:
-		LEAVE();
-		return -EOPNOTSUPP;
+		ret = -EOPNOTSUPP;
 	}
 
-	LEAVE();
-	return 0;
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
+	return ret;
 }
 
 
@@ -2494,7 +1969,7 @@ static int wlan_set_txpow(struct net_device *dev, struct iw_request_info *info,
 
 	u16 dbm;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	if (vwrq->disabled) {
 		wlan_radio_ioctl(priv, RADIO_OFF);
@@ -2515,14 +1990,14 @@ static int wlan_set_txpow(struct net_device *dev, struct iw_request_info *info,
 	if (vwrq->fixed == 0)
 		dbm = 0xffff;
 
-	lbs_pr_debug(1, "<1>TXPOWER SET %d dbm.\n", dbm);
+	lbs_deb_wext("txpower set %d dbm\n", dbm);
 
 	ret = libertas_prepare_and_send_command(priv,
 				    cmd_802_11_rf_tx_power,
 				    cmd_act_tx_power_opt_set_low,
 				    cmd_option_waitforrsp, 0, (void *)&dbm);
 
-	LEAVE();
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
 	return ret;
 }
 
@@ -2532,7 +2007,8 @@ static int wlan_get_essid(struct net_device *dev, struct iw_request_info *info,
 	wlan_private *priv = dev->priv;
 	wlan_adapter *adapter = priv->adapter;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
+
 	/*
 	 * Note : if dwrq->flags != 0, we should get the relevant SSID from
 	 * the SSID list...
@@ -2542,12 +2018,12 @@ static int wlan_get_essid(struct net_device *dev, struct iw_request_info *info,
 	 * Get the current SSID
 	 */
 	if (adapter->connect_status == libertas_connected) {
-		memcpy(extra, adapter->curbssparams.ssid.ssid,
-		       adapter->curbssparams.ssid.ssidlength);
-		extra[adapter->curbssparams.ssid.ssidlength] = '\0';
+		memcpy(extra, adapter->curbssparams.ssid,
+		       adapter->curbssparams.ssid_len);
+		extra[adapter->curbssparams.ssid_len] = '\0';
 	} else {
 		memset(extra, 0, 32);
-		extra[adapter->curbssparams.ssid.ssidlength] = '\0';
+		extra[adapter->curbssparams.ssid_len] = '\0';
 	}
 	/*
 	 * If none, we may want to get the one that was set
@@ -2555,14 +2031,14 @@ static int wlan_get_essid(struct net_device *dev, struct iw_request_info *info,
 
 	/* To make the driver backward compatible with WPA supplicant v0.2.4 */
 	if (dwrq->length == 32)	/* check with WPA supplicant buffer size */
-		dwrq->length = min_t(size_t, adapter->curbssparams.ssid.ssidlength,
+		dwrq->length = min_t(size_t, adapter->curbssparams.ssid_len,
 				   IW_ESSID_MAX_SIZE);
 	else
-		dwrq->length = adapter->curbssparams.ssid.ssidlength + 1;
+		dwrq->length = adapter->curbssparams.ssid_len + 1;
 
 	dwrq->flags = 1;	/* active */
 
-	LEAVE();
+	lbs_deb_leave(LBS_DEB_WEXT);
 	return 0;
 }
 
@@ -2572,38 +2048,43 @@ static int wlan_set_essid(struct net_device *dev, struct iw_request_info *info,
 	wlan_private *priv = dev->priv;
 	wlan_adapter *adapter = priv->adapter;
 	int ret = 0;
-	struct WLAN_802_11_SSID ssid;
+	u8 ssid[IW_ESSID_MAX_SIZE];
+	u8 ssid_len = 0;
 	struct assoc_request * assoc_req;
-	int ssid_len = dwrq->length;
+	int in_ssid_len = dwrq->length;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	/*
 	 * WE-20 and earlier NULL pad the end of the SSID and increment
 	 * SSID length so it can be used like a string.  WE-21 and later don't,
 	 * but some userspace tools aren't able to cope with the change.
 	 */
-	if ((ssid_len > 0) && (extra[ssid_len - 1] == '\0'))
-		ssid_len--;
+	if ((in_ssid_len > 0) && (extra[in_ssid_len - 1] == '\0'))
+		in_ssid_len--;
 
 	/* Check the size of the string */
-	if (ssid_len > IW_ESSID_MAX_SIZE) {
+	if (in_ssid_len > IW_ESSID_MAX_SIZE) {
 		ret = -E2BIG;
 		goto out;
 	}
 
-	memset(&ssid, 0, sizeof(struct WLAN_802_11_SSID));
+	memset(&ssid, 0, sizeof(ssid));
 
-	if (!dwrq->flags || !ssid_len) {
+	if (!dwrq->flags || !in_ssid_len) {
 		/* "any" SSID requested; leave SSID blank */
 	} else {
 		/* Specific SSID requested */
-		memcpy(&ssid.ssid, extra, ssid_len);
-		ssid.ssidlength = ssid_len;
+		memcpy(&ssid, extra, in_ssid_len);
+		ssid_len = in_ssid_len;
 	}
 
-	lbs_pr_debug(1, "Requested new SSID = %s\n",
-	       (ssid.ssidlength > 0) ? (char *)ssid.ssid : "any");
+	if (!ssid_len) {
+		lbs_deb_wext("requested any SSID\n");
+	} else {
+		lbs_deb_wext("requested SSID '%s'\n",
+		             escape_essid(ssid, ssid_len));
+	}
 
 out:
 	mutex_lock(&adapter->lock);
@@ -2614,7 +2095,8 @@ out:
 			ret = -ENOMEM;
 		} else {
 			/* Copy the SSID to the association request */
-			memcpy(&assoc_req->ssid, &ssid, sizeof(struct WLAN_802_11_SSID));
+			memcpy(&assoc_req->ssid, &ssid, IW_ESSID_MAX_SIZE);
+			assoc_req->ssid_len = ssid_len;
 			set_bit(ASSOC_FLAG_SSID, &assoc_req->flags);
 			wlan_postpone_association_work(priv);
 		}
@@ -2627,7 +2109,7 @@ out:
 
 	mutex_unlock(&adapter->lock);
 
-	LEAVE();
+	lbs_deb_leave_args(LBS_DEB_WEXT, "ret %d", ret);
 	return ret;
 }
 
@@ -2648,12 +2130,12 @@ static int wlan_set_wap(struct net_device *dev, struct iw_request_info *info,
 	struct assoc_request * assoc_req;
 	int ret = 0;
 
-	ENTER();
+	lbs_deb_enter(LBS_DEB_WEXT);
 
 	if (awrq->sa_family != ARPHRD_ETHER)
 		return -EINVAL;
 
-	lbs_pr_debug(1, "ASSOC: WAP: sa_data: " MAC_FMT "\n", MAC_ARG(awrq->sa_data));
+	lbs_deb_wext("ASSOC: WAP: sa_data " MAC_FMT "\n", MAC_ARG(awrq->sa_data));
 
 	mutex_lock(&adapter->lock);
 
@@ -2676,22 +2158,23 @@ static int wlan_set_wap(struct net_device *dev, struct iw_request_info *info,
 
 void libertas_get_fwversion(wlan_adapter * adapter, char *fwversion, int maxlen)
 {
-	union {
-		u32 l;
-		u8 c[4];
-	} ver;
 	char fwver[32];
 
 	mutex_lock(&adapter->lock);
-	ver.l = adapter->fwreleasenumber;
-	mutex_unlock(&adapter->lock);
 
-	if (ver.c[3] == 0)
-		sprintf(fwver, "%u.%u.%u", ver.c[2], ver.c[1], ver.c[0]);
+	if (adapter->fwreleasenumber[3] == 0)
+		sprintf(fwver, "%u.%u.%u",
+			adapter->fwreleasenumber[2],
+			adapter->fwreleasenumber[1],
+			adapter->fwreleasenumber[0]);
 	else
 		sprintf(fwver, "%u.%u.%u.p%u",
-			ver.c[2], ver.c[1], ver.c[0], ver.c[3]);
+			adapter->fwreleasenumber[2],
+			adapter->fwreleasenumber[1],
+			adapter->fwreleasenumber[0],
+			adapter->fwreleasenumber[3]);
 
+	mutex_unlock(&adapter->lock);
 	snprintf(fwversion, maxlen, fwver);
 }
 
@@ -2757,13 +2240,71 @@ static const iw_handler wlan_handler[] = {
 	(iw_handler) NULL,		/* SIOCSIWPMKSA */
 };
 
+static const iw_handler mesh_wlan_handler[] = {
+	(iw_handler) NULL,	/* SIOCSIWCOMMIT */
+	(iw_handler) wlan_get_name,	/* SIOCGIWNAME */
+	(iw_handler) NULL,	/* SIOCSIWNWID */
+	(iw_handler) NULL,	/* SIOCGIWNWID */
+	(iw_handler) wlan_set_freq,	/* SIOCSIWFREQ */
+	(iw_handler) wlan_get_freq,	/* SIOCGIWFREQ */
+	(iw_handler) NULL,		/* SIOCSIWMODE */
+	(iw_handler) mesh_wlan_get_mode,	/* SIOCGIWMODE */
+	(iw_handler) NULL,	/* SIOCSIWSENS */
+	(iw_handler) NULL,	/* SIOCGIWSENS */
+	(iw_handler) NULL,	/* SIOCSIWRANGE */
+	(iw_handler) wlan_get_range,	/* SIOCGIWRANGE */
+	(iw_handler) NULL,	/* SIOCSIWPRIV */
+	(iw_handler) NULL,	/* SIOCGIWPRIV */
+	(iw_handler) NULL,	/* SIOCSIWSTATS */
+	(iw_handler) NULL,	/* SIOCGIWSTATS */
+	iw_handler_set_spy,	/* SIOCSIWSPY */
+	iw_handler_get_spy,	/* SIOCGIWSPY */
+	iw_handler_set_thrspy,	/* SIOCSIWTHRSPY */
+	iw_handler_get_thrspy,	/* SIOCGIWTHRSPY */
+	(iw_handler) NULL,	/* SIOCSIWAP */
+	(iw_handler) NULL,	/* SIOCGIWAP */
+	(iw_handler) NULL,	/* SIOCSIWMLME */
+	(iw_handler) NULL,	/* SIOCGIWAPLIST - deprecated */
+	(iw_handler) libertas_set_scan,	/* SIOCSIWSCAN */
+	(iw_handler) libertas_get_scan,	/* SIOCGIWSCAN */
+	(iw_handler) NULL,		/* SIOCSIWESSID */
+	(iw_handler) NULL,		/* SIOCGIWESSID */
+	(iw_handler) NULL,		/* SIOCSIWNICKN */
+	(iw_handler) mesh_get_nick,	/* SIOCGIWNICKN */
+	(iw_handler) NULL,	/* -- hole -- */
+	(iw_handler) NULL,	/* -- hole -- */
+	(iw_handler) wlan_set_rate,	/* SIOCSIWRATE */
+	(iw_handler) wlan_get_rate,	/* SIOCGIWRATE */
+	(iw_handler) wlan_set_rts,	/* SIOCSIWRTS */
+	(iw_handler) wlan_get_rts,	/* SIOCGIWRTS */
+	(iw_handler) wlan_set_frag,	/* SIOCSIWFRAG */
+	(iw_handler) wlan_get_frag,	/* SIOCGIWFRAG */
+	(iw_handler) wlan_set_txpow,	/* SIOCSIWTXPOW */
+	(iw_handler) wlan_get_txpow,	/* SIOCGIWTXPOW */
+	(iw_handler) wlan_set_retry,	/* SIOCSIWRETRY */
+	(iw_handler) wlan_get_retry,	/* SIOCGIWRETRY */
+	(iw_handler) wlan_set_encode,	/* SIOCSIWENCODE */
+	(iw_handler) wlan_get_encode,	/* SIOCGIWENCODE */
+	(iw_handler) wlan_set_power,	/* SIOCSIWPOWER */
+	(iw_handler) wlan_get_power,	/* SIOCGIWPOWER */
+	(iw_handler) NULL,	/* -- hole -- */
+	(iw_handler) NULL,	/* -- hole -- */
+	(iw_handler) wlan_set_genie,	/* SIOCSIWGENIE */
+	(iw_handler) wlan_get_genie,	/* SIOCGIWGENIE */
+	(iw_handler) wlan_set_auth,	/* SIOCSIWAUTH */
+	(iw_handler) wlan_get_auth,	/* SIOCGIWAUTH */
+	(iw_handler) wlan_set_encodeext,/* SIOCSIWENCODEEXT */
+	(iw_handler) wlan_get_encodeext,/* SIOCGIWENCODEEXT */
+	(iw_handler) NULL,		/* SIOCSIWPMKSA */
+};
 struct iw_handler_def libertas_handler_def = {
 	.num_standard	= sizeof(wlan_handler) / sizeof(iw_handler),
-	.num_private	= sizeof(wlan_private_handler) / sizeof(iw_handler),
-	.num_private_args = sizeof(wlan_private_args) /
-		sizeof(struct iw_priv_args),
 	.standard	= (iw_handler *) wlan_handler,
-	.private	= (iw_handler *) wlan_private_handler,
-	.private_args	= (struct iw_priv_args *)wlan_private_args,
+	.get_wireless_stats = wlan_get_wireless_stats,
+};
+
+struct iw_handler_def mesh_handler_def = {
+	.num_standard	= sizeof(mesh_wlan_handler) / sizeof(iw_handler),
+	.standard	= (iw_handler *) mesh_wlan_handler,
 	.get_wireless_stats = wlan_get_wireless_stats,
 };

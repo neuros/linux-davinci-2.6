@@ -424,9 +424,6 @@ void __init mem_init(void)
 			continue;
 		}
 		ClearPageReserved(page);
-#ifdef CONFIG_LIMITED_DMA
-		set_page_address(page, lowmem_page_address(page));
-#endif
 		init_page_count(page);
 		__free_page(page);
 		totalhigh_pages++;
@@ -487,7 +484,7 @@ void free_initrd_mem(unsigned long start, unsigned long end)
 }
 #endif
 
-void free_initmem(void)
+void __init_refok free_initmem(void)
 {
 	prom_free_prom_memory();
 	free_init_pages("unused kernel memory",

@@ -28,14 +28,24 @@ config PPC_HOLLY
 	bool "PPC750GX/CL with TSI10x bridge (Hickory/Holly)"
 	select TSI108_BRIDGE
 	select PPC_UDBG_16550
+	select WANT_DEVICE_TREE
 	help
 	  Select PPC_HOLLY if configuring for an IBM 750GX/CL Eval
 	  Board with TSI108/9 bridge (Hickory/Holly)
+
+config PPC_PRPMC2800
+	bool "Motorola-PrPMC2800"
+	select MV64X60
+	select NOT_COHERENT_CACHE
+	select WANT_DEVICE_TREE
+	help
+	  This option enables support for the Motorola PrPMC2800 board
 endchoice
 
 config TSI108_BRIDGE
 	bool
 	depends on MPC7448HPC2 || PPC_HOLLY
+	select PCI
 	select MPIC
 	select MPIC_WEIRD
 	default y
@@ -45,6 +55,11 @@ config MPC10X_BRIDGE
 	depends on LINKSTATION
 	select PPC_INDIRECT_PCI
 	default y
+
+config MV64X60
+	bool
+	select PPC_INDIRECT_PCI
+	select CHECK_CACHE_COHERENCY
 
 config MPC10X_OPENPIC
 	bool

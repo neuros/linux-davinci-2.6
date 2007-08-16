@@ -463,10 +463,17 @@ int ip6_forward(struct sk_buff *skb)
 		 */
 		if (xrlim_allow(dst, 1*HZ))
 			ndisc_send_redirect(skb, n, target);
-	} else if (ipv6_addr_type(&hdr->saddr)&(IPV6_ADDR_MULTICAST|IPV6_ADDR_LOOPBACK
-						|IPV6_ADDR_LINKLOCAL)) {
+	} else {
+		int addrtype = ipv6_addr_type(&hdr->saddr);
+
 		/* This check is security critical. */
-		goto error;
+		if (addrtype & (IPV6_ADDR_MULTICAST|IPV6_ADDR_LOOPBACK))
+			goto error;
+		if (addrtype & IPV6_ADDR_LINKLOCAL) {
+			icmpv6_send(skb, ICMPV6_DEST_UNREACH,
+				ICMPV6_NOT_NEIGHBOUR, 0, skb->dev);
+			goto error;
+		}
 	}
 
 	if (skb->len > dst_mtu(dst)) {
@@ -514,6 +521,10 @@ static void ip6_copy_metadata(struct sk_buff *to, struct sk_buff *from)
 	to->tc_index = from->tc_index;
 #endif
 	nf_copy(to, from);
+#if defined(CONFIG_NETFILTER_XT_TARGET_TRACE) || \
+    defined(CONFIG_NETFILTER_XT_TARGET_TRACE_MODULE)
+	to->nf_trace = from->nf_trace;
+#endif
 	skb_copy_secmark(to, from);
 }
 
@@ -536,7 +547,7 @@ int ip6_find_1stfragopt(struct sk_buff *skb, u8 **nexthdr)
 			found_rhdr = 1;
 			break;
 		case NEXTHDR_DEST:
-#ifdef CONFIG_IPV6_MIP6
+#if defined(CONFIG_IPV6_MIP6) || defined(CONFIG_IPV6_MIP6_MODULE)
 			if (ipv6_find_tlv(skb, offset, IPV6_TLV_HAO) >= 0)
 				break;
 #endif

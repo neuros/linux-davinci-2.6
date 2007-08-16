@@ -36,6 +36,7 @@
 
 #include <linux/mm.h>
 #include <linux/dma-mapping.h>
+#include <linux/sched.h>
 
 #include "uverbs.h"
 
@@ -120,6 +121,7 @@ struct ib_umem *ib_umem_get(struct ib_ucontext *context, unsigned long addr,
 
 	cur_base = addr & PAGE_MASK;
 
+	ret = 0;
 	while (npages) {
 		ret = get_user_pages(current, current->mm, cur_base,
 				     min_t(int, npages,
@@ -209,8 +211,10 @@ void ib_umem_release(struct ib_umem *umem)
 	__ib_umem_release(umem->context->device, umem, 1);
 
 	mm = get_task_mm(current);
-	if (!mm)
+	if (!mm) {
+		kfree(umem);
 		return;
+	}
 
 	diff = PAGE_ALIGN(umem->length + umem->offset) >> PAGE_SHIFT;
 
@@ -222,13 +226,15 @@ void ib_umem_release(struct ib_umem *umem)
 	 * up here and not be able to take the mmap_sem.  In that case
 	 * we defer the vm_locked accounting to the system workqueue.
 	 */
-	if (context->closing && !down_write_trylock(&mm->mmap_sem)) {
-		INIT_WORK(&umem->work, ib_umem_account);
-		umem->mm   = mm;
-		umem->diff = diff;
+	if (context->closing) {
+		if (!down_write_trylock(&mm->mmap_sem)) {
+			INIT_WORK(&umem->work, ib_umem_account);
+			umem->mm   = mm;
+			umem->diff = diff;
 
-		schedule_work(&umem->work);
-		return;
+			schedule_work(&umem->work);
+			return;
+		}
 	} else
 		down_write(&mm->mmap_sem);
 

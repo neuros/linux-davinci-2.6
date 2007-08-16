@@ -17,6 +17,7 @@
 #include <linux/list.h>
 #include <linux/timer.h>
 #include <linux/init.h>
+#include <linux/sysdev.h>
 #include <linux/serial_core.h>
 #include <linux/platform_device.h>
 
@@ -29,7 +30,7 @@
 #include <asm/irq.h>
 #include <asm/mach-types.h>
 
-#include <asm/arch/regs-serial.h>
+#include <asm/plat-s3c/regs-serial.h>
 #include <asm/arch/regs-lcd.h>
 #include <asm/arch/regs-gpio.h>
 #include <asm/arch/regs-clock.h>
@@ -37,7 +38,7 @@
 #include <asm/arch/h1940.h>
 #include <asm/arch/h1940-latch.h>
 #include <asm/arch/fb.h>
-#include <asm/arch/udc.h>
+#include <asm/plat-s3c24xx/udc.h>
 
 #include <asm/plat-s3c24xx/clock.h>
 #include <asm/plat-s3c24xx/devs.h>
@@ -177,6 +178,11 @@ static struct platform_device s3c_device_leds = {
 	.id               = -1,
 };
 
+static struct platform_device s3c_device_bluetooth = {
+	.name             = "h1940-bt",
+	.id               = -1,
+};
+
 static struct platform_device *h1940_devices[] __initdata = {
 	&s3c_device_usb,
 	&s3c_device_lcd,
@@ -185,6 +191,7 @@ static struct platform_device *h1940_devices[] __initdata = {
 	&s3c_device_iis,
 	&s3c_device_usbgadget,
 	&s3c_device_leds,
+	&s3c_device_bluetooth,
 };
 
 static void __init h1940_map_io(void)

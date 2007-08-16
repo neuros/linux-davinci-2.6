@@ -25,7 +25,6 @@
 #include <linux/interrupt.h>
 #include <linux/acpi.h>
 #include <linux/compiler.h>
-#include <linux/sched.h>
 #include <linux/root_dev.h>
 #include <linux/nodemask.h>
 #include <linux/pm.h>
@@ -167,7 +166,7 @@ void __init early_sn_setup(void)
 	 * IO on SN2 is done via SAL calls, early_printk won't work without this.
 	 *
 	 * This code duplicates some of the ACPI table parsing that is in efi.c & sal.c.
-	 * Any changes to those file may have to be made hereas well.
+	 * Any changes to those file may have to be made here as well.
 	 */
 	efi_systab = (efi_system_table_t *) __va(ia64_boot_param->efi_systab);
 	config_tables = __va(efi_systab->tables);
@@ -194,7 +193,7 @@ void __init early_sn_setup(void)
 }
 
 extern int platform_intr_list[];
-static int __initdata shub_1_1_found;
+static int __cpuinitdata shub_1_1_found;
 
 /*
  * sn_check_for_wars

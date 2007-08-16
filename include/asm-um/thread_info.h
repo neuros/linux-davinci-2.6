@@ -22,6 +22,7 @@ struct thread_info {
 					 	   0-0xBFFFFFFF for user
 						   0-0xFFFFFFFF for kernel */
 	struct restart_block    restart_block;
+	struct thread_info	*real_thread;    /* Points to non-IRQ stack */
 };
 
 #define INIT_THREAD_INFO(tsk)			\
@@ -35,6 +36,7 @@ struct thread_info {
 	.restart_block =  {			\
 		.fn =  do_no_restart_syscall,	\
 	},					\
+	.real_thread = NULL,			\
 }
 
 #define init_thread_info	(init_thread_union.thread_info)
@@ -50,10 +52,21 @@ static inline struct thread_info *current_thread_info(void)
 	return ti;
 }
 
+#ifdef CONFIG_DEBUG_STACK_USAGE
+
+#define alloc_thread_info(tsk) \
+	((struct thread_info *) __get_free_pages(GFP_KERNEL | __GFP_ZERO, \
+						 CONFIG_KERNEL_STACK_ORDER))
+#else
+
 /* thread information allocation */
 #define alloc_thread_info(tsk) \
-	((struct thread_info *) kmalloc(THREAD_SIZE, GFP_KERNEL))
-#define free_thread_info(ti) kfree(ti)
+	((struct thread_info *) __get_free_pages(GFP_KERNEL, \
+						 CONFIG_KERNEL_STACK_ORDER))
+#endif
+
+#define free_thread_info(ti) \
+	free_pages((unsigned long)(ti),CONFIG_KERNEL_STACK_ORDER)
 
 #endif
 

@@ -482,7 +482,8 @@ static void cpm_uart_shutdown(struct uart_port *port)
 }
 
 static void cpm_uart_set_termios(struct uart_port *port,
-				 struct termios *termios, struct termios *old)
+                                 struct ktermios *termios,
+                                 struct ktermios *old)
 {
 	int baud;
 	unsigned long flags;
@@ -677,7 +678,7 @@ static int cpm_uart_tx_pump(struct uart_port *port)
 		}
 		bdp->cbd_datlen = count;
 		bdp->cbd_sc |= BD_SC_READY;
-		__asm__("eieio");
+		eieio();
 		/* Get next BD. */
 		if (bdp->cbd_sc & BD_SC_WRAP)
 			bdp = pinfo->tx_bd_base;

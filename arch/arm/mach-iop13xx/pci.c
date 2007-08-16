@@ -19,10 +19,11 @@
 
 #include <linux/pci.h>
 #include <linux/delay.h>
-
+#include <linux/jiffies.h>
 #include <asm/irq.h>
 #include <asm/hardware.h>
 #include <asm/sizes.h>
+#include <asm/signal.h>
 #include <asm/mach/pci.h>
 #include <asm/arch/pci.h>
 
@@ -144,7 +145,7 @@ void iop13xx_map_pci_memory(void)
 	}
 }
 
-static inline int iop13xx_atu_function(int atu)
+static int iop13xx_atu_function(int atu)
 {
 	int func = 0;
 	/* the function number depends on the value of the
@@ -259,7 +260,7 @@ static int iop13xx_atux_pci_status(int clear)
  * data.  Note that the data dependency on %0 encourages an abort
  * to be detected before we return.
  */
-static inline u32 iop13xx_atux_read(unsigned long addr)
+static u32 iop13xx_atux_read(unsigned long addr)
 {
 	u32 val;
 
@@ -387,7 +388,7 @@ static int iop13xx_atue_pci_status(int clear)
 	return err;
 }
 
-static inline int __init
+static int
 iop13xx_pcie_map_irq(struct pci_dev *dev, u8 idsel, u8 pin)
 {
 	WARN_ON(idsel != 0);
@@ -401,7 +402,7 @@ iop13xx_pcie_map_irq(struct pci_dev *dev, u8 idsel, u8 pin)
 	}
 }
 
-static inline u32 iop13xx_atue_read(unsigned long addr)
+static u32 iop13xx_atue_read(unsigned long addr)
 {
 	u32 val;
 
@@ -558,6 +559,14 @@ void __init iop13xx_atue_setup(void)
 {
 	int func = iop13xx_atu_function(IOP13XX_INIT_ATU_ATUE);
 	u32 reg_val;
+
+#ifdef CONFIG_PCI_MSI
+	/* BAR 0 (inbound msi window) */
+	__raw_writel(IOP13XX_MU_BASE_PHYS, IOP13XX_MU_MUBAR);
+	__raw_writel(~(IOP13XX_MU_WINDOW_SIZE - 1), IOP13XX_ATUE_IALR0);
+	__raw_writel(IOP13XX_MU_BASE_PHYS, IOP13XX_ATUE_IATVR0);
+	__raw_writel(IOP13XX_MU_BASE_PCI, IOP13XX_ATUE_IABAR0);
+#endif
 
 	/* BAR 1 (1:1 mapping with Physical RAM) */
 	/* Set limit and enable */
@@ -719,6 +728,14 @@ void __init iop13xx_atux_setup(void)
 	}
 	else
 		atux_trhfa_timeout = jiffies;
+
+#ifdef CONFIG_PCI_MSI
+	/* BAR 0 (inbound msi window) */
+	__raw_writel(IOP13XX_MU_BASE_PHYS, IOP13XX_MU_MUBAR);
+	__raw_writel(~(IOP13XX_MU_WINDOW_SIZE - 1), IOP13XX_ATUX_IALR0);
+	__raw_writel(IOP13XX_MU_BASE_PHYS, IOP13XX_ATUX_IATVR0);
+	__raw_writel(IOP13XX_MU_BASE_PCI, IOP13XX_ATUX_IABAR0);
+#endif
 
 	/* BAR 1 (1:1 mapping with Physical RAM) */
 	/* Set limit and enable */
@@ -973,7 +990,7 @@ void __init iop13xx_pci_init(void)
 			"imprecise external abort");
 }
 
-/* intialize the pci memory space.  handle any combination of
+/* initialize the pci memory space.  handle any combination of
  * atue and atux enabled/disabled
  */
 int iop13xx_pci_setup(int nr, struct pci_sys_data *sys)
@@ -985,11 +1002,10 @@ int iop13xx_pci_setup(int nr, struct pci_sys_data *sys)
 	if (nr > 1)
 		return 0;
 
-	res = kmalloc(sizeof(struct resource) * 2, GFP_KERNEL);
+	res = kcalloc(2, sizeof(struct resource), GFP_KERNEL);
 	if (!res)
 		panic("PCI: unable to alloc resources");
 
-	memset(res, 0, sizeof(struct resource) * 2);
 
 	/* 'nr' assumptions:
 	 * ATUX is always 0

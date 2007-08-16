@@ -1708,7 +1708,18 @@ ppp_decompress_frame(struct ppp *ppp, struct sk_buff *skb)
 		goto err;
 
 	if (proto == PPP_COMP) {
-		ns = dev_alloc_skb(ppp->mru + PPP_HDRLEN);
+		int obuff_size;
+
+		switch(ppp->rcomp->compress_proto) {
+		case CI_MPPE:
+			obuff_size = ppp->mru + PPP_HDRLEN + 1;
+			break;
+		default:
+			obuff_size = ppp->mru + PPP_HDRLEN;
+			break;
+		}
+
+		ns = dev_alloc_skb(obuff_size);
 		if (ns == 0) {
 			printk(KERN_ERR "ppp_decompress_frame: no memory\n");
 			goto err;
@@ -2673,8 +2684,7 @@ static void __exit ppp_cleanup(void)
 	if (atomic_read(&ppp_unit_count) || atomic_read(&channel_count))
 		printk(KERN_ERR "PPP: removing module but units remain!\n");
 	cardmap_destroy(&all_ppp_units);
-	if (unregister_chrdev(PPP_MAJOR, "ppp") != 0)
-		printk(KERN_ERR "PPP: failed to unregister PPP device\n");
+	unregister_chrdev(PPP_MAJOR, "ppp");
 	device_destroy(ppp_class, MKDEV(PPP_MAJOR, 0));
 	class_destroy(ppp_class);
 }

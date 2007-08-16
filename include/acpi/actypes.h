@@ -344,7 +344,7 @@ typedef u32 acpi_integer;
 
 /* 64-bit integers */
 
-typedef unsigned long long              acpi_integer;
+typedef unsigned long long acpi_integer;
 #define ACPI_INTEGER_MAX                ACPI_UINT64_MAX
 #define ACPI_INTEGER_BIT_SIZE           64
 #define ACPI_MAX_DECIMAL_DIGITS         20	/* 2^64 = 18,446,744,073,709,551,616 */
@@ -809,7 +809,7 @@ acpi_status(*acpi_walk_callback) (acpi_handle obj_handle,
 
 /* Common string version of device HIDs and UIDs */
 
-struct acpi_device_id {
+struct acpica_device_id {
 	char value[ACPI_DEVICE_ID_LENGTH];
 };
 
@@ -859,8 +859,8 @@ struct acpi_device_info {
 	u32 valid;		/* Indicates which fields below are valid */
 	u32 current_status;	/* _STA value */
 	acpi_integer address;	/* _ADR value if any */
-	struct acpi_device_id hardware_id;	/* _HID value if any */
-	struct acpi_device_id unique_id;	/* _UID value if any */
+	struct acpica_device_id hardware_id;	/* _HID value if any */
+	struct acpica_device_id unique_id;	/* _UID value if any */
 	u8 highest_dstates[4];	/* _sx_d values: 0xFF indicates not valid */
 	struct acpi_compatible_id_list compatibility_id;	/* List of _CIDs if any */
 };

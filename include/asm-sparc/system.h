@@ -11,6 +11,7 @@
 #include <asm/psr.h>
 #include <asm/ptrace.h>
 #include <asm/btfixup.h>
+#include <asm/smp.h>
 
 #ifndef __ASSEMBLY__
 
@@ -162,16 +163,6 @@ extern void fpsave(unsigned long *fpregs, unsigned long *fsr,
 	  "i0", "i1", "i2", "i3", "i4", "i5",			\
 	  "o0", "o1", "o2", "o3",                   "o7");	\
 	} while(0)
-
-/*
- * On SMP systems, when the scheduler does migration-cost autodetection,
- * it needs a way to flush as much of the CPU's caches as possible.
- *
- * TODO: fill this in!
- */
-static inline void sched_cacheflush(void)
-{
-}
 
 /*
  * Changing the IRQ level on the Sparc.

@@ -14,6 +14,7 @@
 #include <linux/init.h>
 #include <linux/slab.h>
 #include <linux/fs.h>
+#include <linux/sched.h>
 #include "internal.h"
 
 #if 0
@@ -175,24 +176,33 @@ static void afs_vnode_deleted_remotely(struct afs_vnode *vnode)
 {
 	struct afs_server *server;
 
+	_enter("{%p}", vnode->server);
+
 	set_bit(AFS_VNODE_DELETED, &vnode->flags);
 
 	server = vnode->server;
-	if (vnode->cb_promised) {
-		spin_lock(&server->cb_lock);
+	if (server) {
 		if (vnode->cb_promised) {
-			rb_erase(&vnode->cb_promise, &server->cb_promises);
-			vnode->cb_promised = false;
+			spin_lock(&server->cb_lock);
+			if (vnode->cb_promised) {
+				rb_erase(&vnode->cb_promise,
+					 &server->cb_promises);
+				vnode->cb_promised = false;
+			}
+			spin_unlock(&server->cb_lock);
 		}
-		spin_unlock(&server->cb_lock);
+
+		spin_lock(&server->fs_lock);
+		rb_erase(&vnode->server_rb, &server->fs_vnodes);
+		spin_unlock(&server->fs_lock);
+
+		vnode->server = NULL;
+		afs_put_server(server);
+	} else {
+		ASSERT(!vnode->cb_promised);
 	}
 
-	spin_lock(&vnode->server->fs_lock);
-	rb_erase(&vnode->server_rb, &vnode->server->fs_vnodes);
-	spin_unlock(&vnode->server->fs_lock);
-
-	vnode->server = NULL;
-	afs_put_server(server);
+	_leave("");
 }
 
 /*
@@ -225,7 +235,7 @@ void afs_vnode_finalise_status_update(struct afs_vnode *vnode,
  */
 static void afs_vnode_status_update_failed(struct afs_vnode *vnode, int ret)
 {
-	_enter("%p,%d", vnode, ret);
+	_enter("{%x:%u},%d", vnode->fid.vid, vnode->fid.vnode, ret);
 
 	spin_lock(&vnode->lock);
 
@@ -551,7 +561,7 @@ no_server:
 /*
  * create a hard link
  */
-extern int afs_vnode_link(struct afs_vnode *dvnode, struct afs_vnode *vnode,
+int afs_vnode_link(struct afs_vnode *dvnode, struct afs_vnode *vnode,
 			  struct key *key, const char *name)
 {
 	struct afs_server *server;
@@ -858,5 +868,159 @@ no_server:
 	vnode->update_cnt--;
 	ASSERTCMP(vnode->update_cnt, >=, 0);
 	spin_unlock(&vnode->lock);
+	return PTR_ERR(server);
+}
+
+/*
+ * get the status of a volume
+ */
+int afs_vnode_get_volume_status(struct afs_vnode *vnode, struct key *key,
+				struct afs_volume_status *vs)
+{
+	struct afs_server *server;
+	int ret;
+
+	_enter("%s{%x:%u.%u},%x,",
+	       vnode->volume->vlocation->vldb.name,
+	       vnode->fid.vid,
+	       vnode->fid.vnode,
+	       vnode->fid.unique,
+	       key_serial(key));
+
+	do {
+		/* pick a server to query */
+		server = afs_volume_pick_fileserver(vnode);
+		if (IS_ERR(server))
+			goto no_server;
+
+		_debug("USING SERVER: %08x\n", ntohl(server->addr.s_addr));
+
+		ret = afs_fs_get_volume_status(server, key, vnode, vs, &afs_sync_call);
+
+	} while (!afs_volume_release_fileserver(vnode, server, ret));
+
+	/* adjust the flags */
+	if (ret == 0)
+		afs_put_server(server);
+
+	_leave(" = %d", ret);
+	return ret;
+
+no_server:
+	return PTR_ERR(server);
+}
+
+/*
+ * get a lock on a file
+ */
+int afs_vnode_set_lock(struct afs_vnode *vnode, struct key *key,
+		       afs_lock_type_t type)
+{
+	struct afs_server *server;
+	int ret;
+
+	_enter("%s{%x:%u.%u},%x,%u",
+	       vnode->volume->vlocation->vldb.name,
+	       vnode->fid.vid,
+	       vnode->fid.vnode,
+	       vnode->fid.unique,
+	       key_serial(key), type);
+
+	do {
+		/* pick a server to query */
+		server = afs_volume_pick_fileserver(vnode);
+		if (IS_ERR(server))
+			goto no_server;
+
+		_debug("USING SERVER: %08x\n", ntohl(server->addr.s_addr));
+
+		ret = afs_fs_set_lock(server, key, vnode, type, &afs_sync_call);
+
+	} while (!afs_volume_release_fileserver(vnode, server, ret));
+
+	/* adjust the flags */
+	if (ret == 0)
+		afs_put_server(server);
+
+	_leave(" = %d", ret);
+	return ret;
+
+no_server:
+	return PTR_ERR(server);
+}
+
+/*
+ * extend a lock on a file
+ */
+int afs_vnode_extend_lock(struct afs_vnode *vnode, struct key *key)
+{
+	struct afs_server *server;
+	int ret;
+
+	_enter("%s{%x:%u.%u},%x",
+	       vnode->volume->vlocation->vldb.name,
+	       vnode->fid.vid,
+	       vnode->fid.vnode,
+	       vnode->fid.unique,
+	       key_serial(key));
+
+	do {
+		/* pick a server to query */
+		server = afs_volume_pick_fileserver(vnode);
+		if (IS_ERR(server))
+			goto no_server;
+
+		_debug("USING SERVER: %08x\n", ntohl(server->addr.s_addr));
+
+		ret = afs_fs_extend_lock(server, key, vnode, &afs_sync_call);
+
+	} while (!afs_volume_release_fileserver(vnode, server, ret));
+
+	/* adjust the flags */
+	if (ret == 0)
+		afs_put_server(server);
+
+	_leave(" = %d", ret);
+	return ret;
+
+no_server:
+	return PTR_ERR(server);
+}
+
+/*
+ * release a lock on a file
+ */
+int afs_vnode_release_lock(struct afs_vnode *vnode, struct key *key)
+{
+	struct afs_server *server;
+	int ret;
+
+	_enter("%s{%x:%u.%u},%x",
+	       vnode->volume->vlocation->vldb.name,
+	       vnode->fid.vid,
+	       vnode->fid.vnode,
+	       vnode->fid.unique,
+	       key_serial(key));
+
+	do {
+		/* pick a server to query */
+		server = afs_volume_pick_fileserver(vnode);
+		if (IS_ERR(server))
+			goto no_server;
+
+		_debug("USING SERVER: %08x\n", ntohl(server->addr.s_addr));
+
+		ret = afs_fs_release_lock(server, key, vnode, &afs_sync_call);
+
+	} while (!afs_volume_release_fileserver(vnode, server, ret));
+
+	/* adjust the flags */
+	if (ret == 0)
+		afs_put_server(server);
+
+	_leave(" = %d", ret);
+	return ret;
+
+no_server:
 	return PTR_ERR(server);
 }

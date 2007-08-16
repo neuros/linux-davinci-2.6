@@ -121,6 +121,7 @@ endif
  machine-$(CONFIG_ARCH_IXP23XX)    := ixp23xx
  machine-$(CONFIG_ARCH_OMAP1)	   := omap1
  machine-$(CONFIG_ARCH_OMAP2)	   := omap2
+ machine-$(CONFIG_ARCH_OMAP3)		:= omap2
   incdir-$(CONFIG_ARCH_OMAP)	   := omap
  machine-$(CONFIG_ARCH_S3C2410)	   := s3c2410
  machine-$(CONFIG_ARCH_LH7A40X)	   := lh7a40x
@@ -139,7 +140,10 @@ endif
  machine-$(CONFIG_ARCH_NETX)	   := netx
  machine-$(CONFIG_ARCH_NS9XXX)	   := ns9xxx
  textofs-$(CONFIG_ARCH_NS9XXX)	   := 0x00108000
- machine-$(CONFIG_ARCH_DAVINCI)    := davinci
+ machine-$(CONFIG_ARCH_DAVINCI)	   := davinci
+ machine-$(CONFIG_ARCH_KS8695)     := ks8695
+  incdir-$(CONFIG_ARCH_MXC)	   := mxc
+ machine-$(CONFIG_ARCH_MX3)	   := mx3
 
 ifeq ($(CONFIG_ARCH_EBSA110),y)
 # This is what happens if you forget the IOCS16 line.
@@ -186,6 +190,7 @@ core-$(CONFIG_VFP)		+= arch/arm/vfp/
 core-$(CONFIG_PLAT_IOP)		+= arch/arm/plat-iop/
 core-$(CONFIG_ARCH_OMAP)	+= arch/arm/plat-omap/
 core-$(CONFIG_PLAT_S3C24XX)		+= arch/arm/plat-s3c24xx/
+core-$(CONFIG_ARCH_MXC)		+= arch/arm/plat-mxc/
 
 drivers-$(CONFIG_OPROFILE)      += arch/arm/oprofile/
 drivers-$(CONFIG_ARCH_CLPS7500)	+= drivers/acorn/char/

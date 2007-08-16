@@ -292,10 +292,8 @@ befs_destroy_inode(struct inode *inode)
 static void init_once(void * foo, struct kmem_cache * cachep, unsigned long flags)
 {
         struct befs_inode_info *bi = (struct befs_inode_info *) foo;
-	
-	        if (flags & SLAB_CTOR_CONSTRUCTOR) {
-			inode_init_once(&bi->vfs_inode);
-		}
+
+	inode_init_once(&bi->vfs_inode);
 }
 
 static void
@@ -416,7 +414,7 @@ befs_read_inode(struct inode *inode)
 }
 
 /* Initialize the inode cache. Called at fs setup.
- * 
+ *
  * Taken from NFS implementation by Al Viro.
  */
 static int
@@ -426,7 +424,7 @@ befs_init_inodecache(void)
 					      sizeof (struct befs_inode_info),
 					      0, (SLAB_RECLAIM_ACCOUNT|
 						SLAB_MEM_SPREAD),
-					      init_once, NULL);
+					      init_once);
 	if (befs_inode_cachep == NULL) {
 		printk(KERN_ERR "befs_init_inodecache: "
 		       "Couldn't initalize inode slabcache\n");

@@ -986,15 +986,15 @@ qeth_recover(void *ptr)
 	card->use_hard_stop = 1;
 	__qeth_set_offline(card->gdev,1);
 	rc = __qeth_set_online(card->gdev,1);
+	/* don't run another scheduled recovery */
+	qeth_clear_thread_start_bit(card, QETH_RECOVER_THREAD);
+	qeth_clear_thread_running_bit(card, QETH_RECOVER_THREAD);
 	if (!rc)
 		PRINT_INFO("Device %s successfully recovered!\n",
 			   CARD_BUS_ID(card));
 	else
 		PRINT_INFO("Device %s could not be recovered!\n",
 			   CARD_BUS_ID(card));
-	/* don't run another scheduled recovery */
-	qeth_clear_thread_start_bit(card, QETH_RECOVER_THREAD);
-	qeth_clear_thread_running_bit(card, QETH_RECOVER_THREAD);
 	return 0;
 }
 
@@ -1054,6 +1054,7 @@ qeth_set_intial_options(struct qeth_card *card)
 	else
 		card->options.layer2 = 0;
 	card->options.performance_stats = 0;
+	card->options.rx_sg_cb = QETH_RX_SG_CB;
 }
 
 /**
@@ -1934,6 +1935,7 @@ qeth_send_control_data(struct qeth_card *card, int len,
 			atomic_inc(&reply->received);
 			wake_up(&reply->wait_q);
 		}
+		cpu_relax();
 	};
 	rc = reply->rc;
 	qeth_put_reply(reply);
@@ -2176,13 +2178,6 @@ qeth_ulp_enable(struct qeth_card *card)
 
 }
 
-static inline __u16
-__raw_devno_from_bus_id(char *id)
-{
-	id += (strlen(id) - 4);
-	return (__u16) simple_strtoul(id, &id, 16);
-}
-
 static int
 qeth_ulp_setup_cb(struct qeth_card *card, struct qeth_reply *reply,
 		  unsigned long data)
@@ -2205,6 +2200,7 @@ qeth_ulp_setup(struct qeth_card *card)
 	int rc;
 	__u16 temp;
 	struct qeth_cmd_buffer *iob;
+	struct ccw_dev_id dev_id;
 
 	QETH_DBF_TEXT(setup,2,"ulpsetup");
 
@@ -2218,8 +2214,8 @@ qeth_ulp_setup(struct qeth_card *card)
 	memcpy(QETH_ULP_SETUP_FILTER_TOKEN(iob->data),
 	       &card->token.ulp_filter_r, QETH_MPC_TOKEN_LENGTH);
 
-	temp = __raw_devno_from_bus_id(CARD_DDEV_ID(card));
-	memcpy(QETH_ULP_SETUP_CUA(iob->data), &temp, 2);
+	ccw_device_get_id(CARD_DDEV(card), &dev_id);
+	memcpy(QETH_ULP_SETUP_CUA(iob->data), &dev_id.devno, 2);
 	temp = (card->info.cula << 8) + card->info.unit_addr2;
 	memcpy(QETH_ULP_SETUP_REAL_DEVADDR(iob->data), &temp, 2);
 	rc = qeth_send_control_data(card, ULP_SETUP_SIZE, iob,
@@ -2264,6 +2260,89 @@ qeth_get_skb(unsigned int length, struct qeth_hdr *hdr)
 	return skb;
 }
 
+static inline int
+qeth_create_skb_frag(struct qdio_buffer_element *element,
+		     struct sk_buff **pskb,
+		     int offset, int *pfrag, int data_len)
+{
+	struct page *page = virt_to_page(element->addr);
+	if (*pfrag == 0) {
+		/* the upper protocol layers assume that there is data in the
+		 * skb itself. Copy a small amount (64 bytes) to make them
+		 * happy. */
+		*pskb = dev_alloc_skb(64 + QETH_FAKE_LL_LEN_ETH);
+		if (!(*pskb))
+			return -ENOMEM;
+		skb_reserve(*pskb, QETH_FAKE_LL_LEN_ETH);
+		if (data_len <= 64) {
+			memcpy(skb_put(*pskb, data_len), element->addr + offset,
+				data_len);
+		} else {
+			get_page(page);
+			memcpy(skb_put(*pskb, 64), element->addr + offset, 64);
+			skb_fill_page_desc(*pskb, *pfrag, page, offset + 64,
+				data_len - 64);
+			(*pskb)->data_len += data_len - 64;
+			(*pskb)->len	  += data_len - 64;
+			(*pskb)->truesize += data_len - 64;
+		}
+	} else {
+		get_page(page);
+		skb_fill_page_desc(*pskb, *pfrag, page, offset, data_len);
+		(*pskb)->data_len += data_len;
+		(*pskb)->len	  += data_len;
+		(*pskb)->truesize += data_len;
+	}
+	(*pfrag)++;
+	return 0;
+}
+
+static inline struct qeth_buffer_pool_entry *
+qeth_find_free_buffer_pool_entry(struct qeth_card *card)
+{
+	struct list_head *plh;
+	struct qeth_buffer_pool_entry *entry;
+	int i, free;
+	struct page *page;
+
+	if (list_empty(&card->qdio.in_buf_pool.entry_list))
+		return NULL;
+
+	list_for_each(plh, &card->qdio.in_buf_pool.entry_list) {
+		entry = list_entry(plh, struct qeth_buffer_pool_entry, list);
+		free = 1;
+		for (i = 0; i < QETH_MAX_BUFFER_ELEMENTS(card); ++i) {
+			if (page_count(virt_to_page(entry->elements[i])) > 1) {
+				free = 0;
+				break;
+			}
+		}
+		if (free) {
+			list_del_init(&entry->list);
+			return entry;
+		}
+	}
+
+	/* no free buffer in pool so take first one and swap pages */
+	entry = list_entry(card->qdio.in_buf_pool.entry_list.next,
+			struct qeth_buffer_pool_entry, list);
+	for (i = 0; i < QETH_MAX_BUFFER_ELEMENTS(card); ++i) {
+		if (page_count(virt_to_page(entry->elements[i])) > 1) {
+			page = alloc_page(GFP_ATOMIC|GFP_DMA);
+			if (!page) {
+				return NULL;
+			} else {
+				free_page((unsigned long)entry->elements[i]);
+				entry->elements[i] = page_address(page);
+				if (card->options.performance_stats)
+					card->perf_stats.sg_alloc_page_rx++;
+			}
+		}
+	}
+	list_del_init(&entry->list);
+	return entry;
+}
+
 static struct sk_buff *
 qeth_get_next_skb(struct qeth_card *card, struct qdio_buffer *buffer,
 		  struct qdio_buffer_element **__element, int *__offset,
@@ -2275,6 +2354,8 @@ qeth_get_next_skb(struct qeth_card *card, struct qdio_buffer *buffer,
 	int skb_len;
 	void *data_ptr;
 	int data_len;
+	int use_rx_sg = 0;
+	int frag = 0;
 
 	QETH_DBF_TEXT(trace,6,"nextskb");
 	/* qeth_hdr must not cross element boundaries */
@@ -2299,23 +2380,43 @@ qeth_get_next_skb(struct qeth_card *card, struct qdio_buffer *buffer,
 
 	if (!skb_len)
 		return NULL;
-	if (card->options.fake_ll){
-		if(card->dev->type == ARPHRD_IEEE802_TR){
-			if (!(skb = qeth_get_skb(skb_len+QETH_FAKE_LL_LEN_TR, *hdr)))
-				goto no_mem;
-			skb_reserve(skb,QETH_FAKE_LL_LEN_TR);
+	if ((skb_len >= card->options.rx_sg_cb) &&
+	    (!(card->info.type == QETH_CARD_TYPE_OSN)) &&
+	    (!atomic_read(&card->force_alloc_skb))) {
+		use_rx_sg = 1;
+	} else {
+		if (card->options.fake_ll) {
+			if (card->dev->type == ARPHRD_IEEE802_TR) {
+				if (!(skb = qeth_get_skb(skb_len +
+						QETH_FAKE_LL_LEN_TR, *hdr)))
+					goto no_mem;
+				skb_reserve(skb, QETH_FAKE_LL_LEN_TR);
+			} else {
+				if (!(skb = qeth_get_skb(skb_len +
+						QETH_FAKE_LL_LEN_ETH, *hdr)))
+					goto no_mem;
+				skb_reserve(skb, QETH_FAKE_LL_LEN_ETH);
+			}
 		} else {
-			if (!(skb = qeth_get_skb(skb_len+QETH_FAKE_LL_LEN_ETH, *hdr)))
+			skb = qeth_get_skb(skb_len, *hdr);
+			if (!skb)
 				goto no_mem;
-			skb_reserve(skb,QETH_FAKE_LL_LEN_ETH);
 		}
-	} else if (!(skb = qeth_get_skb(skb_len, *hdr)))
-		goto no_mem;
+	}
+
 	data_ptr = element->addr + offset;
 	while (skb_len) {
 		data_len = min(skb_len, (int)(element->length - offset));
-		if (data_len)
-			memcpy(skb_put(skb, data_len), data_ptr, data_len);
+		if (data_len) {
+			if (use_rx_sg) {
+				if (qeth_create_skb_frag(element, &skb, offset,
+				    &frag, data_len))
+					goto no_mem;
+			} else {
+				memcpy(skb_put(skb, data_len), data_ptr,
+					data_len);
+			}
+		}
 		skb_len -= data_len;
 		if (skb_len){
 			if (qeth_is_last_sbale(element)){
@@ -2337,6 +2438,10 @@ qeth_get_next_skb(struct qeth_card *card, struct qdio_buffer *buffer,
 	}
 	*__element = element;
 	*__offset = offset;
+	if (use_rx_sg && card->options.performance_stats) {
+		card->perf_stats.sg_skbs_rx++;
+		card->perf_stats.sg_frags_rx += skb_shinfo(skb)->nr_frags;
+	}
 	return skb;
 no_mem:
 	if (net_ratelimit()){
@@ -2614,28 +2719,15 @@ qeth_process_inbound_buffer(struct qeth_card *card,
 	}
 }
 
-static struct qeth_buffer_pool_entry *
-qeth_get_buffer_pool_entry(struct qeth_card *card)
-{
-	struct qeth_buffer_pool_entry *entry;
-
-	QETH_DBF_TEXT(trace, 6, "gtbfplen");
-	if (!list_empty(&card->qdio.in_buf_pool.entry_list)) {
-		entry = list_entry(card->qdio.in_buf_pool.entry_list.next,
-				struct qeth_buffer_pool_entry, list);
-		list_del_init(&entry->list);
-		return entry;
-	}
-	return NULL;
-}
-
-static void
+static int
 qeth_init_input_buffer(struct qeth_card *card, struct qeth_qdio_buffer *buf)
 {
 	struct qeth_buffer_pool_entry *pool_entry;
 	int i;
- 
-	pool_entry = qeth_get_buffer_pool_entry(card);
+
+	pool_entry = qeth_find_free_buffer_pool_entry(card);
+	if (!pool_entry)
+		return 1;
 	/*
 	 * since the buffer is accessed only from the input_tasklet
 	 * there shouldn't be a need to synchronize; also, since we use
@@ -2654,6 +2746,7 @@ qeth_init_input_buffer(struct qeth_card *card, struct qeth_qdio_buffer *buf)
 			buf->buffer->element[i].flags = 0;
 	}
 	buf->state = QETH_QDIO_BUF_EMPTY;
+	return 0;
 }
 
 static void
@@ -2688,6 +2781,7 @@ qeth_queue_input_buffer(struct qeth_card *card, int index)
 	int count;
 	int i;
 	int rc;
+	int newcount = 0;
 
 	QETH_DBF_TEXT(trace,6,"queinbuf");
 	count = (index < queue->next_buf_to_init)?
@@ -2698,9 +2792,27 @@ qeth_queue_input_buffer(struct qeth_card *card, int index)
 	/* only requeue at a certain threshold to avoid SIGAs */
 	if (count >= QETH_IN_BUF_REQUEUE_THRESHOLD(card)){
 		for (i = queue->next_buf_to_init;
-		     i < queue->next_buf_to_init + count; ++i)
-			qeth_init_input_buffer(card,
-				&queue->bufs[i % QDIO_MAX_BUFFERS_PER_Q]);
+		     i < queue->next_buf_to_init + count; ++i) {
+			if (qeth_init_input_buffer(card,
+				&queue->bufs[i % QDIO_MAX_BUFFERS_PER_Q])) {
+				break;
+			} else {
+				newcount++;
+			}
+		}
+
+		if (newcount < count) {
+			/* we are in memory shortage so we switch back to
+			   traditional skb allocation and drop packages */
+			if (atomic_cmpxchg(&card->force_alloc_skb, 0, 1))
+				printk(KERN_WARNING
+					"qeth: switch to alloc skb\n");
+			count = newcount;
+		} else {
+			if (atomic_cmpxchg(&card->force_alloc_skb, 1, 0))
+				printk(KERN_WARNING "qeth: switch to sg\n");
+		}
+
 		/*
 		 * according to old code it should be avoided to requeue all
 		 * 128 buffers in order to benefit from PCI avoidance.
@@ -5850,9 +5962,9 @@ qeth_add_vlan_mc6(struct qeth_card *card)
 		in_dev = in6_dev_get(netdev);
 		if (!in_dev)
 			continue;
-		read_lock(&in_dev->lock);
+		read_lock_bh(&in_dev->lock);
 		qeth_add_mc6(card,in_dev);
-		read_unlock(&in_dev->lock);
+		read_unlock_bh(&in_dev->lock);
 		in6_dev_put(in_dev);
 	}
 #endif /* CONFIG_QETH_VLAN */
@@ -5869,10 +5981,10 @@ qeth_add_multicast_ipv6(struct qeth_card *card)
 	in6_dev = in6_dev_get(card->dev);
 	if (in6_dev == NULL)
 		return;
-	read_lock(&in6_dev->lock);
+	read_lock_bh(&in6_dev->lock);
 	qeth_add_mc6(card, in6_dev);
 	qeth_add_vlan_mc6(card);
-	read_unlock(&in6_dev->lock);
+	read_unlock_bh(&in6_dev->lock);
 	in6_dev_put(in6_dev);
 }
 #endif /* CONFIG_QETH_IPV6 */
@@ -6500,6 +6612,7 @@ qeth_hardsetup_card(struct qeth_card *card)
 
 	QETH_DBF_TEXT(setup, 2, "hrdsetup");
 
+	atomic_set(&card->force_alloc_skb, 0);
 retry:
 	if (retries < 3){
 		PRINT_WARN("Retrying to do IDX activates.\n");
@@ -7476,11 +7589,11 @@ qeth_softsetup_card(struct qeth_card *card)
 		QETH_DBF_TEXT_(setup, 2, "1err%d", rc);
 		if (rc == 0xe080){
 			PRINT_WARN("LAN on card %s if offline! "
-				   "Continuing softsetup.\n",
+				   "Waiting for STARTLAN from card.\n",
 				   CARD_BUS_ID(card));
 			card->lan_online = 0;
-		} else
-			return rc;
+		}
+		return rc;
 	} else
 		card->lan_online = 1;
 	if (card->info.type==QETH_CARD_TYPE_OSN)
@@ -7797,15 +7910,17 @@ qeth_print_status_message(struct qeth_card *card)
 		}
 		/* fallthrough */
 	case QETH_CARD_TYPE_IQD:
-		card->info.mcl_level[0] = (char) _ebcasc[(__u8)
-			card->info.mcl_level[0]];
-		card->info.mcl_level[1] = (char) _ebcasc[(__u8)
-			card->info.mcl_level[1]];
-		card->info.mcl_level[2] = (char) _ebcasc[(__u8)
-			card->info.mcl_level[2]];
-		card->info.mcl_level[3] = (char) _ebcasc[(__u8)
-			card->info.mcl_level[3]];
-		card->info.mcl_level[QETH_MCL_LENGTH] = 0;
+		if (card->info.guestlan) {
+			card->info.mcl_level[0] = (char) _ebcasc[(__u8)
+				card->info.mcl_level[0]];
+			card->info.mcl_level[1] = (char) _ebcasc[(__u8)
+				card->info.mcl_level[1]];
+			card->info.mcl_level[2] = (char) _ebcasc[(__u8)
+				card->info.mcl_level[2]];
+			card->info.mcl_level[3] = (char) _ebcasc[(__u8)
+				card->info.mcl_level[3]];
+			card->info.mcl_level[QETH_MCL_LENGTH] = 0;
+		}
 		break;
 	default:
 		memset(&card->info.mcl_level[0], 0, QETH_MCL_LENGTH + 1);

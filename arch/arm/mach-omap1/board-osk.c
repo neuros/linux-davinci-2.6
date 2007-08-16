@@ -237,7 +237,7 @@ static struct omap_lcd_config osk_lcd_config __initdata = {
 };
 #endif
 
-static struct omap_board_config_kernel osk_config[] = {
+static struct omap_board_config_kernel osk_config[] __initdata = {
 	{ OMAP_TAG_USB,           &osk_usb_config },
 	{ OMAP_TAG_UART,		&osk_uart_config },
 #ifdef	CONFIG_OMAP_OSK_MISTRAL
@@ -440,7 +440,7 @@ static void __init osk_init(void)
 	/* Workaround for wrong CS3 (NOR flash) timing
 	 * There are some U-Boot versions out there which configure
 	 * wrong CS3 memory timings. This mainly leads to CRC
-	 * or similiar errors if you use NOR flash (e.g. with JFFS2)
+	 * or similar errors if you use NOR flash (e.g. with JFFS2)
 	 */
 	if (EMIFS_CCS(3) != EMIFS_CS3_VAL)
 		EMIFS_CCS(3) = EMIFS_CS3_VAL;

@@ -141,6 +141,29 @@ config ACT200L_DONGLE
 	  To activate support for ACTiSYS IR-200L dongle you will have to
 	  start irattach like this: "irattach -d act200l".
 
+config KINGSUN_DONGLE
+	tristate "KingSun/DonShine DS-620 IrDA-USB dongle"
+	depends on IRDA && USB && EXPERIMENTAL
+	help
+	  Say Y or M here if you want to build support for the KingSun/DonShine
+	  DS-620 IrDA-USB bridge device driver.
+
+	  This USB bridge does not conform to the IrDA-USB device class
+	  specification, and therefore needs its own specific driver. This
+	  dongle supports SIR speed only (9600 bps).
+
+	  To compile it as a module, choose M here: the module will be called
+	  kingsun-sir.
+
+config EP7211_DONGLE
+	tristate "EP7211 I/R support"
+	depends on IRTTY_SIR && ARCH_EP7211 && IRDA && EXPERIMENTAL
+	help
+	  Say Y here if you want to build support for the Cirrus logic
+	  EP7211 chipset's infrared module.
+
+
+
 comment "Old SIR device drivers"
 
 config IRPORT_SIR
@@ -341,7 +364,7 @@ config WINBOND_FIR
 
 config TOSHIBA_FIR
 	tristate "Toshiba Type-O IR Port"
-	depends on IRDA && PCI && !64BIT
+	depends on IRDA && PCI && !64BIT && VIRT_TO_BUS
 	help
 	  Say Y here if you want to build support for the Toshiba Type-O IR
 	  and Donau oboe chipsets. These chipsets are used by the Toshiba

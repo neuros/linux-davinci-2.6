@@ -36,7 +36,7 @@
 #include <linux/libata.h>
 
 #define DRV_NAME	"sata_uli"
-#define DRV_VERSION	"1.1"
+#define DRV_VERSION	"1.2"
 
 enum {
 	uli_5289		= 0,
@@ -57,8 +57,8 @@ struct uli_priv {
 };
 
 static int uli_init_one (struct pci_dev *pdev, const struct pci_device_id *ent);
-static u32 uli_scr_read (struct ata_port *ap, unsigned int sc_reg);
-static void uli_scr_write (struct ata_port *ap, unsigned int sc_reg, u32 val);
+static int uli_scr_read (struct ata_port *ap, unsigned int sc_reg, u32 *val);
+static int uli_scr_write (struct ata_port *ap, unsigned int sc_reg, u32 val);
 
 static const struct pci_device_id uli_pci_tbl[] = {
 	{ PCI_VDEVICE(AL, 0x5289), uli_5289 },
@@ -125,11 +125,11 @@ static const struct ata_port_operations uli_ops = {
 	.port_start		= ata_port_start,
 };
 
-static struct ata_port_info uli_port_info = {
+static const struct ata_port_info uli_port_info = {
 	.flags		= ATA_FLAG_SATA | ATA_FLAG_NO_LEGACY |
 			  ATA_FLAG_IGN_SIMPLEX,
 	.pio_mask       = 0x1f,		/* pio0-4 */
-	.udma_mask      = 0x7f,		/* udma0-6 */
+	.udma_mask      = ATA_UDMA6,
 	.port_ops       = &uli_ops,
 };
 
@@ -164,20 +164,22 @@ static void uli_scr_cfg_write (struct ata_port *ap, unsigned int scr, u32 val)
 	pci_write_config_dword(pdev, cfg_addr, val);
 }
 
-static u32 uli_scr_read (struct ata_port *ap, unsigned int sc_reg)
+static int uli_scr_read (struct ata_port *ap, unsigned int sc_reg, u32 *val)
 {
 	if (sc_reg > SCR_CONTROL)
-		return 0xffffffffU;
+		return -EINVAL;
 
-	return uli_scr_cfg_read(ap, sc_reg);
+	*val = uli_scr_cfg_read(ap, sc_reg);
+	return 0;
 }
 
-static void uli_scr_write (struct ata_port *ap, unsigned int sc_reg, u32 val)
+static int uli_scr_write (struct ata_port *ap, unsigned int sc_reg, u32 val)
 {
 	if (sc_reg > SCR_CONTROL)	//SCR_CONTROL=2, SCR_ERROR=1, SCR_STATUS=0
-		return;
+		return -EINVAL;
 
 	uli_scr_cfg_write(ap, sc_reg, val);
+	return 0;
 }
 
 static int uli_init_one (struct pci_dev *pdev, const struct pci_device_id *ent)
@@ -201,19 +203,33 @@ static int uli_init_one (struct pci_dev *pdev, const struct pci_device_id *ent)
 	n_ports = 2;
 	if (board_idx == uli_5287)
 		n_ports = 4;
-	rc = ata_pci_prepare_native_host(pdev, ppi, n_ports, &host);
-	if (rc)
-		return rc;
+
+	/* allocate the host */
+	host = ata_host_alloc_pinfo(&pdev->dev, ppi, n_ports);
+	if (!host)
+		return -ENOMEM;
 
 	hpriv = devm_kzalloc(&pdev->dev, sizeof(*hpriv), GFP_KERNEL);
 	if (!hpriv)
 		return -ENOMEM;
 	host->private_data = hpriv;
 
+	/* the first two ports are standard SFF */
+	rc = ata_pci_init_sff_host(host);
+	if (rc)
+		return rc;
+
+	rc = ata_pci_init_bmdma(host);
+	if (rc)
+		return rc;
+
 	iomap = host->iomap;
 
 	switch (board_idx) {
 	case uli_5287:
+		/* If there are four, the last two live right after
+		 * the standard SFF ports.
+		 */
 		hpriv->scr_cfg_addr[0] = ULI5287_BASE;
 		hpriv->scr_cfg_addr[1] = ULI5287_BASE + ULI5287_OFFS;
 

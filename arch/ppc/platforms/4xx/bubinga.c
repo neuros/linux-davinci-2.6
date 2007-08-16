@@ -21,6 +21,7 @@
 #include <linux/tty.h>
 #include <linux/serial.h>
 #include <linux/serial_core.h>
+#include <linux/serial_8250.h>
 
 #include <asm/system.h>
 #include <asm/pci-bridge.h>
@@ -197,7 +198,7 @@ bios_fixup(struct pci_controller *hose, struct pcil0_regs *pcip)
 		    hose->first_busno, PCI_SLOT(hose->first_busno),
 		    PCI_FUNC(hose->first_busno), bar, bar_response);
 	}
-	/* end work arround */
+	/* end workaround */
 
 #ifdef DEBUG
 	printk("PCI bridge regs after fixup \n");

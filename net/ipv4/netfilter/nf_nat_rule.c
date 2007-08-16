@@ -24,12 +24,6 @@
 #include <net/netfilter/nf_nat_core.h>
 #include <net/netfilter/nf_nat_rule.h>
 
-#if 0
-#define DEBUGP printk
-#else
-#define DEBUGP(format, args...)
-#endif
-
 #define NAT_VALID_HOOKS ((1<<NF_IP_PRE_ROUTING) | (1<<NF_IP_POST_ROUTING) | (1<<NF_IP_LOCAL_OUT))
 
 static struct
@@ -46,77 +40,20 @@ static struct
 		.hook_entry = {
 			[NF_IP_PRE_ROUTING] = 0,
 			[NF_IP_POST_ROUTING] = sizeof(struct ipt_standard),
-			[NF_IP_LOCAL_OUT] = sizeof(struct ipt_standard) * 2 },
+			[NF_IP_LOCAL_OUT] = sizeof(struct ipt_standard) * 2
+		},
 		.underflow = {
 			[NF_IP_PRE_ROUTING] = 0,
 			[NF_IP_POST_ROUTING] = sizeof(struct ipt_standard),
-			[NF_IP_LOCAL_OUT] = sizeof(struct ipt_standard) * 2 },
+			[NF_IP_LOCAL_OUT] = sizeof(struct ipt_standard) * 2
+		},
 	},
 	.entries = {
-		/* PRE_ROUTING */
-		{
-			.entry = {
-				.target_offset = sizeof(struct ipt_entry),
-				.next_offset = sizeof(struct ipt_standard),
-			},
-			.target = {
-				.target = {
-					.u = {
-						.target_size = IPT_ALIGN(sizeof(struct ipt_standard_target)),
-					},
-				},
-				.verdict = -NF_ACCEPT - 1,
-			},
-		},
-		/* POST_ROUTING */
-		{
-			.entry = {
-				.target_offset = sizeof(struct ipt_entry),
-				.next_offset = sizeof(struct ipt_standard),
-			},
-			.target = {
-				.target = {
-					.u = {
-						.target_size = IPT_ALIGN(sizeof(struct ipt_standard_target)),
-					},
-				},
-				.verdict = -NF_ACCEPT - 1,
-			},
-		},
-		/* LOCAL_OUT */
-		{
-			.entry = {
-				.target_offset = sizeof(struct ipt_entry),
-				.next_offset = sizeof(struct ipt_standard),
-			},
-			.target = {
-				.target = {
-					.u = {
-						.target_size = IPT_ALIGN(sizeof(struct ipt_standard_target)),
-					},
-				},
-				.verdict = -NF_ACCEPT - 1,
-			},
-		},
+		IPT_STANDARD_INIT(NF_ACCEPT),	/* PRE_ROUTING */
+		IPT_STANDARD_INIT(NF_ACCEPT),	/* POST_ROUTING */
+		IPT_STANDARD_INIT(NF_ACCEPT),	/* LOCAL_OUT */
 	},
-	/* ERROR */
-	.term = {
-		.entry = {
-			.target_offset = sizeof(struct ipt_entry),
-			.next_offset = sizeof(struct ipt_error),
-		},
-		.target = {
-			.target = {
-				.u = {
-					.user = {
-						.target_size = IPT_ALIGN(sizeof(struct ipt_error_target)),
-						.name = IPT_ERROR_TARGET,
-					},
-				},
-			},
-			.errorname = "ERROR",
-		},
-	}
+	.term = IPT_ERROR_INIT,			/* ERROR */
 };
 
 static struct xt_table nat_table = {
@@ -197,42 +134,40 @@ static unsigned int ipt_dnat_target(struct sk_buff **pskb,
 	return nf_nat_setup_info(ct, &mr->range[0], hooknum);
 }
 
-static int ipt_snat_checkentry(const char *tablename,
-			       const void *entry,
-			       const struct xt_target *target,
-			       void *targinfo,
-			       unsigned int hook_mask)
+static bool ipt_snat_checkentry(const char *tablename,
+				const void *entry,
+				const struct xt_target *target,
+				void *targinfo,
+				unsigned int hook_mask)
 {
 	struct nf_nat_multi_range_compat *mr = targinfo;
 
 	/* Must be a valid range */
 	if (mr->rangesize != 1) {
 		printk("SNAT: multiple ranges no longer supported\n");
-		return 0;
+		return false;
 	}
-	return 1;
+	return true;
 }
 
-static int ipt_dnat_checkentry(const char *tablename,
-			       const void *entry,
-			       const struct xt_target *target,
-			       void *targinfo,
-			       unsigned int hook_mask)
+static bool ipt_dnat_checkentry(const char *tablename,
+				const void *entry,
+				const struct xt_target *target,
+				void *targinfo,
+				unsigned int hook_mask)
 {
 	struct nf_nat_multi_range_compat *mr = targinfo;
 
 	/* Must be a valid range */
 	if (mr->rangesize != 1) {
 		printk("DNAT: multiple ranges no longer supported\n");
-		return 0;
+		return false;
 	}
-	return 1;
+	return true;
 }
 
-inline unsigned int
-alloc_null_binding(struct nf_conn *ct,
-		   struct nf_nat_info *info,
-		   unsigned int hooknum)
+unsigned int
+alloc_null_binding(struct nf_conn *ct, unsigned int hooknum)
 {
 	/* Force range to this IP; let proto decide mapping for
 	   per-proto parts (hence not IP_NAT_RANGE_PROTO_SPECIFIED).
@@ -245,29 +180,27 @@ alloc_null_binding(struct nf_conn *ct,
 	struct nf_nat_range range
 		= { IP_NAT_RANGE_MAP_IPS, ip, ip, { 0 }, { 0 } };
 
-	DEBUGP("Allocating NULL binding for %p (%u.%u.%u.%u)\n",
-	       ct, NIPQUAD(ip));
+	pr_debug("Allocating NULL binding for %p (%u.%u.%u.%u)\n",
+		 ct, NIPQUAD(ip));
 	return nf_nat_setup_info(ct, &range, hooknum);
 }
 
 unsigned int
-alloc_null_binding_confirmed(struct nf_conn *ct,
-			     struct nf_nat_info *info,
-			     unsigned int hooknum)
+alloc_null_binding_confirmed(struct nf_conn *ct, unsigned int hooknum)
 {
 	__be32 ip
 		= (HOOK2MANIP(hooknum) == IP_NAT_MANIP_SRC
 		   ? ct->tuplehash[IP_CT_DIR_REPLY].tuple.dst.u3.ip
 		   : ct->tuplehash[IP_CT_DIR_REPLY].tuple.src.u3.ip);
-	u_int16_t all
+	__be16 all
 		= (HOOK2MANIP(hooknum) == IP_NAT_MANIP_SRC
 		   ? ct->tuplehash[IP_CT_DIR_REPLY].tuple.dst.u.all
 		   : ct->tuplehash[IP_CT_DIR_REPLY].tuple.src.u.all);
 	struct nf_nat_range range
 		= { IP_NAT_RANGE_MAP_IPS, ip, ip, { all }, { all } };
 
-	DEBUGP("Allocating NULL binding for confirmed %p (%u.%u.%u.%u)\n",
-	       ct, NIPQUAD(ip));
+	pr_debug("Allocating NULL binding for confirmed %p (%u.%u.%u.%u)\n",
+		 ct, NIPQUAD(ip));
 	return nf_nat_setup_info(ct, &range, hooknum);
 }
 
@@ -275,8 +208,7 @@ int nf_nat_rule_find(struct sk_buff **pskb,
 		     unsigned int hooknum,
 		     const struct net_device *in,
 		     const struct net_device *out,
-		     struct nf_conn *ct,
-		     struct nf_nat_info *info)
+		     struct nf_conn *ct)
 {
 	int ret;
 
@@ -285,12 +217,12 @@ int nf_nat_rule_find(struct sk_buff **pskb,
 	if (ret == NF_ACCEPT) {
 		if (!nf_nat_initialized(ct, HOOK2MANIP(hooknum)))
 			/* NUL mapping */
-			ret = alloc_null_binding(ct, info, hooknum);
+			ret = alloc_null_binding(ct, hooknum);
 	}
 	return ret;
 }
 
-static struct xt_target ipt_snat_reg = {
+static struct xt_target ipt_snat_reg __read_mostly = {
 	.name		= "SNAT",
 	.target		= ipt_snat_target,
 	.targetsize	= sizeof(struct nf_nat_multi_range_compat),
@@ -300,7 +232,7 @@ static struct xt_target ipt_snat_reg = {
 	.family		= AF_INET,
 };
 
-static struct xt_target ipt_dnat_reg = {
+static struct xt_target ipt_dnat_reg __read_mostly = {
 	.name		= "DNAT",
 	.target		= ipt_dnat_target,
 	.targetsize	= sizeof(struct nf_nat_multi_range_compat),

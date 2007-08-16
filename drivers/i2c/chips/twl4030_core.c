@@ -49,6 +49,10 @@
 #include <asm/arch/gpio.h>
 #include <asm/arch/mux.h>
 
+#define DRIVER_NAME			"twl4030"
+
+#define pr_err(fmt, arg...)	printk(KERN_ERR DRIVER_NAME ": " fmt, ##arg);
+
 /**** Macro Definitions */
 #define TWL_CLIENT_STRING		"TWL4030-ID"
 #define TWL_CLIENT_USED			1
@@ -107,7 +111,7 @@
 #define TWL4030_BASEADD_BACKUP		0x0014
 #define TWL4030_BASEADD_INT		0x002E
 #define TWL4030_BASEADD_PM_MASTER	0x0036
-#define TWL4030_BASEADD_PM_RECIEVER	0x005B
+#define TWL4030_BASEADD_PM_RECEIVER	0x005B
 #define TWL4030_BASEADD_RTC		0x001C
 #define TWL4030_BASEADD_SECURED_REG	0x0000
 
@@ -142,6 +146,7 @@ static void twl_init_irq(void);
 /**** Data Structures */
 /* To have info on T2 IRQ substem activated or not */
 static unsigned char twl_irq_used = FREE;
+static struct completion irq_event;
 
 /* Structure to define on TWL4030 Slave ID */
 struct twl4030_client {
@@ -185,7 +190,7 @@ static struct twl4030mapping twl4030_map[TWL4030_MODULE_LAST + 1] = {
 	{ TWL4030_SLAVENUM_NUM3, TWL4030_BASEADD_BACKUP },
 	{ TWL4030_SLAVENUM_NUM3, TWL4030_BASEADD_INT },
 	{ TWL4030_SLAVENUM_NUM3, TWL4030_BASEADD_PM_MASTER },
-	{ TWL4030_SLAVENUM_NUM3, TWL4030_BASEADD_PM_RECIEVER },
+	{ TWL4030_SLAVENUM_NUM3, TWL4030_BASEADD_PM_RECEIVER },
 	{ TWL4030_SLAVENUM_NUM3, TWL4030_BASEADD_RTC },
 	{ TWL4030_SLAVENUM_NUM3, TWL4030_BASEADD_SECURED_REG },
 };
@@ -257,16 +262,15 @@ int twl4030_i2c_write(u8 mod_no, u8 * value, u8 reg, u8 num_bytes)
 	struct i2c_msg *msg;
 
 	if (unlikely(mod_no > TWL4030_MODULE_LAST)) {
-		printk(KERN_ERR "TWL4030: Invalid module Number\n");
+		pr_err("Invalid module Number\n");
 		return -EPERM;
 	}
 	sid = twl4030_map[mod_no].sid;
 	client = &(twl4030_modules[sid]);
 
 	if (unlikely(client->inuse != TWL_CLIENT_USED)) {
-		printk(KERN_ERR
-			"TWL4030: I2C Client[%d] is not initialized[%d]\n",
-			sid, __LINE__);
+		pr_err("I2C Client[%d] is not initialized[%d]\n",
+		       sid,__LINE__);
 		return -EPERM;
 	}
 	down(&(client->xfer_lock));
@@ -307,17 +311,17 @@ int twl4030_i2c_read(u8 mod_no, u8 * value, u8 reg, u8 num_bytes)
 	int sid;
 	struct twl4030_client *client;
 	struct i2c_msg *msg;
+
 	if (unlikely(mod_no > TWL4030_MODULE_LAST)) {
-		printk(KERN_ERR "TWL4030: Invalid module Number\n");
+		pr_err("Invalid module Number\n");
 		return -EPERM;
 	}
 	sid = twl4030_map[mod_no].sid;
 	client = &(twl4030_modules[sid]);
 
 	if (unlikely(client->inuse != TWL_CLIENT_USED)) {
-		printk(KERN_ERR
-			"TWL4030: I2C Client[%d] is not initialized[%d]\n",
-			sid, __LINE__);
+		pr_err("I2C Client[%d] is not initialized[%d]\n", sid,
+		       __LINE__);
 		return -EPERM;
 	}
 	down(&(client->xfer_lock));
@@ -355,6 +359,7 @@ int twl4030_i2c_read(u8 mod_no, u8 * value, u8 reg, u8 num_bytes)
 int twl4030_i2c_write_u8(u8 mod_no, u8 value, u8 reg)
 {
 	int ret;
+
 	/* 2 bytes offset 1 contains the data offset 0 is used by i2c_write */
 	u8 temp_buffer[2] = { 0 };
 	/* offset 1 contains the data */
@@ -375,6 +380,7 @@ int twl4030_i2c_write_u8(u8 mod_no, u8 value, u8 reg)
 int twl4030_i2c_read_u8(u8 mod_no, u8 * value, u8 reg)
 {
 	int ret = 0;
+
 	ret = twl4030_i2c_read(mod_no, value, reg, 1);
 	return ret;
 }
@@ -454,10 +460,15 @@ static int twl4030_irq_thread(void *data)
 	static unsigned i2c_errors;
 	const static unsigned max_i2c_errors = 100;
 
+	daemonize("twl4030-irq");
+	current->flags |= PF_NOFREEZE;
+
 	while (!kthread_should_stop()) {
 		int ret;
 		int module_irq;
 		u8 pih_isr;
+
+		wait_for_completion_interruptible(&irq_event);
 
 		ret = twl4030_i2c_read_u8(TWL4030_MODULE_PIH, &pih_isr,
 					  REG_PIH_ISR_P1);
@@ -486,16 +497,9 @@ static int twl4030_irq_thread(void *data)
 			}
 		}
 
-		local_irq_disable();
-
-		set_current_state(TASK_INTERRUPTIBLE);
 		desc->chip->unmask(irq);
-
-		local_irq_enable();
-
-		schedule();
 	}
-	set_current_state(TASK_RUNNING);
+
 	return 0;
 }
 
@@ -511,7 +515,7 @@ static int twl4030_irq_thread(void *data)
 static void do_twl4030_irq(unsigned int irq, irq_desc_t *desc)
 {
 	const unsigned int cpu = smp_processor_id();
-	struct task_struct *thread = get_irq_data(irq);
+
 	/*
 	 * Earlier this was desc->triggered = 1;
 	 */
@@ -525,8 +529,7 @@ static void do_twl4030_irq(unsigned int irq, irq_desc_t *desc)
 	if (!desc->depth) {
 		kstat_cpu(cpu).irqs[irq]++;
 
-		if (thread && thread->state != TASK_RUNNING)
-			wake_up_process(thread);
+		complete(&irq_event);
 	}
 }
 
@@ -535,24 +538,21 @@ static int twl4030_detect_client(struct i2c_adapter *adapter, unsigned char sid)
 {
 	int err = 0;
 	struct twl4030_client *client;
+
 	if (unlikely(sid >= TWL4030_NUM_SLAVES)) {
-		printk(KERN_ERR "TWL4030: sid[%d] >MOD_LAST[%d]\n", sid,
-				TWL4030_NUM_SLAVES);
+		pr_err("sid[%d] > MOD_LAST[%d]\n", sid, TWL4030_NUM_SLAVES);
 		return -EPERM;
 	}
 
 	/* Check basic functionality */
 	if (!(err = i2c_check_functionality(adapter, I2C_FUNC_SMBUS_WORD_DATA |
 						I2C_FUNC_SMBUS_WRITE_BYTE))) {
-		printk(KERN_WARNING
-			"TWL4030: SlaveID=%d functionality check failed\n", sid);
+		pr_err("SlaveID=%d functionality check failed\n", sid);
 		return err;
 	}
 	client = &(twl4030_modules[sid]);
 	if (unlikely(client->inuse)) {
-		printk(KERN_ERR "TWL4030: Client is already in Use.....\n");
-		printk("%s[ID=0x%x] NOT attached to I2c Adapter %s\n",
-			client->client_name, client->address, adapter->name);
+		pr_err("Client %s is already in use\n", client->client_name);
 		return -EPERM;
 	}
 
@@ -564,17 +564,18 @@ static int twl4030_detect_client(struct i2c_adapter *adapter, unsigned char sid)
 
 	memcpy(&(client->client.name), client->client_name,
 			sizeof(TWL_CLIENT_STRING) + 1);
-	printk("TWL4030: TRY attach Slave %s on Adapter %s[%d][%x]\n",
-				client->client_name, adapter->name, err, err);
-	if ((err = i2c_attach_client(&(client->client))))
-		printk(KERN_WARNING
-			"TWL4030: Couldn't attach Slave %s on Adapter "
-			"%s[%d][%x]\n",
-			client->client_name, adapter->name, err, err);
-	else {
+
+	pr_info("TWL4030: TRY attach Slave %s on Adapter %s [%x]\n",
+				client->client_name, adapter->name, err);
+
+	if ((err = i2c_attach_client(&(client->client)))) {
+		pr_err("Couldn't attach Slave %s on Adapter"
+		       "%s [%x]\n", client->client_name, adapter->name, err);
+	} else {
 		client->inuse = TWL_CLIENT_USED;
 		init_MUTEX(&client->xfer_lock);
 	}
+
 	return err;
 }
 
@@ -584,6 +585,7 @@ static int twl4030_attach_adapter(struct i2c_adapter *adapter)
 	int i;
 	int ret = 0;
 	static int twl_i2c_adapter = 1;
+
 	for (i = 0; i < TWL4030_NUM_SLAVES; i++) {
 		/* Check if I need to hook on to this adapter or not */
 		if (twl4030_modules[i].adapter_index == twl_i2c_adapter) {
@@ -605,9 +607,7 @@ static int twl4030_attach_adapter(struct i2c_adapter *adapter)
 	return 0;
 
 free_client:
-	printk(KERN_ERR
-		"TWL4030: TWL_CLIENT(Idx=%d] REGISTRATION FAILED=%d[0x%x]\n", i,
-			ret, ret);
+	pr_err("TWL_CLIENT(Idx=%d] registration failed[0x%x]\n",i,ret);
 
 	/* ignore current slave..it never got registered */
 	i--;
@@ -625,8 +625,7 @@ static int twl4030_detach_client(struct i2c_client *iclient)
 {
 	int err;
 	if ((err = i2c_detach_client(iclient))) {
-		printk(KERN_ERR
-				"TWL4030: Client deregistration failed, client not detached.\n");
+		pr_err("Client detach failed\n");
 		return err;
 	}
 	return 0;
@@ -636,11 +635,12 @@ struct task_struct *start_twl4030_irq_thread(int irq)
 {
 	struct task_struct *thread;
 
-	thread = kthread_create(twl4030_irq_thread, (void *)irq,
-				"twl4030 irq %d", irq);
+	init_completion(&irq_event);
+	thread = kthread_run(twl4030_irq_thread, (void *)irq,
+			     "twl4030 irq %d", irq);
 	if (!thread)
-		printk(KERN_ERR "%s: could not create twl4030 irq %d thread!\n",
-			__FUNCTION__, irq);
+		pr_err("%s: could not create twl4030 irq %d thread!\n",
+		       __FUNCTION__,irq);
 
 	return thread;
 }
@@ -652,6 +652,7 @@ struct task_struct *start_twl4030_irq_thread(int irq)
 static int protect_pm_master(void)
 {
 	int e = 0;
+
 	e = twl4030_i2c_write_u8(TWL4030_MODULE_PM_MASTER, KEY_LOCK,
 			R_PROTECT_KEY);
 	return e;
@@ -660,6 +661,7 @@ static int protect_pm_master(void)
 static int unprotect_pm_master(void)
 {
 	int e = 0;
+
 	e |= twl4030_i2c_write_u8(TWL4030_MODULE_PM_MASTER, KEY_UNLOCK1,
 			R_PROTECT_KEY);
 	e |= twl4030_i2c_write_u8(TWL4030_MODULE_PM_MASTER, KEY_UNLOCK2,
@@ -667,7 +669,7 @@ static int unprotect_pm_master(void)
 	return e;
 }
 
-int power_companion_init(void)
+static int power_companion_init(void)
 {
 	struct clk *osc;
 	u32 rate, ctrl = HFCLK_FREQ_26_MHZ;
@@ -697,6 +699,7 @@ static void twl_init_irq(void)
 	int i = 0;
 	int res = 0;
 	int line = 0;
+
 	/*
 	 * We end up with interrupts from other modules before
 	 * they get a chance to handle them...
@@ -873,20 +876,22 @@ static void twl_init_irq(void)
 
 irq_exit_path:
 	if (res)
-		printk(KERN_ERR
-			"TWL4030: Unable to register interrupt "
-			"subsystem[%d][%d]\n", res, line);
+		pr_err("Unable to register interrupt subsystem[%d][%d]\n",
+		       res,line);
 }
 
 static int __init twl4030_init(void)
 {
 	int res;
-	if ((res = i2c_register_driver(THIS_MODULE, &twl4030_driver))) {
+
+	if ((res = i2c_add_driver(&twl4030_driver))) {
 		printk(KERN_ERR "TWL4030: Driver registration failed \n");
 		return res;
 	}
-	printk(KERN_INFO "TWL4030: Driver registration complete.\n");
-	return res;
+
+	pr_info(KERN_INFO "TWL4030: Driver registration complete.\n");
+
+	return 0;
 }
 
 static void __exit twl4030_exit(void)

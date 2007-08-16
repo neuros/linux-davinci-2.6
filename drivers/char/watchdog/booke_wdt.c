@@ -24,7 +24,7 @@
 #include <asm/uaccess.h>
 #include <asm/system.h>
 
-/* If the kernel parameter wdt_enable=1, the watchdog will be enabled at boot.
+/* If the kernel parameter wdt=1, the watchdog will be enabled at boot.
  * Also, the wdt_period sets the watchdog timer period timeout.
  * For E500 cpus the wdt_period sets which bit changing from 0->1 will
  * trigger a watchog timeout. This watchdog timeout will occur 3 times, the
@@ -144,7 +144,7 @@ static int booke_wdt_open (struct inode *inode, struct file *file)
 				booke_wdt_period);
 	}
 
-	return 0;
+	return nonseekable_open(inode, file);
 }
 
 static const struct file_operations booke_wdt_fops = {

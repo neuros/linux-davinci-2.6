@@ -4,25 +4,6 @@
 #include <linux/device.h>
 #include <linux/workqueue.h>
 
-#define MMU_REVISION		0x00
-#define MMU_SYSCONFIG		0x10
-#define MMU_SYSSTATUS		0x14
-#define MMU_IRQSTATUS		0x18
-#define MMU_IRQENABLE		0x1c
-#define MMU_WALKING_ST		0x40
-#define MMU_CNTL		0x44
-#define MMU_FAULT_AD		0x48
-#define MMU_TTB			0x4c
-#define MMU_LOCK		0x50
-#define MMU_LD_TLB		0x54
-#define MMU_CAM			0x58
-#define MMU_RAM			0x5c
-#define MMU_GFLUSH		0x60
-#define MMU_FLUSH_ENTRY		0x64
-#define MMU_READ_CAM		0x68
-#define MMU_READ_RAM		0x6c
-#define MMU_EMU_FAULT_AD	0x70
-
 enum exmap_type {
 	EXMAP_TYPE_MEM,
 	EXMAP_TYPE_FB
@@ -209,7 +190,7 @@ void exmap_clear_mem_page(struct omap_mmu *mmu, unsigned long dspadr);
 int exmap_valid(struct omap_mmu *mmu, void *vadr, size_t len);
 
 /* To be obsolete for backward compatibility */
-ssize_t __omap_mmu_mem_read(struct omap_mmu *mmu, char *buf, loff_t offset, size_t count);
-ssize_t __omap_mmu_mem_write(struct omap_mmu *mmu, char *buf, loff_t offset, size_t count);
+ssize_t __omap_mmu_mem_read(struct omap_mmu *mmu, struct bin_attribute *, char *buf, loff_t offset, size_t count);
+ssize_t __omap_mmu_mem_write(struct omap_mmu *mmu, struct bin_attribute *, char *buf, loff_t offset, size_t count);
 
 #endif /* __ARCH_OMAP_MMU_H */

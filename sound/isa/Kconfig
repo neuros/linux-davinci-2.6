@@ -1,8 +1,5 @@
 # ALSA ISA drivers
 
-menu "ISA devices"
-	depends on SND!=n && ISA && ISA_DMA_API
-
 config SND_AD1848_LIB
         tristate
         select SND_PCM
@@ -10,6 +7,22 @@ config SND_AD1848_LIB
 config SND_CS4231_LIB
         tristate
         select SND_PCM
+
+config SND_SB_COMMON
+        tristate
+
+config SND_SB8_DSP
+        tristate
+        select SND_PCM
+        select SND_SB_COMMON
+
+config SND_SB16_DSP
+        tristate
+        select SND_PCM
+        select SND_SB_COMMON
+
+menu "ISA devices"
+	depends on SND!=n && ISA && ISA_DMA_API
 
 config SND_ADLIB
 	tristate "AdLib FM card"
@@ -55,7 +68,7 @@ config SND_ALS100
 	select ISAPNP
 	select SND_OPL3_LIB
 	select SND_MPU401_UART
-	select SND_PCM
+	select SND_SB16_DSP
 	help
 	  Say Y here to include support for soundcards based on Avance
 	  Logic ALS100, ALS110, ALS120 and ALS200 chips.
@@ -81,6 +94,7 @@ config SND_CMI8330
 	tristate "C-Media CMI8330"
 	depends on SND
 	select SND_AD1848_LIB
+	select SND_SB16_DSP
 	help
 	  Say Y here to include support for soundcards based on the
 	  C-Media CMI8330 chip.
@@ -132,7 +146,7 @@ config SND_DT019X
 	select ISAPNP
 	select SND_OPL3_LIB
 	select SND_MPU401_UART
-	select SND_PCM
+	select SND_SB16_DSP
 	help
 	  Say Y here to include support for soundcards based on the
 	  Diamond Technologies DT-019X or Avance Logic ALS-007 chips.
@@ -145,7 +159,7 @@ config SND_ES968
 	depends on SND && PNP && ISA
 	select ISAPNP
 	select SND_MPU401_UART
-	select SND_PCM
+	select SND_SB8_DSP
 	help
 	  Say Y here to include support for ESS AudioDrive ES968 chips.
 
@@ -321,7 +335,7 @@ config SND_SB8
 	depends on SND
 	select SND_OPL3_LIB
 	select SND_RAWMIDI
-	select SND_PCM
+	select SND_SB8_DSP
 	help
 	  Say Y here to include support for Creative Sound Blaster 1.0/
 	  2.0/Pro (8-bit) or 100% compatible soundcards.
@@ -334,7 +348,7 @@ config SND_SB16
 	depends on SND
 	select SND_OPL3_LIB
 	select SND_MPU401_UART
-	select SND_PCM
+	select SND_SB16_DSP
 	help
 	  Say Y here to include support for Sound Blaster 16 soundcards
 	  (including the Plug and Play version).
@@ -347,7 +361,7 @@ config SND_SBAWE
 	depends on SND
 	select SND_OPL3_LIB
 	select SND_MPU401_UART
-	select SND_PCM
+	select SND_SB16_DSP
 	help
 	  Say Y here to include support for Sound Blaster AWE soundcards
 	  (including the Plug and Play version).
@@ -358,11 +372,20 @@ config SND_SBAWE
 config SND_SB16_CSP
 	bool "Sound Blaster 16/AWE CSP support"
 	depends on (SND_SB16 || SND_SBAWE) && (BROKEN || !PPC)
-	select FW_LOADER
+	select FW_LOADER if !SND_SB16_CSP_FIRMWARE_IN_KERNEL
 	help
 	  Say Y here to include support for the CSP core.  This special
 	  coprocessor can do variable tasks like various compression and
 	  decompression algorithms.
+
+config SND_SB16_CSP_FIRMWARE_IN_KERNEL
+	bool "In-kernel firmware for SB16 CSP"
+	depends on SND_SB16_CSP
+	default y
+	help
+	  Say Y here to include the static firmware built in the kernel
+	  for the SB16 CSP controller.  If you choose N here, you need
+	  to install the firmware files from the alsa-firmware package.
 
 config SND_SGALAXY
 	tristate "Aztech Sound Galaxy"
@@ -391,7 +414,7 @@ config SND_SSCAPE
 config SND_WAVEFRONT
 	tristate "Turtle Beach Maui,Tropez,Tropez+ (Wavefront)"
 	depends on SND
-	select FW_LOADER
+	select FW_LOADER if !SND_WAVEFRONT_FIRMWARE_IN_KERNEL
 	select SND_OPL3_LIB
 	select SND_MPU401_UART
 	select SND_CS4231_LIB
@@ -401,5 +424,14 @@ config SND_WAVEFRONT
 
 	  To compile this driver as a module, choose M here: the module
 	  will be called snd-wavefront.
+
+config SND_WAVEFRONT_FIRMWARE_IN_KERNEL
+	bool "In-kernel firmware for Wavefront"
+	depends on SND_WAVEFRONT
+	default y
+	help
+	  Say Y here to include the static firmware built in the kernel
+	  for the Wavefront driver.  If you choose N here, you need to
+	  install the firmware files from the alsa-firmware package.
 
 endmenu

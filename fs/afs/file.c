@@ -32,8 +32,10 @@ const struct file_operations afs_file_operations = {
 	.aio_read	= generic_file_aio_read,
 	.aio_write	= afs_file_write,
 	.mmap		= generic_file_readonly_mmap,
-	.sendfile	= generic_file_sendfile,
+	.splice_read	= generic_file_splice_read,
 	.fsync		= afs_fsync,
+	.lock		= afs_lock,
+	.flock		= afs_flock,
 };
 
 const struct inode_operations afs_file_inode_operations = {
@@ -236,7 +238,7 @@ static void afs_invalidatepage(struct page *page, unsigned long offset)
 {
 	int ret = 1;
 
-	kenter("{%lu},%lu", page->index, offset);
+	_enter("{%lu},%lu", page->index, offset);
 
 	BUG_ON(!PageLocked(page));
 

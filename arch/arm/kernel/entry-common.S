@@ -46,7 +46,7 @@ fast_work_pending:
 work_pending:
 	tst	r1, #_TIF_NEED_RESCHED
 	bne	work_resched
-	tst	r1, #_TIF_NOTIFY_RESUME | _TIF_SIGPENDING
+	tst	r1, #_TIF_SIGPENDING
 	beq	no_work_pending
 	mov	r0, sp				@ 'regs'
 	mov	r2, why				@ 'syscall'
@@ -351,6 +351,11 @@ sys_mmap2:
 		str	r5, [sp, #4]
 		b	do_mmap2
 #endif
+
+ENTRY(pabort_ifar)
+		mrc	p15, 0, r0, cr6, cr0, 2
+ENTRY(pabort_noifar)
+		mov	pc, lr
 
 #ifdef CONFIG_OABI_COMPAT
 

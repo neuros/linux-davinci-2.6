@@ -1,35 +1,21 @@
-/* linux/include/asm-arm/arch-davinci/debug-macro.S
+/*
+ * Debugging macro for DaVinci
  *
- * Debugging macro include header
+ * Author: Kevin Hilman, MontaVista Software, Inc. <source@mvista.com>
  *
- *  Copyright (C) 1994-1999 Russell King
- *  Moved from linux/arch/arm/kernel/debug.S by Ben Dooks
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
-*/
+ * 2007 (c) MontaVista Software, Inc. This file is licensed under
+ * the terms of the GNU General Public License version 2. This program
+ * is licensed "as is" without any warranty of any kind, whether express
+ * or implied.
+ */
 
 		.macro addruart, rx
 		mrc	p15, 0, \rx, c1, c0
 		tst	\rx, #1			@ MMU enabled?
-		moveq	\rx, #0x01c00000	@ physical base address
-		movne	\rx, #0xe1000000	@ virtual base
-		orr	\rx, \rx, #0x00020000   @ UART 0
+		moveq	\rx, #0x01000000	@ physical base address
+		movne	\rx, #0xfe000000	@ virtual base
+		orr	\rx, \rx, #0x00c20000   @ UART 0
 		.endm
 
-		.macro	senduart,rd,rx
-		strb	\rd, [\rx]
-		.endm
-
-		.macro	busyuart,rd,rx
-1001:		ldrb	\rd, [\rx, #(0x5 << 2)]
-		and	\rd, \rd, #0x60
-		teq	\rd, #0x60
-		bne	1001b
-		.endm
-
-		.macro	waituart,rd,rx
-		.endm
-
+#define UART_SHIFT	2
+#include <asm/hardware/debug-8250.S>

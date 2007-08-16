@@ -583,8 +583,7 @@ inode_info_init_once(void *vptr, struct kmem_cache *cachep, unsigned long flags)
 {
 	struct ecryptfs_inode_info *ei = (struct ecryptfs_inode_info *)vptr;
 
-	if (flags & SLAB_CTOR_CONSTRUCTOR)
-		inode_init_once(&ei->vfs_inode);
+	inode_init_once(&ei->vfs_inode);
 }
 
 static struct ecryptfs_cache_info {
@@ -678,7 +677,7 @@ static int ecryptfs_init_kmem_caches(void)
 
 		info = &ecryptfs_cache_infos[i];
 		*(info->cache) = kmem_cache_create(info->name, info->size,
-				0, SLAB_HWCACHE_ALIGN, info->ctor, NULL);
+				0, SLAB_HWCACHE_ALIGN, info->ctor);
 		if (!*(info->cache)) {
 			ecryptfs_free_kmem_caches();
 			ecryptfs_printk(KERN_WARNING, "%s: "
@@ -841,8 +840,6 @@ static int __init ecryptfs_init(void)
 		goto out;
 	}
 	kobj_set_kset_s(&ecryptfs_subsys, fs_subsys);
-	sysfs_attr_version.attr.owner = THIS_MODULE;
-	sysfs_attr_version_str.attr.owner = THIS_MODULE;
 	rc = do_sysfs_registration();
 	if (rc) {
 		printk(KERN_ERR "sysfs registration failed\n");

@@ -641,6 +641,8 @@ static struct sock *sctp_v6_create_accept_sk(struct sock *sk,
 	newsctp6sk = (struct sctp6_sock *)newsk;
 	inet_sk(newsk)->pinet6 = &newsctp6sk->inet6;
 
+	sctp_sk(newsk)->v4mapped = sctp_sk(sk)->v4mapped;
+
 	newinet = inet_sk(newsk);
 	newnp = inet6_sk(newsk);
 
@@ -844,6 +846,10 @@ static int sctp_inet6_bind_verify(struct sctp_sock *opt, union sctp_addr *addr)
 			dev = dev_get_by_index(addr->v6.sin6_scope_id);
 			if (!dev)
 				return 0;
+			if (!ipv6_chk_addr(&addr->v6.sin6_addr, dev, 0)) {
+				dev_put(dev);
+				return 0;
+			}
 			dev_put(dev);
 		}
 		af = opt->pf->af;

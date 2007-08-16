@@ -21,6 +21,7 @@
 #include <linux/syscalls.h>
 #include <linux/ptrace.h>
 #include <linux/signal.h>
+#include <linux/signalfd.h>
 #include <linux/capability.h>
 #include <linux/freezer.h>
 #include <linux/pid_namespace.h>
@@ -95,26 +96,43 @@ static inline int has_pending_signals(sigset_t *signal, sigset_t *blocked)
 
 #define PENDING(p,b) has_pending_signals(&(p)->signal, (b))
 
-fastcall void recalc_sigpending_tsk(struct task_struct *t)
+static int recalc_sigpending_tsk(struct task_struct *t)
 {
 	if (t->signal->group_stop_count > 0 ||
 	    (freezing(t)) ||
 	    PENDING(&t->pending, &t->blocked) ||
-	    PENDING(&t->signal->shared_pending, &t->blocked))
+	    PENDING(&t->signal->shared_pending, &t->blocked)) {
 		set_tsk_thread_flag(t, TIF_SIGPENDING);
-	else
-		clear_tsk_thread_flag(t, TIF_SIGPENDING);
+		return 1;
+	}
+	/*
+	 * We must never clear the flag in another thread, or in current
+	 * when it's possible the current syscall is returning -ERESTART*.
+	 * So we don't clear it here, and only callers who know they should do.
+	 */
+	return 0;
+}
+
+/*
+ * After recalculating TIF_SIGPENDING, we need to make sure the task wakes up.
+ * This is superfluous when called on current, the wakeup is a harmless no-op.
+ */
+void recalc_sigpending_and_wake(struct task_struct *t)
+{
+	if (recalc_sigpending_tsk(t))
+		signal_wake_up(t, 0);
 }
 
 void recalc_sigpending(void)
 {
-	recalc_sigpending_tsk(current);
+	if (!recalc_sigpending_tsk(current))
+		clear_thread_flag(TIF_SIGPENDING);
+
 }
 
 /* Given the mask, find the first available signal that should be serviced. */
 
-static int
-next_signal(struct sigpending *pending, sigset_t *mask)
+int next_signal(struct sigpending *pending, sigset_t *mask)
 {
 	unsigned long i, *s, *m, x;
 	int sig = 0;
@@ -237,6 +255,16 @@ flush_signal_handlers(struct task_struct *t, int force_default)
 	}
 }
 
+int unhandled_signal(struct task_struct *tsk, int sig)
+{
+	if (is_init(tsk))
+		return 1;
+	if (tsk->ptrace & PT_PTRACED)
+		return 0;
+	return (tsk->sighand->action[sig-1].sa.sa_handler == SIG_IGN) ||
+		(tsk->sighand->action[sig-1].sa.sa_handler == SIG_DFL);
+}
+
 
 /* Notify the system that a driver wants to block all signals for this
  * process, and wants to be notified if any signals at all were to be
@@ -345,7 +373,13 @@ static int __dequeue_signal(struct sigpending *pending, sigset_t *mask,
  */
 int dequeue_signal(struct task_struct *tsk, sigset_t *mask, siginfo_t *info)
 {
-	int signr = __dequeue_signal(&tsk->pending, mask, info);
+	int signr = 0;
+
+	/* We only dequeue private signals from ourselves, we don't let
+	 * signalfd steal them
+	 */
+	if (tsk == current)
+		signr = __dequeue_signal(&tsk->pending, mask, info);
 	if (!signr) {
 		signr = __dequeue_signal(&tsk->signal->shared_pending,
 					 mask, info);
@@ -373,7 +407,8 @@ int dequeue_signal(struct task_struct *tsk, sigset_t *mask, siginfo_t *info)
 			}
 		}
 	}
-	recalc_sigpending_tsk(tsk);
+	if (likely(tsk == current))
+		recalc_sigpending();
 	if (signr && unlikely(sig_kernel_stop(signr))) {
 		/*
 		 * Set a marker that we have dequeued a stop signal.  Our
@@ -497,6 +532,11 @@ static int check_kill_permission(int sig, struct siginfo *info,
 	int error = -EINVAL;
 	if (!valid_signal(sig))
 		return error;
+
+	error = audit_signal_info(sig, t); /* Let audit system see the signal */
+	if (error)
+		return error;
+
 	error = -EPERM;
 	if ((info == SEND_SIG_NOINFO || (!is_si_special(info) && SI_FROMUSER(info)))
 	    && ((sig != SIGCONT) ||
@@ -506,10 +546,7 @@ static int check_kill_permission(int sig, struct siginfo *info,
 	    && !capable(CAP_KILL))
 		return error;
 
-	error = security_task_kill(t, info, sig, 0);
-	if (!error)
-		audit_signal_info(sig, t); /* Let audit system see the signal */
-	return error;
+	return security_task_kill(t, info, sig, 0);
 }
 
 /* forward decl */
@@ -630,6 +667,12 @@ static int send_signal(int sig, struct siginfo *info, struct task_struct *t,
 	int ret = 0;
 
 	/*
+	 * Deliver the signal to listening signalfds. This must be called
+	 * with the sighand lock held.
+	 */
+	signalfd_notify(t, sig);
+
+	/*
 	 * fast-pathed signals for kernel-internal things like SIGSTOP
 	 * or SIGKILL.
 	 */
@@ -685,6 +728,37 @@ out_set:
 #define LEGACY_QUEUE(sigptr, sig) \
 	(((sig) < SIGRTMIN) && sigismember(&(sigptr)->signal, (sig)))
 
+int print_fatal_signals;
+
+static void print_fatal_signal(struct pt_regs *regs, int signr)
+{
+	printk("%s/%d: potentially unexpected fatal signal %d.\n",
+		current->comm, current->pid, signr);
+
+#ifdef __i386__
+	printk("code at %08lx: ", regs->eip);
+	{
+		int i;
+		for (i = 0; i < 16; i++) {
+			unsigned char insn;
+
+			__get_user(insn, (unsigned char *)(regs->eip + i));
+			printk("%02x ", insn);
+		}
+	}
+#endif
+	printk("\n");
+	show_regs(regs);
+}
+
+static int __init setup_print_fatal_signals(char *str)
+{
+	get_option (&str, &print_fatal_signals);
+
+	return 1;
+}
+
+__setup("print-fatal-signals=", setup_print_fatal_signals);
 
 static int
 specific_send_sig_info(int sig, struct siginfo *info, struct task_struct *t)
@@ -736,7 +810,7 @@ force_sig_info(int sig, struct siginfo *info, struct task_struct *t)
 		action->sa.sa_handler = SIG_DFL;
 		if (blocked) {
 			sigdelset(&t->blocked, sig);
-			recalc_sigpending_tsk(t);
+			recalc_sigpending_and_wake(t);
 		}
 	}
 	ret = specific_send_sig_info(sig, info, t);
@@ -1280,6 +1354,11 @@ int send_sigqueue(int sig, struct sigqueue *q, struct task_struct *p)
 		ret = 1;
 		goto out;
 	}
+	/*
+	 * Deliver the signal to listening signalfds. This must be called
+	 * with the sighand lock held.
+	 */
+	signalfd_notify(p, sig);
 
 	list_add_tail(&q->list, &p->pending.list);
 	sigaddset(&p->pending.signal, sig);
@@ -1323,6 +1402,11 @@ send_group_sigqueue(int sig, struct sigqueue *q, struct task_struct *p)
 		q->info.si_overrun++;
 		goto out;
 	} 
+	/*
+	 * Deliver the signal to listening signalfds. This must be called
+	 * with the sighand lock held.
+	 */
+	signalfd_notify(p, sig);
 
 	/*
 	 * Put this signal on the shared-pending queue.
@@ -1477,10 +1561,6 @@ static inline int may_ptrace_stop(void)
 		    (current->ptrace & PT_ATTACHED)))
 		return 0;
 
-	if (unlikely(current->signal == current->parent->signal) &&
-	    unlikely(current->signal->flags & SIGNAL_GROUP_EXIT))
-		return 0;
-
 	/*
 	 * Are we in the middle of do_coredump?
 	 * If so and our tracer is also part of the coredump stopping
@@ -1550,8 +1630,9 @@ static void ptrace_stop(int exit_code, int nostop_code, siginfo_t *info)
 	/*
 	 * Queued signals ignored us while we were stopped for tracing.
 	 * So check for any that we should take before resuming user mode.
+	 * This sets TIF_SIGPENDING, but never clears it.
 	 */
-	recalc_sigpending();
+	recalc_sigpending_tsk(current);
 }
 
 void ptrace_notify(int exit_code)
@@ -1811,6 +1892,8 @@ relock:
 		 * Anything else is fatal, maybe with a core dump.
 		 */
 		current->flags |= PF_SIGNALED;
+		if ((signr != SIGKILL) && print_fatal_signals)
+			print_fatal_signal(regs, signr);
 		if (sig_kernel_coredump(signr)) {
 			/*
 			 * If it was able to dump core, this kills all
@@ -1983,6 +2066,8 @@ int copy_siginfo_to_user(siginfo_t __user *to, siginfo_t *from)
 	/*
 	 * If you change siginfo_t structure, please be sure
 	 * this code is fixed accordingly.
+	 * Please remember to update the signalfd_copyinfo() function
+	 * inside fs/signalfd.c too, in case siginfo_t changes.
 	 * It should never copy any pad contained in the structure
 	 * to avoid security leaks, but must copy the generic
 	 * 3 ints plus the relevant union member.
@@ -2253,7 +2338,7 @@ int do_sigaction(int sig, struct k_sigaction *act, struct k_sigaction *oact)
 			rm_from_queue_full(&mask, &t->signal->shared_pending);
 			do {
 				rm_from_queue_full(&mask, &t->pending);
-				recalc_sigpending_tsk(t);
+				recalc_sigpending_and_wake(t);
 				t = next_thread(t);
 			} while (t != current);
 		}

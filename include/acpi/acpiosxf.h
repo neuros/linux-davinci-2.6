@@ -78,7 +78,7 @@ struct acpi_signal_fatal_info {
 /*
  * OSL Initialization and shutdown primitives
  */
-acpi_status acpi_os_initialize(void);
+acpi_status __initdata acpi_os_initialize(void);
 
 acpi_status acpi_os_terminate(void);
 
@@ -143,7 +143,8 @@ void acpi_os_release_mutex(acpi_mutex handle);
  */
 void *acpi_os_allocate(acpi_size size);
 
-void __iomem *acpi_os_map_memory(acpi_physical_address where, acpi_native_uint length);
+void __iomem *acpi_os_map_memory(acpi_physical_address where,
+				 acpi_native_uint length);
 
 void acpi_os_unmap_memory(void __iomem * logical_address, acpi_size size);
 
@@ -235,6 +236,7 @@ acpi_os_derive_pci_id(acpi_handle rhandle,
  * Miscellaneous
  */
 acpi_status acpi_os_validate_interface(char *interface);
+acpi_status acpi_osi_invalidate(char* interface);
 
 acpi_status
 acpi_os_validate_address(u8 space_id,

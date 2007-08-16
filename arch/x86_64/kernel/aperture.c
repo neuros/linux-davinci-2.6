@@ -20,7 +20,7 @@
 #include <linux/ioport.h>
 #include <asm/e820.h>
 #include <asm/io.h>
-#include <asm/proto.h>
+#include <asm/iommu.h>
 #include <asm/pci-direct.h>
 #include <asm/dma.h>
 #include <asm/k8.h>
@@ -86,7 +86,7 @@ static int __init aperture_valid(u64 aper_base, u32 aper_size)
 		printk("Aperture too small (%d MB)\n", aper_size>>20);
 		return 0;
 	}
-	if (aper_base + aper_size >= 0xffffffff) { 
+	if (aper_base + aper_size > 0x100000000UL) {
 		printk("Aperture beyond 4GB. Ignoring.\n");
 		return 0; 
 	}
@@ -214,7 +214,7 @@ void __init iommu_hole_init(void)
 	if (iommu_aperture_disabled || !fix_aperture || !early_pci_allowed())
 		return;
 
-	printk("Checking aperture...\n"); 
+	printk(KERN_INFO  "Checking aperture...\n");
 
 	fix = 0;
 	for (num = 24; num < 32; num++) {		

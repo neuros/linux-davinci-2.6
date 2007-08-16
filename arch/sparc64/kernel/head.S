@@ -1,15 +1,15 @@
-/* $Id: head.S,v 1.87 2002/02/09 19:49:31 davem Exp $
- * head.S: Initial boot code for the Sparc64 port of Linux.
+/* head.S: Initial boot code for the Sparc64 port of Linux.
  *
- * Copyright (C) 1996,1997 David S. Miller (davem@caip.rutgers.edu)
+ * Copyright (C) 1996, 1997, 2007 David S. Miller (davem@davemloft.net)
  * Copyright (C) 1996 David Sitsky (David.Sitsky@anu.edu.au)
- * Copyright (C) 1997,1998 Jakub Jelinek (jj@sunsite.mff.cuni.cz)
+ * Copyright (C) 1997, 1998 Jakub Jelinek (jj@sunsite.mff.cuni.cz)
  * Copyright (C) 1997 Miguel de Icaza (miguel@nuclecu.unam.mx)
  */
 
 #include <linux/version.h>
 #include <linux/errno.h>
 #include <linux/threads.h>
+#include <linux/init.h>
 #include <asm/thread_info.h>
 #include <asm/asi.h>
 #include <asm/pstate.h>
@@ -374,6 +374,7 @@ jump_to_sun4u_init:
 	jmpl    %g2 + %g0, %g0
 	 nop
 
+	.section	.text.init.refok
 sun4u_init:
 	BRANCH_IF_SUN4V(g1, sun4v_init)
 
@@ -458,7 +459,6 @@ tlb_fixup_done:
 	or	%g6, %lo(init_thread_union), %g6
 	ldx	[%g6 + TI_TASK], %g4
 	mov	%sp, %l6
-	mov	%o4, %l7
 
 	wr	%g0, ASI_P, %asi
 	mov	1, %g1
@@ -523,12 +523,14 @@ tlb_fixup_done:
 #else
 	mov	0, %o0
 #endif
-	stb	%o0, [%g6 + TI_CPU]
+	sth	%o0, [%g6 + TI_CPU]
 
 	/* Off we go.... */
 	call	start_kernel
 	 nop
 	/* Not reached... */
+
+	.previous
 
 	/* This is meant to allow the sharing of this code between
 	 * boot processor invocation (via setup_tba() below) and
@@ -653,32 +655,53 @@ setup_tba:
 	 restore
 sparc64_boot_end:
 
-#include "ktlb.S"
-#include "tsb.S"
 #include "etrap.S"
 #include "rtrap.S"
 #include "winfixup.S"
 #include "entry.S"
 #include "sun4v_tlb_miss.S"
 #include "sun4v_ivec.S"
+#include "ktlb.S"
+#include "tsb.S"
 
 /*
  * The following skip makes sure the trap table in ttable.S is aligned
  * on a 32K boundary as required by the v9 specs for TBA register.
  *
  * We align to a 32K boundary, then we have the 32K kernel TSB,
- * then the 32K aligned trap table.
+ * the 64K kernel 4MB TSB, and then the 32K aligned trap table.
  */
 1:
 	.skip	0x4000 + _start - 1b
+
+! 0x0000000000408000
 
 	.globl	swapper_tsb
 swapper_tsb:
 	.skip	(32 * 1024)
 
-! 0x0000000000408000
+	.globl	swapper_4m_tsb
+swapper_4m_tsb:
+	.skip	(64 * 1024)
 
+! 0x0000000000420000
+
+	/* Some care needs to be exercised if you try to move the
+	 * location of the trap table relative to other things.  For
+	 * one thing there are br* instructions in some of the
+	 * trap table entires which branch back to code in ktlb.S
+	 * Those instructions can only handle a signed 16-bit
+	 * displacement.
+	 *
+	 * There is a binutils bug (bugzilla #4558) which causes
+	 * the relocation overflow checks for such instructions to
+	 * not be done correctly.  So bintuils will not notice the
+	 * error and will instead write junk into the relocation and
+	 * you'll have an unbootable kernel.
+	 */
 #include "ttable.S"
+
+! 0x0000000000428000
 
 #include "systbls.S"
 

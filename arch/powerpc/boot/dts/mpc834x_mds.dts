@@ -136,6 +136,11 @@
 			model = "TSEC";
 			compatible = "gianfar";
 			reg = <24000 1000>;
+			/*
+			 * address is deprecated and will be removed
+			 * in 2.6.25.  Only recent versions of
+			 * U-Boot support local-mac-address, however.
+			 */
 			address = [ 00 00 00 00 00 00 ];
 			local-mac-address = [ 00 00 00 00 00 00 ];
 			interrupts = <20 8 21 8 22 8>;
@@ -150,6 +155,11 @@
 			model = "TSEC";
 			compatible = "gianfar";
 			reg = <25000 1000>;
+			/*
+			 * address is deprecated and will be removed
+			 * in 2.6.25.  Only recent versions of
+			 * U-Boot support local-mac-address, however.
+			 */
 			address = [ 00 00 00 00 00 00 ];
 			local-mac-address = [ 00 00 00 00 00 00 ];
 			interrupts = <23 8 24 8 25 8>;
@@ -223,7 +233,7 @@
 			interrupt-parent = < &ipic >;
 			interrupts = <42 8>;
 			bus-range = <0 0>;
-			ranges = <02000000 0 a0000000 a0000000 0 10000000
+			ranges = <02000000 0 90000000 90000000 0 10000000
 				  42000000 0 80000000 80000000 0 10000000
 				  01000000 0 00000000 e2000000 0 00100000>;
 			clock-frequency = <3f940aa>;
@@ -231,7 +241,7 @@
 			#size-cells = <2>;
 			#address-cells = <3>;
 			reg = <8500 100>;
-			compatible = "83xx";
+			compatible = "fsl,mpc8349-pci";
 			device_type = "pci";
 		};
 
@@ -284,14 +294,14 @@
 			interrupts = <42 8>;
 			bus-range = <0 0>;
 			ranges = <02000000 0 b0000000 b0000000 0 10000000
-				  42000000 0 90000000 90000000 0 10000000
+				  42000000 0 a0000000 a0000000 0 10000000
 				  01000000 0 00000000 e2100000 0 00100000>;
 			clock-frequency = <3f940aa>;
 			#interrupt-cells = <1>;
 			#size-cells = <2>;
 			#address-cells = <3>;
 			reg = <8600 100>;
-			compatible = "83xx";
+			compatible = "fsl,mpc8349-pci";
 			device_type = "pci";
 		};
 

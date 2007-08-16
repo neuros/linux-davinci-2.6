@@ -725,7 +725,7 @@ while (!(bdp->cbd_sc & BD_ENET_RX_EMPTY)) {
 		fep->stats.rx_dropped++;
 	} else {
 		skb_put(skb,pkt_len-4);	/* Make room */
-		eth_copy_and_sum(skb, data, pkt_len-4, 0);
+		skb_copy_to_linear_data(skb, data, pkt_len-4);
 		skb->protocol=eth_type_trans(skb,dev);
 		netif_rx(skb);
 	}
@@ -1878,7 +1878,7 @@ fec_restart(struct net_device *dev, int duplex)
 	bdp--;
 	bdp->cbd_sc |= BD_SC_WRAP;
 
-	/* ...and the same for transmmit.
+	/* ...and the same for transmit.
 	*/
 	bdp = fep->tx_bd_base;
 	for (i=0; i<TX_RING_SIZE; i++) {

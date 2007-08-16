@@ -262,12 +262,10 @@ static void dlmfs_init_once(void *foo,
 	struct dlmfs_inode_private *ip =
 		(struct dlmfs_inode_private *) foo;
 
-	if (flags & SLAB_CTOR_CONSTRUCTOR) {
-		ip->ip_dlm = NULL;
-		ip->ip_parent = NULL;
+	ip->ip_dlm = NULL;
+	ip->ip_parent = NULL;
 
-		inode_init_once(&ip->ip_vfs_inode);
-	}
+	inode_init_once(&ip->ip_vfs_inode);
 }
 
 static struct inode *dlmfs_alloc_inode(struct super_block *sb)
@@ -594,7 +592,7 @@ static int __init init_dlmfs_fs(void)
 				sizeof(struct dlmfs_inode_private),
 				0, (SLAB_HWCACHE_ALIGN|SLAB_RECLAIM_ACCOUNT|
 					SLAB_MEM_SPREAD),
-				dlmfs_init_once, NULL);
+				dlmfs_init_once);
 	if (!dlmfs_inode_cache)
 		return -ENOMEM;
 	cleanup_inode = 1;

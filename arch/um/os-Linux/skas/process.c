@@ -41,7 +41,7 @@ int is_skas_winch(int pid, int fd, void *data)
 	if(pid != os_getpgrp())
 		return(0);
 
-	register_winch_irq(-1, fd, -1, data);
+	register_winch_irq(-1, fd, -1, data, 0);
 	return(1);
 }
 
@@ -252,11 +252,12 @@ int start_userspace(unsigned long stub_stack)
 	unsigned long sp;
 	int pid, status, n, flags;
 
-	stack = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC,
+	stack = mmap(NULL, UM_KERN_PAGE_SIZE,
+		     PROT_READ | PROT_WRITE | PROT_EXEC,
 		     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if(stack == MAP_FAILED)
 		panic("start_userspace : mmap failed, errno = %d", errno);
-	sp = (unsigned long) stack + PAGE_SIZE - sizeof(void *);
+	sp = (unsigned long) stack + UM_KERN_PAGE_SIZE - sizeof(void *);
 
 	flags = CLONE_FILES | SIGCHLD;
 	if(proc_mm) flags |= CLONE_VM;
@@ -279,7 +280,7 @@ int start_userspace(unsigned long stub_stack)
 		panic("start_userspace : PTRACE_OLDSETOPTIONS failed, errno=%d\n",
 		      errno);
 
-	if(munmap(stack, PAGE_SIZE) < 0)
+	if(munmap(stack, UM_KERN_PAGE_SIZE) < 0)
 		panic("start_userspace : munmap failed, errno = %d\n", errno);
 
 	return(pid);
@@ -288,7 +289,8 @@ int start_userspace(unsigned long stub_stack)
 void userspace(union uml_pt_regs *regs)
 {
 	int err, status, op, pid = userspace_pid[0];
-	int local_using_sysemu; /*To prevent races if using_sysemu changes under us.*/
+	/* To prevent races if using_sysemu changes under us.*/
+	int local_using_sysemu;
 
 	while(1){
 		restore_registers(pid, regs);
@@ -296,7 +298,8 @@ void userspace(union uml_pt_regs *regs)
 		/* Now we set local_using_sysemu to be used for one loop */
 		local_using_sysemu = get_using_sysemu();
 
-		op = SELECT_PTRACE_OPERATION(local_using_sysemu, singlestepping(NULL));
+		op = SELECT_PTRACE_OPERATION(local_using_sysemu,
+					     singlestepping(NULL));
 
 		err = ptrace(op, pid, 0, 0);
 		if(err)
@@ -363,7 +366,7 @@ static int __init init_thread_regs(void)
 	thread_regs[REGS_IP_INDEX] = UML_CONFIG_STUB_CODE +
 				(unsigned long) stub_clone_handler -
 				(unsigned long) &__syscall_stub_start;
-	thread_regs[REGS_SP_INDEX] = UML_CONFIG_STUB_DATA + PAGE_SIZE -
+	thread_regs[REGS_SP_INDEX] = UML_CONFIG_STUB_DATA + UM_KERN_PAGE_SIZE -
 		sizeof(void *);
 #ifdef __SIGNAL_FRAMESIZE
 	thread_regs[REGS_SP_INDEX] -= __SIGNAL_FRAMESIZE;
@@ -451,7 +454,7 @@ void map_stub_pages(int fd, unsigned long code,
 				      .u         =
 				      { .mmap    =
 					{ .addr    = code,
-					  .len     = PAGE_SIZE,
+					  .len     = UM_KERN_PAGE_SIZE,
 					  .prot    = PROT_EXEC,
 					  .flags   = MAP_FIXED | MAP_PRIVATE,
 					  .fd      = code_fd,
@@ -474,7 +477,7 @@ void map_stub_pages(int fd, unsigned long code,
 				  .u         =
 				  { .mmap    =
 				    { .addr    = data,
-				      .len     = PAGE_SIZE,
+				      .len     = UM_KERN_PAGE_SIZE,
 				      .prot    = PROT_READ | PROT_WRITE,
 				      .flags   = MAP_FIXED | MAP_SHARED,
 				      .fd      = map_fd,
@@ -490,8 +493,8 @@ void map_stub_pages(int fd, unsigned long code,
 void new_thread(void *stack, jmp_buf *buf, void (*handler)(void))
 {
 	(*buf)[0].JB_IP = (unsigned long) handler;
-	(*buf)[0].JB_SP = (unsigned long) stack +
-		(PAGE_SIZE << UML_CONFIG_KERNEL_STACK_ORDER) - sizeof(void *);
+	(*buf)[0].JB_SP = (unsigned long) stack + UM_THREAD_SIZE -
+		sizeof(void *);
 }
 
 #define INIT_JMP_NEW_THREAD 0
@@ -533,8 +536,7 @@ int start_idle_thread(void *stack, jmp_buf *switch_buf)
 	case INIT_JMP_NEW_THREAD:
 		(*switch_buf)[0].JB_IP = (unsigned long) new_thread_handler;
 		(*switch_buf)[0].JB_SP = (unsigned long) stack +
-			(PAGE_SIZE << UML_CONFIG_KERNEL_STACK_ORDER) -
-			sizeof(void *);
+			UM_THREAD_SIZE - sizeof(void *);
 		break;
 	case INIT_JMP_CALLBACK:
 		(*cb_proc)(cb_arg);

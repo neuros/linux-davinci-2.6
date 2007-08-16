@@ -44,7 +44,7 @@ SECTIONS
 
   /* read-only */
   .text : AT(ADDR(.text) - LOAD_OFFSET) {
-	*(.text)
+	TEXT_TEXT
 	SCHED_TEXT
 	LOCK_TEXT
 	KPROBES_TEXT
@@ -60,7 +60,9 @@ SECTIONS
   	__stop___ex_table = .;
   }
 
-  BUG_TABLE
+  NOTES :text :note
+
+  BUG_TABLE :text
 
   . = ALIGN(4);
   .tracedata : AT(ADDR(.tracedata) - LOAD_OFFSET) {
@@ -74,15 +76,9 @@ SECTIONS
   /* writeable */
   . = ALIGN(4096);
   .data : AT(ADDR(.data) - LOAD_OFFSET) {	/* Data */
-	*(.data)
+	DATA_DATA
 	CONSTRUCTORS
 	} :data
-
-  .paravirtprobe : AT(ADDR(.paravirtprobe) - LOAD_OFFSET) {
-  	__start_paravirtprobe = .;
-	*(.paravirtprobe)
-  	__stop_paravirtprobe = .;
-  }
 
   . = ALIGN(4096);
   .data_nosave : AT(ADDR(.data_nosave) - LOAD_OFFSET) {
@@ -94,6 +90,7 @@ SECTIONS
 
   . = ALIGN(4096);
   .data.page_aligned : AT(ADDR(.data.page_aligned) - LOAD_OFFSET) {
+	*(.data.page_aligned)
 	*(.data.idt)
   }
 
@@ -186,6 +183,7 @@ SECTIONS
   .data.percpu  : AT(ADDR(.data.percpu) - LOAD_OFFSET) {
 	__per_cpu_start = .;
 	*(.data.percpu)
+	*(.data.percpu.shared_aligned)
 	__per_cpu_end = .;
   }
   . = ALIGN(4096);
@@ -212,6 +210,4 @@ SECTIONS
   STABS_DEBUG
 
   DWARF_DEBUG
-
-  NOTES
 }

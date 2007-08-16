@@ -1,9 +1,11 @@
 /*
- * linux/drivers/ide/pci/sis5513.c	Version 0.16ac+vp	Jun 18, 2003
+ * linux/drivers/ide/pci/sis5513.c	Version 0.25	Jun 10, 2007
  *
  * Copyright (C) 1999-2000	Andre Hedrick <andre@linux-ide.org>
  * Copyright (C) 2002		Lionel Bouton <Lionel.Bouton@inet6.fr>, Maintainer
  * Copyright (C) 2003		Vojtech Pavlik <vojtech@suse.cz>
+ * Copyright (C) 2007		Bartlomiej Zolnierkiewicz
+ *
  * May be copied or modified under the terms of the GNU General Public License
  *
  *
@@ -448,36 +450,15 @@ static void config_drive_art_rwp (ide_drive_t *drive)
 		pci_write_config_byte(dev, 0x4b, reg4bh|rw_prefetch);
 }
 
-
 /* Set per-drive active and recovery time */
 static void config_art_rwp_pio (ide_drive_t *drive, u8 pio)
 {
 	ide_hwif_t *hwif	= HWIF(drive);
 	struct pci_dev *dev	= hwif->pci_dev;
 
-	u8			timing, drive_pci, test1, test2;
-
-	u16 eide_pio_timing[6] = {600, 390, 240, 180, 120, 90};
-	u16 xfer_pio = drive->id->eide_pio_modes;
+	u8 drive_pci, test1, test2;
 
 	config_drive_art_rwp(drive);
-	pio = ide_get_best_pio_mode(drive, 255, pio, NULL);
-
-	if (xfer_pio> 4)
-		xfer_pio = 0;
-
-	if (drive->id->eide_pio_iordy > 0) {
-		for (xfer_pio = 5;
-			(xfer_pio > 0) &&
-			(drive->id->eide_pio_iordy > eide_pio_timing[xfer_pio]);
-			xfer_pio--);
-	} else {
-		xfer_pio = (drive->id->eide_pio_modes & 4) ? 0x05 :
-			   (drive->id->eide_pio_modes & 2) ? 0x04 :
-			   (drive->id->eide_pio_modes & 1) ? 0x03 : xfer_pio;
-	}
-
-	timing = (xfer_pio >= pio) ? xfer_pio : pio;
 
 	/* In pre ATA_133 case, drives sit at 0x40 + 4*drive->dn */
 	drive_pci = 0x40;
@@ -500,17 +481,18 @@ static void config_art_rwp_pio (ide_drive_t *drive, u8 pio)
 		test1 &= ~0x0F;
 		test2 &= ~0x07;
 
-		switch(timing) {
+		switch(pio) {
 			case 4:		test1 |= 0x01; test2 |= 0x03; break;
 			case 3:		test1 |= 0x03; test2 |= 0x03; break;
 			case 2:		test1 |= 0x04; test2 |= 0x04; break;
 			case 1:		test1 |= 0x07; test2 |= 0x06; break;
+			case 0:		/* PIO0: register setting == X000 */
 			default:	break;
 		}
 		pci_write_config_byte(dev, drive_pci, test1);
 		pci_write_config_byte(dev, drive_pci+1, test2);
 	} else if (chipset_family < ATA_133) {
-		switch(timing) { /*		active  recovery
+		switch(pio) { /*		active  recovery
 						  v     v */
 			case 4:		test1 = 0x30|0x01; break;
 			case 3:		test1 = 0x30|0x03; break;
@@ -525,24 +507,28 @@ static void config_art_rwp_pio (ide_drive_t *drive, u8 pio)
 		pci_read_config_dword(dev, drive_pci, &test3);
 		test3 &= 0xc0c00fff;
 		if (test3 & 0x08) {
-			test3 |= (unsigned long)ini_time_value[ATA_133][timing] << 12;
-			test3 |= (unsigned long)act_time_value[ATA_133][timing] << 16;
-			test3 |= (unsigned long)rco_time_value[ATA_133][timing] << 24;
+			test3 |= ini_time_value[ATA_133][pio] << 12;
+			test3 |= act_time_value[ATA_133][pio] << 16;
+			test3 |= rco_time_value[ATA_133][pio] << 24;
 		} else {
-			test3 |= (unsigned long)ini_time_value[ATA_100][timing] << 12;
-			test3 |= (unsigned long)act_time_value[ATA_100][timing] << 16;
-			test3 |= (unsigned long)rco_time_value[ATA_100][timing] << 24;
+			test3 |= ini_time_value[ATA_100][pio] << 12;
+			test3 |= act_time_value[ATA_100][pio] << 16;
+			test3 |= rco_time_value[ATA_100][pio] << 24;
 		}
 		pci_write_config_dword(dev, drive_pci, test3);
 	}
 }
 
-static int config_chipset_for_pio (ide_drive_t *drive, u8 pio)
+static int sis5513_tune_drive(ide_drive_t *drive, u8 pio)
 {
-	if (pio == 255)
-		pio = ide_find_best_mode(drive, XFER_PIO | XFER_EPIO) - XFER_PIO_0;
+	pio = ide_get_best_pio_mode(drive, pio, 4);
 	config_art_rwp_pio(drive, pio);
-	return ide_config_drive_speed(drive, XFER_PIO_0 + min_t(u8, pio, 4));
+	return ide_config_drive_speed(drive, XFER_PIO_0 + pio);
+}
+
+static void sis5513_tuneproc(ide_drive_t *drive, u8 pio)
+{
+	(void)sis5513_tune_drive(drive, pio);
 }
 
 static int sis5513_tune_chipset (ide_drive_t *drive, u8 xferspeed)
@@ -622,25 +608,26 @@ static int sis5513_tune_chipset (ide_drive_t *drive, u8 xferspeed)
 		case XFER_SW_DMA_1:
 		case XFER_SW_DMA_0:
 			break;
-		case XFER_PIO_4: return((int) config_chipset_for_pio(drive, 4));
-		case XFER_PIO_3: return((int) config_chipset_for_pio(drive, 3));
-		case XFER_PIO_2: return((int) config_chipset_for_pio(drive, 2));
-		case XFER_PIO_1: return((int) config_chipset_for_pio(drive, 1));
+		case XFER_PIO_4:
+		case XFER_PIO_3:
+		case XFER_PIO_2:
+		case XFER_PIO_1:
 		case XFER_PIO_0:
-		default:	 return((int) config_chipset_for_pio(drive, 0));	
+			return sis5513_tune_drive(drive, speed - XFER_PIO_0);
+		default:
+			BUG();
+			break;
 	}
 
-	return ((int) ide_config_drive_speed(drive, speed));
-}
-
-static void sis5513_tune_drive (ide_drive_t *drive, u8 pio)
-{
-	(void) config_chipset_for_pio(drive, pio);
+	return ide_config_drive_speed(drive, speed);
 }
 
 static int sis5513_config_xfer_rate(ide_drive_t *drive)
 {
-	config_art_rwp_pio(drive, 5);
+	/*
+	 * TODO: always set PIO mode and remove this
+	 */
+	sis5513_tuneproc(drive, 255);
 
 	drive->init_speed = 0;
 
@@ -648,7 +635,7 @@ static int sis5513_config_xfer_rate(ide_drive_t *drive)
 		return 0;
 
 	if (ide_use_fast_pio(drive))
-		sis5513_tune_drive(drive, 5);
+		sis5513_tuneproc(drive, 255);
 
 	return -1;
 }
@@ -672,9 +659,7 @@ static unsigned int __devinit init_chipset_sis5513 (struct pci_dev *dev, const c
 
 		/* Special case for SiS630 : 630S/ET is ATA_100a */
 		if (SiSHostChipInfo[i].host_id == PCI_DEVICE_ID_SI_630) {
-			u8 hostrev;
-			pci_read_config_byte(host, PCI_REVISION_ID, &hostrev);
-			if (hostrev >= 0x30)
+			if (host->revision >= 0x30)
 				chipset_family = ATA_100a;
 		}
 		pci_dev_put(host);
@@ -715,7 +700,6 @@ static unsigned int __devinit init_chipset_sis5513 (struct pci_dev *dev, const c
 			u16 trueid;
 			u8 prefctl;
 			u8 idecfg;
-			u8 sbrev;
 
 			pci_read_config_byte(dev, 0x4a, &idecfg);
 			pci_write_config_byte(dev, 0x4a, idecfg | 0x10);
@@ -725,11 +709,10 @@ static unsigned int __devinit init_chipset_sis5513 (struct pci_dev *dev, const c
 			if (trueid == 0x5517) { /* SiS 961/961B */
 
 				lpc_bridge = pci_get_slot(dev->bus, 0x10); /* Bus 0, Dev 2, Fn 0 */
-				pci_read_config_byte(lpc_bridge, PCI_REVISION_ID, &sbrev);
 				pci_read_config_byte(dev, 0x49, &prefctl);
 				pci_dev_put(lpc_bridge);
 
-				if (sbrev == 0x10 && (prefctl & 0x80)) {
+				if (lpc_bridge->revision == 0x10 && (prefctl & 0x80)) {
 					printk(KERN_INFO "SIS5513: SiS 961B MuTIOL IDE UDMA133 controller\n");
 					chipset_family = ATA_133a;
 				} else {
@@ -809,9 +792,33 @@ static unsigned int __devinit init_chipset_sis5513 (struct pci_dev *dev, const c
 	return 0;
 }
 
-static unsigned int __devinit ata66_sis5513 (ide_hwif_t *hwif)
+struct sis_laptop {
+	u16 device;
+	u16 subvendor;
+	u16 subdevice;
+};
+
+static const struct sis_laptop sis_laptop[] = {
+	/* devid, subvendor, subdev */
+	{ 0x5513, 0x1043, 0x1107 },	/* ASUS A6K */
+	{ 0x5513, 0x1734, 0x105f },	/* FSC Amilo A1630 */
+	/* end marker */
+	{ 0, }
+};
+
+static u8 __devinit ata66_sis5513(ide_hwif_t *hwif)
 {
+	struct pci_dev *pdev = hwif->pci_dev;
+	const struct sis_laptop *lap = &sis_laptop[0];
 	u8 ata66 = 0;
+
+	while (lap->device) {
+		if (lap->device == pdev->device &&
+		    lap->subvendor == pdev->subsystem_vendor &&
+		    lap->subdevice == pdev->subsystem_device)
+			return ATA_CBL_PATA40_SHORT;
+		lap++;
+	}
 
 	if (chipset_family >= ATA_133) {
 		u16 regw = 0;
@@ -824,7 +831,8 @@ static unsigned int __devinit ata66_sis5513 (ide_hwif_t *hwif)
 		pci_read_config_byte(hwif->pci_dev, 0x48, &reg48h);
 		ata66 = (reg48h & mask) ? 0 : 1;
 	}
-        return ata66;
+
+	return ata66 ? ATA_CBL_PATA80 : ATA_CBL_PATA40;
 }
 
 static void __devinit init_hwif_sis5513 (ide_hwif_t *hwif)
@@ -836,7 +844,7 @@ static void __devinit init_hwif_sis5513 (ide_hwif_t *hwif)
 	if (!hwif->irq)
 		hwif->irq = hwif->channel ? 15 : 14;
 
-	hwif->tuneproc = &sis5513_tune_drive;
+	hwif->tuneproc = &sis5513_tuneproc;
 	hwif->speedproc = &sis5513_tune_chipset;
 
 	if (!(hwif->dma_base)) {
@@ -854,8 +862,8 @@ static void __devinit init_hwif_sis5513 (ide_hwif_t *hwif)
 	if (!chipset_family)
 		return;
 
-	if (!(hwif->udma_four))
-		hwif->udma_four = ata66_sis5513(hwif);
+	if (hwif->cbl != ATA_CBL_PATA40_SHORT)
+		hwif->cbl = ata66_sis5513(hwif);
 
 	if (chipset_family > ATA_16) {
 		hwif->ide_dma_check = &sis5513_config_xfer_rate;
@@ -871,10 +879,10 @@ static ide_pci_device_t sis5513_chipset __devinitdata = {
 	.name		= "SIS5513",
 	.init_chipset	= init_chipset_sis5513,
 	.init_hwif	= init_hwif_sis5513,
-	.channels	= 2,
 	.autodma	= NOAUTODMA,
 	.enablebits	= {{0x4a,0x02,0x02}, {0x4a,0x04,0x04}},
 	.bootable	= ON_BOARD,
+	.pio_mask	= ATA_PIO4,
 };
 
 static int __devinit sis5513_init_one(struct pci_dev *dev, const struct pci_device_id *id)
@@ -885,6 +893,7 @@ static int __devinit sis5513_init_one(struct pci_dev *dev, const struct pci_devi
 static struct pci_device_id sis5513_pci_tbl[] = {
 	{ PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_5513, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0},
 	{ PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_5518, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0},
+	{ PCI_VENDOR_ID_SI, PCI_DEVICE_ID_SI_1180, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0},
 	{ 0, },
 };
 MODULE_DEVICE_TABLE(pci, sis5513_pci_tbl);

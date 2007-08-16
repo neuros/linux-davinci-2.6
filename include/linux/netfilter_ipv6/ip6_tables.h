@@ -44,8 +44,14 @@ struct ip6t_ip6 {
 	char iniface[IFNAMSIZ], outiface[IFNAMSIZ];
 	unsigned char iniface_mask[IFNAMSIZ], outiface_mask[IFNAMSIZ];
 
-	/* ARGH, HopByHop uses 0, so can't do 0 = ANY,
-	   instead IP6T_F_NOPROTO must be set */
+	/* Upper protocol number
+	 * - The allowed value is 0 (any) or protocol number of last parsable
+	 *   header, which is 50 (ESP), 59 (No Next Header), 135 (MH), or
+	 *   the non IPv6 extension headers.
+	 * - The protocol numbers of IPv6 extension headers except of ESP and
+	 *   MH do not match any packets.
+	 * - You also need to set IP6T_FLAGS_PROTO to "flags" to check protocol.
+	 */
 	u_int16_t proto;
 	/* TOS to match iff flags & IP6T_F_TOS */
 	u_int8_t tos;
@@ -122,6 +128,28 @@ struct ip6t_error
 	struct ip6t_entry entry;
 	struct ip6t_error_target target;
 };
+
+#define IP6T_ENTRY_INIT(__size)						       \
+{									       \
+	.target_offset	= sizeof(struct ip6t_entry),			       \
+	.next_offset	= (__size),					       \
+}
+
+#define IP6T_STANDARD_INIT(__verdict)					       \
+{									       \
+	.entry		= IP6T_ENTRY_INIT(sizeof(struct ip6t_standard)),       \
+	.target		= XT_TARGET_INIT(IP6T_STANDARD_TARGET,		       \
+					 sizeof(struct ip6t_standard_target)), \
+	.target.verdict	= -(__verdict) - 1,				       \
+}
+
+#define IP6T_ERROR_INIT							       \
+{									       \
+	.entry		= IP6T_ENTRY_INIT(sizeof(struct ip6t_error)),	       \
+	.target		= XT_TARGET_INIT(IP6T_ERROR_TARGET,		       \
+					 sizeof(struct ip6t_error_target)),    \
+	.target.errorname = "ERROR",					       \
+}
 
 /*
  * New IP firewall options for [gs]etsockopt at the RAW IP level.

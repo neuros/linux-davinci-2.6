@@ -239,11 +239,9 @@ extern unsigned long __do_user_copy(void *to, const void *from, int n,
 /* execvp.c */
 extern int execvp_noalloc(char *buf, const char *file, char *const argv[]);
 /* helper.c */
-extern int run_helper(void (*pre_exec)(void *), void *pre_data, char **argv,
-		      unsigned long *stack_out);
+extern int run_helper(void (*pre_exec)(void *), void *pre_data, char **argv);
 extern int run_helper_thread(int (*proc)(void *), void *arg,
-			     unsigned int flags, unsigned long *stack_out,
-			     int stack_order);
+			     unsigned int flags, unsigned long *stack_out);
 extern int helper_wait(int pid);
 
 
@@ -272,7 +270,6 @@ extern void do_longjmp(void *p, int val);
 
 /* util.c */
 extern void stack_protections(unsigned long address);
-extern void task_protections(unsigned long address);
 extern int raw(int fd);
 extern void setup_machinename(char *machine_out);
 extern void setup_hostinfo(char *buf, int len);

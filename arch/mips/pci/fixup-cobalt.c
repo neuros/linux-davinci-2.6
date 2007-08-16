@@ -17,9 +17,7 @@
 #include <asm/io.h>
 #include <asm/gt64120.h>
 
-#include <asm/mach-cobalt/cobalt.h>
-
-extern int cobalt_board_id;
+#include <cobalt.h>
 
 static void qube_raq_galileo_early_fixup(struct pci_dev *dev)
 {
@@ -60,8 +58,6 @@ DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_VIA, PCI_DEVICE_ID_VIA_82C586_1,
 
 static void qube_raq_galileo_fixup(struct pci_dev *dev)
 {
-	unsigned short galileo_id;
-
 	if (dev->devfn != PCI_DEVFN(0, 0))
 		return;
 
@@ -86,16 +82,14 @@ static void qube_raq_galileo_fixup(struct pci_dev *dev)
 	 * Therefore we must set the disconnect/retry cycle values to
 	 * something sensible when using the new Galileo.
 	 */
-	pci_read_config_word(dev, PCI_REVISION_ID, &galileo_id);
-	galileo_id &= 0xff;	/* mask off class info */
 
- 	printk(KERN_INFO "Galileo: revision %u\n", galileo_id);
+ 	printk(KERN_INFO "Galileo: revision %u\n", dev->revision);
 
 #if 0
-	if (galileo_id >= 0x10) {
+	if (dev->revision >= 0x10) {
 		/* New Galileo, assumes PCI stop line to VIA is connected. */
 		GT_WRITE(GT_PCI0_TOR_OFS, 0x4020);
-	} else if (galileo_id == 0x1 || galileo_id == 0x2)
+	} else if (dev->revision == 0x1 || dev->revision == 0x2)
 #endif
 	{
 		signed int timeo;
@@ -114,6 +108,27 @@ static void qube_raq_galileo_fixup(struct pci_dev *dev)
 
 DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_MARVELL, PCI_DEVICE_ID_MARVELL_GT64111,
 	 qube_raq_galileo_fixup);
+
+int cobalt_board_id;
+
+static void qube_raq_via_board_id_fixup(struct pci_dev *dev)
+{
+	u8 id;
+	int retval;
+
+	retval = pci_read_config_byte(dev, VIA_COBALT_BRD_ID_REG, &id);
+	if (retval) {
+		panic("Cannot read board ID");
+		return;
+	}
+
+	cobalt_board_id = VIA_COBALT_BRD_REG_to_ID(id);
+
+	printk(KERN_INFO "Cobalt board ID: %d\n", cobalt_board_id);
+}
+
+DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_VIA, PCI_DEVICE_ID_VIA_82C586_0,
+	 qube_raq_via_board_id_fixup);
 
 static char irq_tab_qube1[] __initdata = {
   [COBALT_PCICONF_CPU]     = 0,
@@ -142,7 +157,7 @@ static char irq_tab_raq2[] __initdata = {
   [COBALT_PCICONF_ETH1]    = COBALT_ETH1_IRQ
 };
 
-int __init pcibios_map_irq(struct pci_dev *dev, u8 slot, u8 pin)
+int __init pcibios_map_irq(const struct pci_dev *dev, u8 slot, u8 pin)
 {
 	if (cobalt_board_id < COBALT_BRD_ID_QUBE2)
 		return irq_tab_qube1[slot];

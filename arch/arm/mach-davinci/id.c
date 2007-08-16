@@ -1,6 +1,4 @@
 /*
- * linux/arch/arm/mach-davinci/id.c
- *
  * Davinci CPU identification code
  *
  * Copyright (C) 2006 Komal Shah <komal_shah802003@yahoo.com>
@@ -18,75 +16,66 @@
 
 #include <asm/io.h>
 
-#define DAVINCI_DEV_ID		0x01c40028
-
-#define DAVINCI_DM6443_CPU_ID	0x64430000
-#define DAVINCI_DM6467_CPU_ID	0x64670000
-#define DAVINCI_DM350_CPU_ID	0x03500000
+#define JTAG_ID_BASE		0x01c40028
 
 struct davinci_id {
-	u16	jtag_id;	/* Device Part No. (Unique JTAG id)*/
-	u8	dev_rev;	/* Processor revision */
-	u32	mfg_jtag_id;	/* Manufacturer JTAP id */
-	u32	type;		/* Cpu id bits [31:08], cpu class bits [07:00] */
+	u8	variant;	/* JTAG ID bits 31:28 */
+	u16	part_no;	/* JTAG ID bits 27:12 */
+	u32	manufacturer;	/* JTAG ID bits 11:1 */
+	u32	type;		/* Cpu id bits [31:8], cpu class bits [7:0] */
 };
 
 /* Register values to detect the DaVinci version */
 static struct davinci_id davinci_ids[] __initdata = {
-	{ .jtag_id = 0xb700, .dev_rev = 0x2, .mfg_jtag_id = 0x017, 
-	  .type = DAVINCI_DM6443_CPU_ID }, /* DaVinci */
-
-	{ .jtag_id = 0xb770, .dev_rev = 0x0, .mfg_jtag_id = 0x017, 
-	  .type = DAVINCI_DM6467_CPU_ID }, /* DaVinci HD */
-
-	{ .jtag_id = 0xb73b, .dev_rev = 0x0, .mfg_jtag_id = 0x00f, 
-	  .type = DAVINCI_DM350_CPU_ID },
+	{
+		/* DM6446 */
+		.part_no      = 0xb700,
+		.variant      = 0x0,
+		.manufacturer = 0x017,
+		.type	      = 0x64460000,
+	},
 };
 
 /*
- * Get Device Part No. from DEV_ID.
+ * Get Device Part No. from JTAG ID register
  */
-static u16 __init davinci_get_jtag_id(void)
+static u16 __init davinci_get_part_no(void)
 {
-	u32 dev_id, jtag_id;
+	u32 dev_id, part_no;
 
-	dev_id = davinci_readl(DAVINCI_DEV_ID);
+	dev_id = davinci_readl(JTAG_ID_BASE);
 
-	jtag_id = ((dev_id >> 12) & 0xffff);
+	part_no = ((dev_id >> 12) & 0xffff);
 
-	return jtag_id;
+	return part_no;
 }
 
 /*
- * Get Device Revision from DEV_ID.
+ * Get Device Revision from JTAG ID register
  */
-static u8 __init davinci_get_dev_rev(void)
+static u8 __init davinci_get_variant(void)
 {
-	u32 dev_rev;
+	u32 variant;
 
-	dev_rev = davinci_readl(DAVINCI_DEV_ID);
+	variant = davinci_readl(JTAG_ID_BASE);
 
-	dev_rev = (dev_rev >> 28) & 0xf;
+	variant = (variant >> 28) & 0xf;
 
-	return dev_rev;
+	return variant;
 }
 
 void __init davinci_check_revision(void)
 {
 	int i;
-	u16 jtag_id;
-	u8 dev_rev;
+	u16 part_no;
+	u8 variant;
 
-	jtag_id = davinci_get_jtag_id();
-	dev_rev = davinci_get_dev_rev();
-
-#ifdef DEBUG
-	printk("JTAG_ID: 0x%04x DEV_REV: %i\n", jtag_id, dev_rev);
-#endif
+	part_no = davinci_get_part_no();
+	variant = davinci_get_variant();
 
 	/* First check only the major version in a safe way */
 	for (i = 0; i < ARRAY_SIZE(davinci_ids); i++) {
-		if (jtag_id == (davinci_ids[i].jtag_id)) {
+		if (part_no == (davinci_ids[i].part_no)) {
 			system_rev = davinci_ids[i].type;
 			break;
 		}
@@ -94,13 +83,12 @@ void __init davinci_check_revision(void)
 
 	/* Check if we can find the dev revision */
 	for (i = 0; i < ARRAY_SIZE(davinci_ids); i++) {
-		if (jtag_id == davinci_ids[i].jtag_id &&
-		    dev_rev == davinci_ids[i].dev_rev) {
+		if (part_no == davinci_ids[i].part_no &&
+		    variant == davinci_ids[i].variant) {
 			system_rev = davinci_ids[i].type;
 			break;
 		}
 	}
 
-	printk("DM%04x\n", system_rev >> 16);
+	printk("DaVinci DM%04x variant 0x%x\n", system_rev >> 16, variant);
 }
-

@@ -1,11 +1,7 @@
 /*
- * linux/arch/arm/mach-davinci/serial_davinci.c
- *
- * TI DaVinci serial driver hookup file
+ * TI DaVinci serial driver
  *
  * Copyright (C) 2006 Texas Instruments.
- *
- * ----------------------------------------------------------------------------
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,7 +16,6 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program; if not, write to the Free Software
  *  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
- * ----------------------------------------------------------------------------
  *
  */
 
@@ -35,8 +30,7 @@
 #include <asm/io.h>
 #include <asm/irq.h>
 #include <asm/hardware.h>
-#include <asm/serial.h>
-#include <asm/arch/hardware.h>
+#include <asm/arch/serial.h>
 #include <asm/arch/irqs.h>
 
 #define UART_DAVINCI_PWREMU 0x0c
@@ -93,7 +87,7 @@ static void __init davinci_serial_reset(struct plat_serial8250_port *p)
 	davinci_serial_outp(p, UART_DAVINCI_PWREMU, pwremu);
 }
 
-void __init davinci_serial_init(void)
+static int __init davinci_init(void)
 {
 	struct clk *uart_clk;
 	struct device *dev = &serial_device.dev;
@@ -106,10 +100,7 @@ void __init davinci_serial_init(void)
 		clk_enable(uart_clk);
 
 	davinci_serial_reset(&serial_platform_data[0]);
-}
-
-static int __init davinci_init(void)
-{
 	return platform_device_register(&serial_device);
 }
+
 arch_initcall(davinci_init);

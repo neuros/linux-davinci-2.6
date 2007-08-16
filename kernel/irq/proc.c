@@ -19,13 +19,25 @@ static struct proc_dir_entry *root_irq_dir;
 static int irq_affinity_read_proc(char *page, char **start, off_t off,
 				  int count, int *eof, void *data)
 {
-	int len = cpumask_scnprintf(page, count, irq_desc[(long)data].affinity);
+	struct irq_desc *desc = irq_desc + (long)data;
+	cpumask_t *mask = &desc->affinity;
+	int len;
+
+#ifdef CONFIG_GENERIC_PENDING_IRQ
+	if (desc->status & IRQ_MOVE_PENDING)
+		mask = &desc->pending_mask;
+#endif
+	len = cpumask_scnprintf(page, count, *mask);
 
 	if (count - len < 2)
 		return -EINVAL;
 	len += sprintf(page + len, "\n");
 	return len;
 }
+
+#ifndef is_affinity_mask_valid
+#define is_affinity_mask_valid(val) 1
+#endif
 
 int no_irq_affinity;
 static int irq_affinity_write_proc(struct file *file, const char __user *buffer,
@@ -41,6 +53,9 @@ static int irq_affinity_write_proc(struct file *file, const char __user *buffer,
 	err = cpumask_parse_user(buffer, count, new_value);
 	if (err)
 		return err;
+
+	if (!is_affinity_mask_valid(new_value))
+		return -EINVAL;
 
 	/*
 	 * Do not allow disabling IRQs completely - it's a too easy

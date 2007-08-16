@@ -264,6 +264,26 @@ ipt_get_target(struct ipt_entry *e)
 	__ret;							\
 })
 
+/* fn returns 0 to continue iteration */
+#define IPT_ENTRY_ITERATE_CONTINUE(entries, size, n, fn, args...) \
+({								\
+	unsigned int __i, __n;					\
+	int __ret = 0;						\
+	struct ipt_entry *__entry;				\
+								\
+	for (__i = 0, __n = 0; __i < (size);			\
+	     __i += __entry->next_offset, __n++) { 		\
+		__entry = (void *)(entries) + __i;		\
+		if (__n < n)					\
+			continue;				\
+								\
+		__ret = fn(__entry , ## args);			\
+		if (__ret != 0)					\
+			break;					\
+	}							\
+	__ret;							\
+})
+
 /*
  *	Main firewall chains definitions and global var's definitions.
  */
@@ -294,6 +314,28 @@ struct ipt_error
 	struct ipt_entry entry;
 	struct ipt_error_target target;
 };
+
+#define IPT_ENTRY_INIT(__size)						       \
+{									       \
+	.target_offset	= sizeof(struct ipt_entry),			       \
+	.next_offset	= (__size),					       \
+}
+
+#define IPT_STANDARD_INIT(__verdict)					       \
+{									       \
+	.entry		= IPT_ENTRY_INIT(sizeof(struct ipt_standard)),	       \
+	.target		= XT_TARGET_INIT(IPT_STANDARD_TARGET,		       \
+					 sizeof(struct xt_standard_target)),   \
+	.target.verdict	= -(__verdict) - 1,				       \
+}
+
+#define IPT_ERROR_INIT							       \
+{									       \
+	.entry		= IPT_ENTRY_INIT(sizeof(struct ipt_error)),	       \
+	.target		= XT_TARGET_INIT(IPT_ERROR_TARGET,		       \
+					 sizeof(struct ipt_error_target)),     \
+	.target.errorname = "ERROR",					       \
+}
 
 extern unsigned int ipt_do_table(struct sk_buff **pskb,
 				 unsigned int hook,

@@ -22,7 +22,7 @@
 #include <linux/pata_platform.h>
 
 #define DRV_NAME "pata_platform"
-#define DRV_VERSION "0.1.2"
+#define DRV_VERSION "1.0"
 
 static int pio_mask = 1;
 
@@ -47,6 +47,8 @@ static int pata_platform_set_mode(struct ata_port *ap, struct ata_device **unuse
 	}
 	return 0;
 }
+
+static int ata_dummy_ret0(struct ata_port *ap)	{ return 0; }
 
 static struct scsi_host_template pata_platform_sht = {
 	.module			= THIS_MODULE,
@@ -91,7 +93,7 @@ static struct ata_port_operations pata_platform_port_ops = {
 	.irq_on			= ata_irq_on,
 	.irq_ack		= ata_irq_ack,
 
-	.port_start		= ata_port_start,
+	.port_start		= ata_dummy_ret0,
 };
 
 static void pata_platform_setup_port(struct ata_ioports *ioaddr,
@@ -137,6 +139,7 @@ static int __devinit pata_platform_probe(struct platform_device *pdev)
 	struct resource *io_res, *ctl_res;
 	struct ata_host *host;
 	struct ata_port *ap;
+	struct pata_platform_info *pp_info;
 	unsigned int mmio;
 
 	/*
@@ -206,11 +209,13 @@ static int __devinit pata_platform_probe(struct platform_device *pdev)
 
 	ap->ioaddr.altstatus_addr = ap->ioaddr.ctl_addr;
 
-	pata_platform_setup_port(&ap->ioaddr, pdev->dev.platform_data);
+	pp_info = (struct pata_platform_info *)(pdev->dev.platform_data);
+	pata_platform_setup_port(&ap->ioaddr, pp_info);
 
 	/* activate */
-	return ata_host_activate(host, platform_get_irq(pdev, 0), ata_interrupt,
-				 0, &pata_platform_sht);
+	return ata_host_activate(host, platform_get_irq(pdev, 0),
+				 ata_interrupt, pp_info ? pp_info->irq_flags
+				 : 0, &pata_platform_sht);
 }
 
 /**

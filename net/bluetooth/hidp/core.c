@@ -28,6 +28,7 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/poll.h>
+#include <linux/freezer.h>
 #include <linux/fcntl.h>
 #include <linux/skbuff.h>
 #include <linux/socket.h>
@@ -174,7 +175,7 @@ static inline int hidp_queue_event(struct hidp_session *session, struct input_de
 
 static int hidp_hidinput_event(struct input_dev *dev, unsigned int type, unsigned int code, int value)
 {
-	struct hid_device *hid = dev->private;
+	struct hid_device *hid = input_get_drvdata(dev);
 	struct hidp_session *session = hid->driver_data;
 
 	return hidp_queue_event(session, dev, type, code, value);
@@ -182,7 +183,7 @@ static int hidp_hidinput_event(struct input_dev *dev, unsigned int type, unsigne
 
 static int hidp_input_event(struct input_dev *dev, unsigned int type, unsigned int code, int value)
 {
-	struct hidp_session *session = dev->private;
+	struct hidp_session *session = input_get_drvdata(dev);
 
 	return hidp_queue_event(session, dev, type, code, value);
 }
@@ -547,7 +548,6 @@ static int hidp_session(void *arg)
 
 	daemonize("khidpd_%04x%04x", vendor, product);
 	set_user_nice(current, -15);
-	current->flags |= PF_NOFREEZE;
 
 	init_waitqueue_entry(&ctrl_wait, current);
 	init_waitqueue_entry(&intr_wait, current);
@@ -581,15 +581,6 @@ static int hidp_session(void *arg)
 
 	hidp_del_timer(session);
 
-	fput(session->intr_sock->file);
-
-	wait_event_timeout(*(ctrl_sk->sk_sleep),
-		(ctrl_sk->sk_state == BT_CLOSED), msecs_to_jiffies(500));
-
-	fput(session->ctrl_sock->file);
-
-	__hidp_unlink_session(session);
-
 	if (session->input) {
 		input_unregister_device(session->input);
 		session->input = NULL;
@@ -600,6 +591,15 @@ static int hidp_session(void *arg)
 			hidinput_disconnect(session->hid);
 		hid_free_device(session->hid);
 	}
+
+	fput(session->intr_sock->file);
+
+	wait_event_timeout(*(ctrl_sk->sk_sleep),
+		(ctrl_sk->sk_state == BT_CLOSED), msecs_to_jiffies(500));
+
+	fput(session->ctrl_sock->file);
+
+	__hidp_unlink_session(session);
 
 	up_write(&hidp_session_sem);
 
@@ -630,7 +630,7 @@ static inline void hidp_setup_input(struct hidp_session *session, struct hidp_co
 	struct input_dev *input = session->input;
 	int i;
 
-	input->private = session;
+	input_set_drvdata(input, session);
 
 	input->name = "Bluetooth HID Boot Protocol Device";
 
@@ -663,7 +663,7 @@ static inline void hidp_setup_input(struct hidp_session *session, struct hidp_co
 		input->relbit[0] |= BIT(REL_WHEEL);
 	}
 
-	input->cdev.dev = hidp_get_device(session);
+	input->dev.parent = hidp_get_device(session);
 
 	input->event = hidp_input_event;
 
@@ -737,10 +737,8 @@ static inline void hidp_setup_hid(struct hidp_session *session, struct hidp_conn
 	list_for_each_entry(report, &hid->report_enum[HID_FEATURE_REPORT].report_list, list)
 		hidp_send_report(session, report);
 
-	if (hidinput_connect(hid) == 0) {
+	if (hidinput_connect(hid) == 0)
 		hid->claimed |= HID_CLAIMED_INPUT;
-		hid_ff_init(hid);
-	}
 }
 
 int hidp_add_connection(struct hidp_connadd_req *req, struct socket *ctrl_sock, struct socket *intr_sock)
@@ -864,7 +862,7 @@ failed:
 	if (session->hid)
 		hid_free_device(session->hid);
 
-	kfree(session->input);
+	input_free_device(session->input);
 	kfree(session);
 	return err;
 }

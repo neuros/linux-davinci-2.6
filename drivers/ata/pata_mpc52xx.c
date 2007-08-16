@@ -280,10 +280,6 @@ static struct scsi_host_template mpc52xx_ata_sht = {
 	.dma_boundary		= ATA_DMA_BOUNDARY,
 	.slave_configure	= ata_scsi_slave_config,
 	.bios_param		= ata_std_bios_param,
-#ifdef CONFIG_PM
-	.suspend		= ata_scsi_device_suspend,
-	.resume			= ata_scsi_device_resume,
-#endif
 };
 
 static struct ata_port_operations mpc52xx_ata_port_ops = {
@@ -471,13 +467,27 @@ mpc52xx_ata_remove(struct of_device *op)
 static int
 mpc52xx_ata_suspend(struct of_device *op, pm_message_t state)
 {
-	return 0;	/* FIXME : What to do here ? */
+	struct ata_host *host = dev_get_drvdata(&op->dev);
+
+	return ata_host_suspend(host, state);
 }
 
 static int
 mpc52xx_ata_resume(struct of_device *op)
 {
-	return 0;	/* FIXME : What to do here ? */
+	struct ata_host *host = dev_get_drvdata(&op->dev);
+	struct mpc52xx_ata_priv *priv = host->private_data;
+	int rv;
+
+	rv = mpc52xx_ata_hw_init(priv);
+	if (rv) {
+		printk(KERN_ERR DRV_NAME ": Error during HW init\n");
+		return rv;
+	}
+
+	ata_host_resume(host);
+
+	return 0;
 }
 
 #endif

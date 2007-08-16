@@ -33,6 +33,7 @@
 #include <linux/mm.h>
 #include <linux/mutex.h>
 #include <linux/interrupt.h>
+#include <linux/kfifo.h>
 #include <asm/uaccess.h>
 #include <asm/io.h>
 #include <asm/arch/mailbox.h>
@@ -41,10 +42,7 @@
 #include "dsp_mbcmd.h"
 #include "dsp.h"
 #include "ipbuf.h"
-#include "fifo.h"
 #include "proclist.h"
-
-#define is_aligned(adr,align)	(!((adr)&((align)-1)))
 
 /*
  * devstate: task device state machine
@@ -125,8 +123,9 @@ struct taskdev {
 	/* read stuff */
 	wait_queue_head_t read_wait_q;
 	struct mutex read_mutex;
+	spinlock_t read_lock;
 	union {
-		struct fifo_struct fifo;	/* for active word */
+		struct kfifo *fifo;	/* for active word */
 		struct rcvdt_bk_struct bk;
 	} rcvdt;
 
@@ -356,7 +355,7 @@ static int taskdev_flush_buf(struct taskdev *dev)
 
 	if (sndtyp_wd(ttyp)) {
 		/* word receiving */
-		flush_fifo(&dev->rcvdt.fifo);
+		kfifo_reset(dev->rcvdt.fifo);
 	} else {
 		/* block receiving */
 		struct rcvdt_bk_struct *rcvdt = &dev->rcvdt.bk;
@@ -379,7 +378,6 @@ static int taskdev_flush_buf(struct taskdev *dev)
 static int taskdev_set_fifosz(struct taskdev *dev, unsigned long sz)
 {
 	u16 ttyp = dev->task->ttyp;
-	int stat;
 
 	if (!(sndtyp_wd(ttyp) && sndtyp_acv(ttyp))) {
 		printk(KERN_ERR
@@ -393,15 +391,18 @@ static int taskdev_set_fifosz(struct taskdev *dev, unsigned long sz)
 		return -EINVAL;
 	}
 
-	stat = realloc_fifo(&dev->rcvdt.fifo, sz);
-	if (stat == -EBUSY) {
+	if (kfifo_len(dev->rcvdt.fifo)) {
 		printk(KERN_ERR "omapdsp: buffer is not empty!\n");
-		return stat;
-	} else if (stat < 0) {
+		return -EIO;
+	}
+
+	kfifo_free(dev->rcvdt.fifo);
+	dev->rcvdt.fifo = kfifo_alloc(sz, GFP_KERNEL, &dev->read_lock);
+	if (IS_ERR(dev->rcvdt.fifo)) {
 		printk(KERN_ERR
 		       "omapdsp: unable to change receive buffer size. "
 		       "(%ld bytes for %s)\n", sz, dev->name);
-		return stat;
+		return -ENOMEM;
 	}
 
 	return 0;
@@ -490,8 +491,8 @@ static int dsp_task_config(struct dsptask *task, u8 tid)
 
 	/* mmap buffer configuration check */
 	if ((task->map_length > 0) &&
-	    ((!is_aligned((unsigned long)task->map_base, PAGE_SIZE)) ||
-	     (!is_aligned(task->map_length, PAGE_SIZE)) ||
+	    ((!ALIGN((unsigned long)task->map_base, PAGE_SIZE)) ||
+	     (!ALIGN(task->map_length, PAGE_SIZE)) ||
 	     (dsp_mem_type(task->map_base, task->map_length) != MEM_TYPE_EXTERN))) {
 		printk(KERN_ERR
 		       "omapdsp: illegal mmap buffer address(0x%p) or "
@@ -670,10 +671,10 @@ static ssize_t dsp_task_read_wd_acv(struct file *file, char __user *buf,
 
 
 	prepare_to_wait(&dev->read_wait_q, &wait, TASK_INTERRUPTIBLE);
-	if (fifo_empty(&dev->rcvdt.fifo))
+	if (kfifo_len(dev->rcvdt.fifo) == 0)
 		schedule();
 	finish_wait(&dev->read_wait_q, &wait);
-	if (fifo_empty(&dev->rcvdt.fifo)) {
+	if (kfifo_len(dev->rcvdt.fifo) == 0) {
 		/* failure */
 		if (signal_pending(current))
 			ret = -EINTR;
@@ -681,7 +682,7 @@ static ssize_t dsp_task_read_wd_acv(struct file *file, char __user *buf,
 	}
 
 
-	ret = copy_to_user_fm_fifo(buf, &dev->rcvdt.fifo, count);
+	ret = kfifo_get_to_user(dev->rcvdt.fifo, buf, count);
 
  up_out:
 	taskdev_unlock_and_stateunlock(dev, &dev->read_mutex);
@@ -837,14 +838,14 @@ static ssize_t dsp_task_read_wd_psv(struct file *file, char __user *buf,
 
 	mbcompose_send_and_wait(WDREQ, dev->task->tid, 0, &dev->read_wait_q);
 
-	if (fifo_empty(&dev->rcvdt.fifo)) {
+	if (kfifo_len(dev->rcvdt.fifo) == 0) {
 		/* failure */
 		if (signal_pending(current))
 			ret = -EINTR;
 		goto up_out;
 	}
 
-	ret = copy_to_user_fm_fifo(buf, &dev->rcvdt.fifo, count);
+	ret = kfifo_get_to_user(dev->rcvdt.fifo, buf, count);
 
 up_out:
 	taskdev_unlock_and_stateunlock(dev, &dev->read_mutex);
@@ -1125,7 +1126,7 @@ static unsigned int dsp_task_poll(struct file * file, poll_table * wait)
 	poll_wait(file, &dev->read_wait_q, wait);
 	poll_wait(file, &dev->write_wait_q, wait);
 	if (sndtyp_psv(task->ttyp) ||
-	    (sndtyp_wd(task->ttyp) && !fifo_empty(&dev->rcvdt.fifo)) ||
+	    (sndtyp_wd(task->ttyp) && kfifo_len(dev->rcvdt.fifo)) ||
 	    (sndtyp_bk(task->ttyp) && !ipblink_empty(&dev->rcvdt.bk.link)))
 		mask |= POLLIN | POLLRDNORM;
 	if (dev->wsz)
@@ -1453,13 +1454,6 @@ static int dsp_task_open(struct inode *inode, struct file *file)
 	}
 
  attached:
-	/* ATTACHED */
-#ifndef CONFIG_OMAP_DSP_TASK_MULTIOPEN
-	if (dev->usecount > 0) {
-		up_write(&dev->state_sem);
-		return -EBUSY;
-	}
-#endif
 	ret = proc_list_add(&dev->proc_list_lock,
 			    &dev->proc_list, current, file);
 	if (ret)
@@ -1771,7 +1765,7 @@ static int taskdev_init(struct taskdev *dev, char *name, unsigned char minor)
 	task_dev = device_create(dsp_task_class, NULL,
 				 MKDEV(OMAP_DSP_TASK_MAJOR, minor),
 				 "dsptask%d", (int)minor);
-	
+
 	if (unlikely(IS_ERR(task_dev))) {
 		ret = -EINVAL;
 		goto fail_create_taskclass;
@@ -1822,11 +1816,11 @@ static int taskdev_attach_task(struct taskdev *dev, struct dsptask *task)
 		/* sndtyp_bk */   dsp_task_read_bk_psv;
 	if (sndtyp_wd(ttyp)) {
 		/* word */
-		size_t fifosz;
+		size_t fifosz = sndtyp_psv(ttyp) ? 2:32; /* passive:active */
 
-		fifosz = sndtyp_psv(ttyp) ? 2 :	/* passive */
-			32;	/* active */
-		if (init_fifo(&dev->rcvdt.fifo, fifosz) < 0) {
+		dev->rcvdt.fifo = kfifo_alloc(fifosz, GFP_KERNEL,
+					      &dev->read_lock);
+		if (IS_ERR(dev->rcvdt.fifo)) {
 			printk(KERN_ERR
 			       "omapdsp: unable to allocate receive buffer. "
 			       "(%d bytes for %s)\n", fifosz, dev->name);
@@ -1903,7 +1897,7 @@ static int taskdev_attach_task(struct taskdev *dev, struct dsptask *task)
 	taskdev_flush_buf(dev);
 
 	if (sndtyp_wd(ttyp))
-		free_fifo(&dev->rcvdt.fifo);
+		kfifo_free(dev->rcvdt.fifo);
 
 	dev->task = NULL;
 
@@ -1930,7 +1924,7 @@ static void taskdev_detach_task(struct taskdev *dev)
 	dev->fops.read = NULL;
 	taskdev_flush_buf(dev);
 	if (sndtyp_wd(ttyp))
-		free_fifo(&dev->rcvdt.fifo);
+		kfifo_free(dev->rcvdt.fifo);
 
 	dev->fops.write = NULL;
 	dev->wsz = 0;
@@ -2253,7 +2247,9 @@ long taskdev_state_stale(unsigned char minor)
  */
 void mbox_wdsnd(struct mbcmd *mb)
 {
+	unsigned int n;
 	u8 tid = mb->cmd_l;
+	u16 data = mb->data;
 	struct dsptask *task = dsptask[tid];
 
 	if ((tid >= TASKDEV_MAX) || (task == NULL)) {
@@ -2273,7 +2269,11 @@ void mbox_wdsnd(struct mbcmd *mb)
 		return;
 	}
 
-	write_word_to_fifo(&task->dev->rcvdt.fifo, mb->data);
+	n = kfifo_put(task->dev->rcvdt.fifo, (unsigned char *)&data,
+		      sizeof(data));
+	if (n != sizeof(data))
+		printk(KERN_WARNING "Receive FIFO(%d) is full\n", tid);
+
 	wake_up_interruptible(&task->dev->read_wait_q);
 }
 
@@ -2890,8 +2890,8 @@ static ssize_t ttyp_show(struct device *d, struct device_attribute *attr,
 static ssize_t fifosz_show(struct device *d, struct device_attribute *attr,
 			   char *buf)
 {
-	struct fifo_struct *fifo = &to_taskdev(d)->rcvdt.fifo;
-	return sprintf(buf, "%d\n", fifo->sz);
+	struct kfifo *fifo = to_taskdev(d)->rcvdt.fifo;
+	return sprintf(buf, "%d\n", fifo->size);
 }
 
 static int fifosz_store(struct device *d, struct device_attribute *attr,
@@ -2902,7 +2902,10 @@ static int fifosz_store(struct device *d, struct device_attribute *attr,
 	int ret;
 
 	fifosz = simple_strtol(buf, NULL, 10);
+	if (taskdev_lock_and_statelock_attached(dev, &dev->read_mutex))
+		return -ENODEV;
 	ret = taskdev_set_fifosz(dev, fifosz);
+	taskdev_unlock_and_stateunlock(dev, &dev->read_mutex);
 
 	return (ret < 0) ? ret : strlen(buf);
 }
@@ -2911,8 +2914,8 @@ static int fifosz_store(struct device *d, struct device_attribute *attr,
 static ssize_t fifocnt_show(struct device *d, struct device_attribute *attr,
 			    char *buf)
 {
-	struct fifo_struct *fifo = &to_taskdev(d)->rcvdt.fifo;
-	return sprintf(buf, "%d\n", fifo->cnt);
+	struct kfifo *fifo = to_taskdev(d)->rcvdt.fifo;
+	return sprintf(buf, "%d\n", fifo->size);
 }
 
 /* ipblink */

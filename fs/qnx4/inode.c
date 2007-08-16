@@ -536,8 +536,7 @@ static void init_once(void *foo, struct kmem_cache * cachep,
 {
 	struct qnx4_inode_info *ei = (struct qnx4_inode_info *) foo;
 
-	if (flags & SLAB_CTOR_CONSTRUCTOR)
-		inode_init_once(&ei->vfs_inode);
+	inode_init_once(&ei->vfs_inode);
 }
 
 static int init_inodecache(void)
@@ -546,7 +545,7 @@ static int init_inodecache(void)
 					     sizeof(struct qnx4_inode_info),
 					     0, (SLAB_RECLAIM_ACCOUNT|
 						SLAB_MEM_SPREAD),
-					     init_once, NULL);
+					     init_once);
 	if (qnx4_inode_cachep == NULL)
 		return -ENOMEM;
 	return 0;

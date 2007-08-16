@@ -26,7 +26,7 @@
 #include <linux/libata.h>
 
 #define DRV_NAME "pata_sl82c105"
-#define DRV_VERSION "0.3.0"
+#define DRV_VERSION "0.3.1"
 
 enum {
 	/*
@@ -270,7 +270,6 @@ static struct ata_port_operations sl82c105_port_ops = {
 static int sl82c105_bridge_revision(struct pci_dev *pdev)
 {
 	struct pci_dev *bridge;
-	u8 rev;
 
 	/*
 	 * The bridge should be part of the same device, but function 0.
@@ -292,29 +291,29 @@ static int sl82c105_bridge_revision(struct pci_dev *pdev)
 	/*
 	 * We need to find function 0's revision, not function 1
 	 */
-	pci_read_config_byte(bridge, PCI_REVISION_ID, &rev);
-
 	pci_dev_put(bridge);
-	return rev;
+	return bridge->revision;
 }
 
 
 static int sl82c105_init_one(struct pci_dev *dev, const struct pci_device_id *id)
 {
-	static struct ata_port_info info_dma = {
+	static const struct ata_port_info info_dma = {
 		.sht = &sl82c105_sht,
-		.flags = ATA_FLAG_SLAVE_POSS | ATA_FLAG_SRST,
+		.flags = ATA_FLAG_SLAVE_POSS,
 		.pio_mask = 0x1f,
 		.mwdma_mask = 0x07,
 		.port_ops = &sl82c105_port_ops
 	};
-	static struct ata_port_info info_early = {
+	static const struct ata_port_info info_early = {
 		.sht = &sl82c105_sht,
-		.flags = ATA_FLAG_SLAVE_POSS | ATA_FLAG_SRST,
+		.flags = ATA_FLAG_SLAVE_POSS,
 		.pio_mask = 0x1f,
 		.port_ops = &sl82c105_port_ops
 	};
-	static struct ata_port_info *port_info[2] = { &info_early, &info_early };
+	/* for now use only the first port */
+	const struct ata_port_info *ppi[] = { &info_early,
+					       &ata_dummy_port_info };
 	u32 val;
 	int rev;
 
@@ -324,17 +323,14 @@ static int sl82c105_init_one(struct pci_dev *dev, const struct pci_device_id *id
 		dev_printk(KERN_WARNING, &dev->dev, "pata_sl82c105: Unable to find bridge, disabling DMA.\n");
 	else if (rev <= 5)
 		dev_printk(KERN_WARNING, &dev->dev, "pata_sl82c105: Early bridge revision, no DMA available.\n");
-	else {
-		port_info[0] = &info_dma;
-		port_info[1] = &info_dma;
-	}
+	else
+		ppi[0] = &info_dma;
 
 	pci_read_config_dword(dev, 0x40, &val);
 	val |= CTRL_P0EN | CTRL_P0F16 | CTRL_P1F16;
 	pci_write_config_dword(dev, 0x40, val);
 
-
-	return ata_pci_init_one(dev, port_info, 1); /* For now */
+	return ata_pci_init_one(dev, ppi);
 }
 
 static const struct pci_device_id sl82c105[] = {

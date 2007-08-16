@@ -98,6 +98,12 @@ static inline void alternatives_smp_switch(int smp) {}
 		      ".previous" : output : [feat] "i" (feature), ##input)
 
 /*
+ * use this macro(s) if you need more than one output parameter
+ * in alternative_io
+ */
+#define ASM_OUTPUT2(a, b) a, b
+
+/*
  * Alternative inline assembly for SMP.
  *
  * The LOCK_PREFIX macro defined here replaces the LOCK and
@@ -142,5 +148,7 @@ apply_paravirt(struct paravirt_patch_site *start,
 #define __parainstructions	NULL
 #define __parainstructions_end	NULL
 #endif
+
+extern void text_poke(void *addr, unsigned char *opcode, int len);
 
 #endif /* _I386_ALTERNATIVE_H */

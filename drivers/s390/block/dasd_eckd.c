@@ -450,9 +450,9 @@ dasd_eckd_generate_uid(struct dasd_device *device, struct dasd_uid *uid)
 	return 0;
 }
 
-struct dasd_ccw_req * dasd_eckd_build_rcd_lpm(struct dasd_device *device,
-					      void *rcd_buffer,
-					      struct ciw *ciw, __u8 lpm)
+static struct dasd_ccw_req *dasd_eckd_build_rcd_lpm(struct dasd_device *device,
+						    void *rcd_buffer,
+						    struct ciw *ciw, __u8 lpm)
 {
 	struct dasd_ccw_req *cqr;
 	struct ccw1 *ccw;
@@ -555,7 +555,7 @@ dasd_eckd_read_conf(struct dasd_device *device)
 			if (conf_data == NULL) {
 				MESSAGE(KERN_WARNING, "%s", "No configuration "
 					"data retrieved");
-				continue;	/* no errror */
+				continue;	/* no error */
 			}
 			if (conf_len != sizeof (struct dasd_eckd_confdata)) {
 				MESSAGE(KERN_WARNING,
@@ -564,7 +564,7 @@ dasd_eckd_read_conf(struct dasd_device *device)
 					conf_len,
 					sizeof (struct dasd_eckd_confdata));
 				kfree(conf_data);
-				continue;	/* no errror */
+				continue;	/* no error */
 			}
 			/* save first valid configuration data */
 			if (!conf_data_saved){

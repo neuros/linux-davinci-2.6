@@ -61,7 +61,7 @@ ACPI_MODULE_NAME("utxface")
  *              called, so any early initialization belongs here.
  *
  ******************************************************************************/
-acpi_status acpi_initialize_subsystem(void)
+acpi_status __init acpi_initialize_subsystem(void)
 {
 	acpi_status status;
 
@@ -107,8 +107,6 @@ acpi_status acpi_initialize_subsystem(void)
 	ACPI_DEBUGGER_EXEC(status = acpi_db_initialize());
 	return_ACPI_STATUS(status);
 }
-
-ACPI_EXPORT_SYMBOL(acpi_initialize_subsystem)
 
 /*******************************************************************************
  *
@@ -337,7 +335,6 @@ acpi_status acpi_terminate(void)
 }
 
 ACPI_EXPORT_SYMBOL(acpi_terminate)
-
 #ifdef ACPI_FUTURE_USAGE
 /*******************************************************************************
  *
@@ -470,7 +467,6 @@ acpi_install_initialization_handler(acpi_init_handler handler, u32 function)
 
 ACPI_EXPORT_SYMBOL(acpi_install_initialization_handler)
 #endif				/*  ACPI_FUTURE_USAGE  */
-
 /*****************************************************************************
  *
  * FUNCTION:    acpi_purge_cached_objects

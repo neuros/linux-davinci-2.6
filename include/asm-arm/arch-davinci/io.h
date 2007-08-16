@@ -1,34 +1,15 @@
 /*
- *  linux/include/asm-arm/arch-davinci/io.h
+ * DaVinci IO address definitions
  *
- *  Copyright (C) 2006 Texas Instruments.
+ * Copied from include/asm/arm/arch-omap/io.h
  *
- *  This program is free software; you can redistribute  it and/or modify it
- *  under  the terms of  the GNU General  Public License as published by the
- *  Free Software Foundation;  either version 2 of the  License, or (at your
- *  option) any later version.
- *
- *  THIS  SOFTWARE  IS PROVIDED   ``AS  IS'' AND   ANY  EXPRESS OR IMPLIED
- *  WARRANTIES,   INCLUDING, BUT NOT  LIMITED  TO, THE IMPLIED WARRANTIES OF
- *  MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
- *  NO  EVENT  SHALL   THE AUTHOR  BE    LIABLE FOR ANY   DIRECT, INDIRECT,
- *  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
- *  NOT LIMITED   TO, PROCUREMENT OF  SUBSTITUTE GOODS  OR SERVICES; LOSS OF
- *  USE, DATA,  OR PROFITS; OR  BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- *  ANY THEORY OF LIABILITY, WHETHER IN  CONTRACT, STRICT LIABILITY, OR TORT
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- *  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- *  You should have received a copy of the  GNU General Public License along
- *  with this program; if not, write  to the Free Software Foundation, Inc.,
- *  675 Mass Ave, Cambridge, MA 02139, USA.
- *
+ * 2007 (c) MontaVista Software, Inc. This file is licensed under
+ * the terms of the GNU General Public License version 2. This program
+ * is licensed "as is" without any warranty of any kind, whether express
+ * or implied.
  */
-
 #ifndef __ASM_ARCH_IO_H
 #define __ASM_ARCH_IO_H
-
-#ifdef __KERNEL__
 
 #define IO_SPACE_LIMIT 0xffffffff
 
@@ -37,11 +18,12 @@
  * I/O mapping
  * ----------------------------------------------------------------------------
  */
-#define IO_PHYS	     	0x01c00000
-#define IO_VIRT	     	0xe1000000
-#define IO_SIZE	     	0x00400000
-#define io_p2v(pa)   	(((pa) & (IO_SIZE-1)) + IO_VIRT)
-#define io_v2p(va)   	(((va) & (IO_SIZE-1)) + IO_PHYS)
+#define IO_PHYS		0x01c00000
+#define IO_OFFSET	0xfd000000 /* Virtual IO = 0xfec00000 */
+#define IO_SIZE		0x00400000
+#define IO_VIRT		(IO_PHYS + IO_OFFSET)
+#define io_p2v(pa)	((pa) + IO_OFFSET)
+#define io_v2p(va)	((va) - IO_OFFSET)
 #define IO_ADDRESS(x)	io_p2v(x)
 
 /*
@@ -87,17 +69,11 @@ typedef struct { volatile u8 offset[4096]; } __regbase8;
 typedef struct { volatile u32 offset[4096]; } __regbase32;
 #define __REGV32(vaddr)		((__regbase32 *)((vaddr)&~4095)) \
 					->offset[((vaddr)&4095)>>2]
-/* FIXME: Just for compilation sake changed from __REG32 to __REG */
-#define __REG(paddr)		__REGV32(io_p2v(paddr))
 
-extern void davinci_map_common_io(void);
-extern void davinci_init_common_hw(void);
+#define __REG(paddr)		__REGV32(io_p2v(paddr))
 #else
 
 #define __REG(x)	(*((volatile unsigned long *)io_p2v(x)))
 
-#endif
-
-#endif // __KERNEL__
-
+#endif /* __ASSEMBLER__ */
 #endif /* __ASM_ARCH_IO_H */

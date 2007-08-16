@@ -1,90 +1,71 @@
 /*
- * linux/arch/arm/mach-davinci/board-evm.c
+ * TI DaVinci EVM board support
  *
- * TI DaVinci EVM board
+ * Author: Kevin Hilman, MontaVista Software, Inc. <source@mvista.com>
  *
- * Copyright (C) 2006 Texas Instruments.
- *
- * ----------------------------------------------------------------------------
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- *  You should have received a copy of the GNU General Public License
- *  along with this program; if not, write to the Free Software
- *  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
- * ----------------------------------------------------------------------------
- *
+ * 2007 (c) MontaVista Software, Inc. This file is licensed under
+ * the terms of the GNU General Public License version 2. This program
+ * is licensed "as is" without any warranty of any kind, whether express
+ * or implied.
  */
-
-/**************************************************************************
- * Included Files
- **************************************************************************/
-
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
-#include <linux/fs.h>
-#include <linux/major.h>
-#include <linux/root_dev.h>
 #include <linux/dma-mapping.h>
 #include <linux/platform_device.h>
+#include <linux/mtd/mtd.h>
+#include <linux/mtd/partitions.h>
+#include <linux/mtd/physmap.h>
 
 #include <asm/setup.h>
 #include <asm/io.h>
 #include <asm/mach-types.h>
+#include <asm/hardware.h>
 
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 #include <asm/mach/flash.h>
 
-#include <asm/arch/irqs.h>
 #include <asm/arch/common.h>
-#include <asm/arch/hardware.h>
-#include "clock.h"
+#include <asm/arch/psc.h>
 
-#if defined(CONFIG_MTD_PHYSMAP) || defined(CONFIG_MTD_PHYSMAP_MODULE)
-#define DO_MTD
+/* other misc. init functions */
+void __init davinci_psc_init(void);
+void __init davinci_irq_init(void);
+void __init davinci_map_common_io(void);
+void __init davinci_init_common_hw(void);
 
-#include <linux/mtd/mtd.h>
-#include <linux/mtd/partitions.h>
-#include <linux/mtd/physmap.h>
+/* NOR Flash base address set to CS0 by default */
+#define NOR_FLASH_PHYS 0x02000000
 
 static struct mtd_partition davinci_evm_partitions[] = {
 	/* bootloader (U-Boot, etc) in first 4 sectors */
 	{
-	      .name		= "bootloader",
-	      .offset		= 0,
-	      .size		= 4 * SZ_64K,
-	      .mask_flags	= MTD_WRITEABLE, /* force read-only */
+		.name		= "bootloader",
+		.offset		= 0,
+		.size		= 4 * SZ_64K,
+		.mask_flags	= MTD_WRITEABLE, /* force read-only */
 	},
 	/* bootloader params in the next 1 sectors */
 	{
-	      .name		= "params",
-	      .offset		= MTDPART_OFS_APPEND,
-	      .size		= SZ_64K,
-	      .mask_flags	= 0,
+		.name		= "params",
+		.offset		= MTDPART_OFS_APPEND,
+		.size		= SZ_64K,
+		.mask_flags	= 0,
 	},
 	/* kernel */
 	{
-	      .name		= "kernel",
-	      .offset		= MTDPART_OFS_APPEND,
-	      .size		= SZ_2M,
-	      .mask_flags	= 0
+		.name		= "kernel",
+		.offset		= MTDPART_OFS_APPEND,
+		.size		= SZ_2M,
+		.mask_flags	= 0
 	},
 	/* file system */
 	{
-	      .name		= "filesystem",
-	      .offset		= MTDPART_OFS_APPEND,
-	      .size		= MTDPART_SIZ_FULL,
-	      .mask_flags	= 0
+		.name		= "filesystem",
+		.offset		= MTDPART_OFS_APPEND,
+		.size		= MTDPART_SIZ_FULL,
+		.mask_flags	= 0
 	}
 };
 
@@ -97,8 +78,8 @@ static struct physmap_flash_data davinci_evm_flash_data = {
 /* NOTE: CFI probe will correctly detect flash part as 32M, but EMIF
  * limits addresses to 16M, so using addresses past 16M will wrap */
 static struct resource davinci_evm_flash_resource = {
-	.start		= DAVINCI_CS0_PHYS,
-	.end		= DAVINCI_CS0_PHYS + SZ_16M - 1,
+	.start		= NOR_FLASH_PHYS,
+	.end		= NOR_FLASH_PHYS + SZ_16M - 1,
 	.flags		= IORESOURCE_MEM,
 };
 
@@ -111,7 +92,6 @@ static struct platform_device davinci_evm_flash_device = {
 	.num_resources	= 1,
 	.resource	= &davinci_evm_flash_resource,
 };
-#endif
 
 #if defined(CONFIG_FB_DAVINCI) || defined(CONFIG_FB_DAVINCI_MODULE)
 
@@ -179,94 +159,50 @@ static struct platform_device usb_dev = {
 	.num_resources  = ARRAY_SIZE(usb_resources),
 };
 
-static inline void setup_usb(void)
-{
-	/* REVISIT:  everything except platform_data setup should be
-	* shared between all DaVinci boards using the same core.
-	*/
-	int status;
-
-	status = platform_device_register(&usb_dev);
-	if (status != 0)
-		pr_debug("setup_usb --> %d\n", status);
-	else
-		board_setup_psc(DAVINCI_GPSC_ARMDOMAIN, DAVINCI_LPSC_USB, 1);
-}
-
-#else
 #define setup_usb(void)	do {} while(0)
 #endif  /* CONFIG_USB_MUSB_HDRC */
 
-
-#ifdef	CONFIG_RTC_DRV_DAVINCI_EVM
-#define DO_RTC
-#endif
-#ifdef	CONFIG_RTC_DRV_DAVINCI_EVM_MODULE
-#define DO_RTC
-#endif
-
-#ifdef	DO_RTC
 static struct platform_device rtc_dev = {
 	.name           = "rtc_davinci_evm",
 	.id             = -1,
 };
-#endif
-
 
 static struct platform_device *davinci_evm_devices[] __initdata = {
-#ifdef	DO_MTD
 	&davinci_evm_flash_device,
-#endif
 #if defined(CONFIG_FB_DAVINCI) || defined(CONFIG_FB_DAVINCI_MODULE)
 	&davinci_fb_device,
 #endif
-#ifdef	DO_RTC
-	&rtc_dev,
+#if defined(CONFIG_USB_MUSB_HDRC) || defined(CONFIG_USB_MUSB_HDRC_MODULE)
+	&usb_dev,
 #endif
+	&rtc_dev,
 };
-
-static void board_init(void)
-{
-	board_setup_psc(DAVINCI_GPSC_ARMDOMAIN, DAVINCI_LPSC_VPSSMSTR, 1);
-	board_setup_psc(DAVINCI_GPSC_ARMDOMAIN, DAVINCI_LPSC_VPSSSLV, 1);
-	board_setup_psc(DAVINCI_GPSC_ARMDOMAIN, DAVINCI_LPSC_TPCC, 1);
-	board_setup_psc(DAVINCI_GPSC_ARMDOMAIN, DAVINCI_LPSC_TPTC0, 1);
-	board_setup_psc(DAVINCI_GPSC_ARMDOMAIN, DAVINCI_LPSC_TPTC1, 1);
-	board_setup_psc(DAVINCI_GPSC_ARMDOMAIN, DAVINCI_LPSC_GPIO, 1);
-
-	/* Turn on WatchDog timer LPSC.  Needed for RESET to work */
-	board_setup_psc(DAVINCI_GPSC_ARMDOMAIN, DAVINCI_LPSC_TIMER2, 1);
-}
 
 static void __init
 davinci_evm_map_io(void)
 {
 	davinci_map_common_io();
-
-	/* Initialize the DaVinci EVM board settigs */
-	board_init ();
 }
 
 static __init void davinci_evm_init(void)
 {
+	davinci_psc_init();
+
 #if defined(CONFIG_BLK_DEV_DAVINCI) || defined(CONFIG_BLK_DEV_DAVINCI_MODULE)
-#ifdef	DO_MTD
 	printk(KERN_WARNING "WARNING: both IDE and NOR flash are enabled, "
-	       "but are pin-muxed.\n\t Disable IDE for NOR support.\n");
-#endif
+	       "but share pins.\n\t Disable IDE for NOR support.\n");
 #endif
 
 	platform_add_devices(davinci_evm_devices,
 			     ARRAY_SIZE(davinci_evm_devices));
 
-	davinci_serial_init();
 	setup_usb();
 }
 
 static __init void davinci_evm_irq_init(void)
 {
 	davinci_init_common_hw();
-	davinci_irq_init(NULL);
+	davinci_irq_init();
 }
 
 MACHINE_START(DAVINCI_EVM, "DaVinci EVM")

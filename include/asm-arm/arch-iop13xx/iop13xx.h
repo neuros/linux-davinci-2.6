@@ -19,6 +19,39 @@ static inline int iop13xx_cpu_id(void)
 	return id;
 }
 
+/* WDTCR CP6 R7 Page 9 */
+static inline u32 read_wdtcr(void)
+{
+	u32 val;
+	asm volatile("mrc p6, 0, %0, c7, c9, 0":"=r" (val));
+	return val;
+}
+static inline void write_wdtcr(u32 val)
+{
+	asm volatile("mcr p6, 0, %0, c7, c9, 0"::"r" (val));
+}
+
+/* WDTSR CP6 R8 Page 9 */
+static inline u32 read_wdtsr(void)
+{
+	u32 val;
+	asm volatile("mrc p6, 0, %0, c8, c9, 0":"=r" (val));
+	return val;
+}
+static inline void write_wdtsr(u32 val)
+{
+	asm volatile("mcr p6, 0, %0, c8, c9, 0"::"r" (val));
+}
+
+/* RCSR - Reset Cause Status Register  */
+static inline u32 read_rcsr(void)
+{
+	u32 val;
+	asm volatile("mrc p6, 0, %0, c0, c1, 0":"=r" (val));
+	return val;
+}
+
+extern unsigned long get_iop_tick_rate(void);
 #endif
 
 /*
@@ -166,12 +199,22 @@ static inline int iop13xx_cpu_id(void)
 #define IOP13XX_INIT_I2C_1	      (1 << 1)
 #define IOP13XX_INIT_I2C_2	      (1 << 2)
 
-#define IQ81340_NUM_UART     2
-#define IQ81340_NUM_I2C      3
-#define IQ81340_NUM_PHYS_MAP_FLASH 1
-#define IQ81340_MAX_PLAT_DEVICES (IQ81340_NUM_UART +\
-				IQ81340_NUM_I2C +\
-				IQ81340_NUM_PHYS_MAP_FLASH)
+/* ADMA selection flags */
+/* INIT_ADMA_DEFAULT = Rely on CONFIG_IOP13XX_ADMA* */
+#define IOP13XX_INIT_ADMA_DEFAULT     (0)
+#define IOP13XX_INIT_ADMA_0           (1 << 0)
+#define IOP13XX_INIT_ADMA_1           (1 << 1)
+#define IOP13XX_INIT_ADMA_2           (1 << 2)
+
+/* Platform devices */
+#define IQ81340_NUM_UART     		2
+#define IQ81340_NUM_I2C      		3
+#define IQ81340_NUM_PHYS_MAP_FLASH	1
+#define IQ81340_NUM_ADMA     		3
+#define IQ81340_MAX_PLAT_DEVICES (IQ81340_NUM_UART + \
+				IQ81340_NUM_I2C + \
+				IQ81340_NUM_PHYS_MAP_FLASH + \
+				IQ81340_NUM_ADMA)
 
 /*========================== PMMR offsets for key registers ============*/
 #define IOP13XX_ATU0_PMMR_OFFSET   	0x00048000
@@ -181,6 +224,7 @@ static inline int iop13xx_cpu_id(void)
 #define IOP13XX_ADMA1_PMMR_OFFSET  	0x00000200
 #define IOP13XX_ADMA2_PMMR_OFFSET  	0x00000400
 #define IOP13XX_PBI_PMMR_OFFSET    	0x00001580
+#define IOP13XX_MU_PMMR_OFFSET		0x00004000
 #define IOP13XX_ESSR0_PMMR_OFFSET  	0x00002188
 #define IOP13XX_ESSR0			IOP13XX_REG_ADDR32(0x00002188)
 
@@ -412,25 +456,37 @@ static inline int iop13xx_cpu_id(void)
 #define IOP13XX_ATU_OUMBAR_FUNC_NUM_MASK  	(0x7)
 /*=======================================================================*/
 
+/*============================MESSAGING UNIT=============================*/
+#define IOP13XX_MU_OFFSET(ofs)	IOP13XX_REG_ADDR32(IOP13XX_MU_PMMR_OFFSET +\
+							(ofs))
+
+#define IOP13XX_MU_IMR0	IOP13XX_MU_OFFSET(0x10)
+#define IOP13XX_MU_IMR1	IOP13XX_MU_OFFSET(0x14)
+#define IOP13XX_MU_OMR0	IOP13XX_MU_OFFSET(0x18)
+#define IOP13XX_MU_OMR1	IOP13XX_MU_OFFSET(0x1C)
+#define IOP13XX_MU_IDR	       	IOP13XX_MU_OFFSET(0x20)
+#define IOP13XX_MU_IISR	IOP13XX_MU_OFFSET(0x24)
+#define IOP13XX_MU_IIMR	IOP13XX_MU_OFFSET(0x28)
+#define IOP13XX_MU_ODR	       	IOP13XX_MU_OFFSET(0x2C)
+#define IOP13XX_MU_OISR	IOP13XX_MU_OFFSET(0x30)
+#define IOP13XX_MU_OIMR	IOP13XX_MU_OFFSET(0x34)
+#define IOP13XX_MU_IRCSR      	IOP13XX_MU_OFFSET(0x38)
+#define IOP13XX_MU_ORCSR      	IOP13XX_MU_OFFSET(0x3C)
+#define IOP13XX_MU_MIMR	IOP13XX_MU_OFFSET(0x48)
+#define IOP13XX_MU_MUCR	IOP13XX_MU_OFFSET(0x50)
+#define IOP13XX_MU_QBAR	IOP13XX_MU_OFFSET(0x54)
+#define IOP13XX_MU_MUBAR      	IOP13XX_MU_OFFSET(0x84)
+
+#define IOP13XX_MU_WINDOW_SIZE	(8 * 1024)
+#define IOP13XX_MU_BASE_PHYS	(0xff000000)
+#define IOP13XX_MU_BASE_PCI	(0xff000000)
+#define IOP13XX_MU_MIMR_PCI	(IOP13XX_MU_BASE_PCI + 0x48)
+#define IOP13XX_MU_MIMR_CORE_SELECT (15)
+/*=======================================================================*/
+
 /*==============================ADMA UNITS===============================*/
 #define IOP13XX_ADMA_PHYS_BASE(chan)	IOP13XX_REG_ADDR32_PHYS((chan << 9))
 #define IOP13XX_ADMA_UPPER_PA(chan)	(IOP13XX_ADMA_PHYS_BASE(chan) + 0xc0)
-#define IOP13XX_ADMA_OFFSET(chan, ofs)	IOP13XX_REG_ADDR32((chan << 9) + (ofs))
-
-#define IOP13XX_ADMA_ACCR(chan)      IOP13XX_ADMA_OFFSET(chan, 0x0)
-#define IOP13XX_ADMA_ACSR(chan)      IOP13XX_ADMA_OFFSET(chan, 0x4)
-#define IOP13XX_ADMA_ADAR(chan)      IOP13XX_ADMA_OFFSET(chan, 0x8)
-#define IOP13XX_ADMA_IIPCR(chan)     IOP13XX_ADMA_OFFSET(chan, 0x18)
-#define IOP13XX_ADMA_IIPAR(chan)     IOP13XX_ADMA_OFFSET(chan, 0x1c)
-#define IOP13XX_ADMA_IIPUAR(chan)    IOP13XX_ADMA_OFFSET(chan, 0x20)
-#define IOP13XX_ADMA_ANDAR(chan)     IOP13XX_ADMA_OFFSET(chan, 0x24)
-#define IOP13XX_ADMA_ADCR(chan)      IOP13XX_ADMA_OFFSET(chan, 0x28)
-#define IOP13XX_ADMA_CARMD(chan)     IOP13XX_ADMA_OFFSET(chan, 0x2c)
-#define IOP13XX_ADMA_ABCR(chan)      IOP13XX_ADMA_OFFSET(chan, 0x30)
-#define IOP13XX_ADMA_DLADR(chan)     IOP13XX_ADMA_OFFSET(chan, 0x34)
-#define IOP13XX_ADMA_DUADR(chan)     IOP13XX_ADMA_OFFSET(chan, 0x38)
-#define IOP13XX_ADMA_SLAR(src, chan) IOP13XX_ADMA_OFFSET(chan, 0x3c + (src <<3))
-#define IOP13XX_ADMA_SUAR(src, chan) IOP13XX_ADMA_OFFSET(chan, 0x40 + (src <<3))
 
 /*==============================XSI BRIDGE===============================*/
 #define IOP13XX_XBG_BECSR		IOP13XX_REG_ADDR32(0x178c)
@@ -457,4 +513,14 @@ static inline int iop13xx_cpu_id(void)
 #define IOP13XX_PBI_LR1       		IOP13XX_PBI_OFFSET(0x14)
 
 #define IOP13XX_PROCESSOR_FREQ		IOP13XX_REG_ADDR32(0x2180)
+
+/* Watchdog timer definitions */
+#define IOP_WDTCR_EN_ARM  	0x1e1e1e1e
+#define IOP_WDTCR_EN      	0xe1e1e1e1
+#define IOP_WDTCR_DIS_ARM 	0x1f1f1f1f
+#define IOP_WDTCR_DIS     	0xf1f1f1f1
+#define IOP_RCSR_WDT		(1 << 5) /* reset caused by watchdog timer */
+#define IOP13XX_WDTSR_WRITE_EN	(1 << 31) /* used to speed up reset requests */
+#define IOP13XX_WDTCR_IB_RESET	(1 << 0)
+
 #endif /* _IOP13XX_HW_H_ */

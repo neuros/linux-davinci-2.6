@@ -24,6 +24,7 @@
 #include <linux/interrupt.h>
 #include <linux/pci.h>
 #include <linux/firmware.h>
+#include <linux/vmalloc.h>
 #include <asm/io.h>
 #include <sound/core.h>
 #include "mixart.h"
@@ -565,6 +566,9 @@ int snd_mixart_setup_firmware(struct mixart_mgr *mgr)
 	return 0;
 }
 
+MODULE_FIRMWARE("mixart/miXart8.xlx");
+MODULE_FIRMWARE("mixart/miXart8.elf");
+MODULE_FIRMWARE("mixart/miXart8AES.xlx");
 
 #else /* old style firmware loading */
 

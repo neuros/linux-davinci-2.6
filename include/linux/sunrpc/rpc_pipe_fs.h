@@ -23,9 +23,11 @@ struct rpc_inode {
 	void *private;
 	struct list_head pipe;
 	struct list_head in_upcall;
+	struct list_head in_downcall;
 	int pipelen;
 	int nreaders;
 	int nwriters;
+	int nkern_readwriters;
 	wait_queue_head_t waitq;
 #define RPC_PIPE_WAIT_FOR_OPEN	1
 	int flags;
@@ -47,6 +49,8 @@ extern struct dentry *rpc_mkpipe(struct dentry *, const char *, void *, struct r
 extern int rpc_unlink(struct dentry *);
 extern struct vfsmount *rpc_get_mount(void);
 extern void rpc_put_mount(void);
+extern int register_rpc_pipefs(void);
+extern void unregister_rpc_pipefs(void);
 
 #endif
 #endif

@@ -26,8 +26,9 @@
  */
 void vfp_testing_entry(void);
 void vfp_support_entry(void);
+void vfp_null_entry(void);
 
-void (*vfp_vector)(void) = vfp_testing_entry;
+void (*vfp_vector)(void) = vfp_null_entry;
 union vfp_state *last_VFP_context[NR_CPUS];
 
 /*
@@ -52,7 +53,7 @@ static int vfp_notifier(struct notifier_block *self, unsigned long cmd, void *v)
 		 * case the thread migrates to a different CPU. The
 		 * restoring is done lazily.
 		 */
-		if ((fpexc & FPEXC_ENABLE) && last_VFP_context[cpu]) {
+		if ((fpexc & FPEXC_EN) && last_VFP_context[cpu]) {
 			vfp_save_state(last_VFP_context[cpu], fpexc);
 			last_VFP_context[cpu]->hard.cpu = cpu;
 		}
@@ -69,7 +70,7 @@ static int vfp_notifier(struct notifier_block *self, unsigned long cmd, void *v)
 		 * Always disable VFP so we can lazily save/restore the
 		 * old state.
 		 */
-		fmxr(FPEXC, fpexc & ~FPEXC_ENABLE);
+		fmxr(FPEXC, fpexc & ~FPEXC_EN);
 		return NOTIFY_DONE;
 	}
 
@@ -80,13 +81,13 @@ static int vfp_notifier(struct notifier_block *self, unsigned long cmd, void *v)
 		 */
 		memset(vfp, 0, sizeof(union vfp_state));
 
-		vfp->hard.fpexc = FPEXC_ENABLE;
+		vfp->hard.fpexc = FPEXC_EN;
 		vfp->hard.fpscr = FPSCR_ROUND_NEAREST;
 
 		/*
 		 * Disable VFP to ensure we initialise it first.
 		 */
-		fmxr(FPEXC, fmrx(FPEXC) & ~FPEXC_ENABLE);
+		fmxr(FPEXC, fmrx(FPEXC) & ~FPEXC_EN);
 	}
 
 	/* flush and release case: Per-thread VFP cleanup. */
@@ -124,13 +125,13 @@ void vfp_raise_sigfpe(unsigned int sicode, struct pt_regs *regs)
 	send_sig_info(SIGFPE, &info, current);
 }
 
-static void vfp_panic(char *reason)
+static void vfp_panic(char *reason, u32 inst)
 {
 	int i;
 
 	printk(KERN_ERR "VFP: Error: %s\n", reason);
 	printk(KERN_ERR "VFP: EXC 0x%08x SCR 0x%08x INST 0x%08x\n",
-		fmrx(FPEXC), fmrx(FPSCR), fmrx(FPINST));
+		fmrx(FPEXC), fmrx(FPSCR), inst);
 	for (i = 0; i < 32; i += 2)
 		printk(KERN_ERR "VFP: s%2u: 0x%08x s%2u: 0x%08x\n",
 		       i, vfp_get_float(i), i+1, vfp_get_float(i+1));
@@ -146,7 +147,7 @@ static void vfp_raise_exceptions(u32 exceptions, u32 inst, u32 fpscr, struct pt_
 	pr_debug("VFP: raising exceptions %08x\n", exceptions);
 
 	if (exceptions == VFP_EXCEPTION_ERROR) {
-		vfp_panic("unhandled bounce");
+		vfp_panic("unhandled bounce", inst);
 		vfp_raise_sigfpe(0, regs);
 		return;
 	}
@@ -228,7 +229,7 @@ void VFP9_bounce(u32 trigger, u32 fpexc, struct pt_regs *regs)
 	/*
 	 * Enable access to the VFP so we can handle the bounce.
 	 */
-	fmxr(FPEXC, fpexc & ~(FPEXC_EXCEPTION|FPEXC_INV|FPEXC_UFC|FPEXC_IOC));
+	fmxr(FPEXC, fpexc & ~(FPEXC_EX|FPEXC_INV|FPEXC_UFC|FPEXC_IOC));
 
 	orig_fpscr = fpscr = fmrx(FPSCR);
 
@@ -247,7 +248,7 @@ void VFP9_bounce(u32 trigger, u32 fpexc, struct pt_regs *regs)
 	/*
 	 * Modify fpscr to indicate the number of iterations remaining
 	 */
-	if (fpexc & FPEXC_EXCEPTION) {
+	if (fpexc & FPEXC_EX) {
 		u32 len;
 
 		len = fpexc + (1 << FPEXC_LENGTH_BIT);
@@ -261,11 +262,16 @@ void VFP9_bounce(u32 trigger, u32 fpexc, struct pt_regs *regs)
 	 * FPEXC bounce reason, but this appears to be unreliable.
 	 * Emulate the bounced instruction instead.
 	 */
+#ifndef CONFIG_VFPv3
 	inst = fmrx(FPINST);
+#else
+	inst = trigger;
+#endif
 	exceptions = vfp_emulate_instruction(inst, fpscr, regs);
 	if (exceptions)
 		vfp_raise_exceptions(exceptions, inst, orig_fpscr, regs);
 
+#ifndef CONFIG_VFPv3
 	/*
 	 * If there isn't a second FP instruction, exit now.
 	 */
@@ -279,6 +285,9 @@ void VFP9_bounce(u32 trigger, u32 fpexc, struct pt_regs *regs)
 	barrier();
 	trigger = fmrx(FPINST2);
 	orig_fpscr = fpscr = fmrx(FPSCR);
+#else
+	return;
+#endif
 
  emulate:
 	exceptions = vfp_emulate_instruction(trigger, fpscr, regs);
@@ -321,8 +330,10 @@ static int __init vfp_init(void)
 	 * The handler is already setup to just log calls, so
 	 * we just need to read the VFPSID register.
 	 */
+	vfp_vector = vfp_testing_entry;
 	vfpsid = fmrx(FPSID);
 	barrier();
+	vfp_vector = vfp_null_entry;
 
 	printk(KERN_INFO "VFP support v0.3: ");
 	if (VFP_arch) {

@@ -26,6 +26,7 @@
 #include <linux/sched.h>
 #include <linux/delay.h>
 #include <linux/mm.h>
+#include <linux/err.h>
 #include <linux/clk.h>
 #include <linux/mutex.h>
 #include <linux/interrupt.h>
@@ -39,7 +40,8 @@
 
 #if defined(CONFIG_ARCH_OMAP1)
 #define dsp_boot_config(mode)	omap_writew((mode), MPUI_DSP_BOOT_CONFIG)
-#elif defined(CONFIG_ARCH_OMAP2)
+#endif
+#if defined(CONFIG_ARCH_OMAP2) || defined(CONFIG_ARCH_OMAP3)
 #define dsp_boot_config(mode)	writel((mode), DSP_IPI_DSPBOOTCONFIG)
 #endif
 
@@ -268,7 +270,7 @@ void dsp_reset_idle_boot_base(void) { }
 
 static int init_done;
 
-static int __init omap_dsp_init(void)
+static int omap_dsp_init(void)
 {
 	mutex_init(&cpustat.lock);
 
@@ -301,6 +303,12 @@ static int __init omap_dsp_init(void)
 		daram_size = OMAP24XX_DARAM_SIZE;
 		saram_base = OMAP24XX_SARAM_BASE;
 		saram_size = OMAP24XX_SARAM_SIZE;
+	}
+#endif
+#ifdef CONFIG_ARCH_OMAP34XX
+	/* To be Revisited for 3430 */
+	if (cpu_is_omap34xx()) {
+		return -ENODEV;
 	}
 #endif
 	if (dspmem_size == 0) {

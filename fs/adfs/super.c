@@ -232,17 +232,16 @@ static void init_once(void * foo, struct kmem_cache * cachep, unsigned long flag
 {
 	struct adfs_inode_info *ei = (struct adfs_inode_info *) foo;
 
-	if (flags & SLAB_CTOR_CONSTRUCTOR)
-		inode_init_once(&ei->vfs_inode);
+	inode_init_once(&ei->vfs_inode);
 }
- 
+
 static int init_inodecache(void)
 {
 	adfs_inode_cachep = kmem_cache_create("adfs_inode_cache",
 					     sizeof(struct adfs_inode_info),
 					     0, (SLAB_RECLAIM_ACCOUNT|
 						SLAB_MEM_SPREAD),
-					     init_once, NULL);
+					     init_once);
 	if (adfs_inode_cachep == NULL)
 		return -ENOMEM;
 	return 0;

@@ -14,6 +14,7 @@ asmlinkage long sys_ni_syscall(void)
 
 cond_syscall(sys_nfsservctl);
 cond_syscall(sys_quotactl);
+cond_syscall(sys32_quotactl);
 cond_syscall(sys_acct);
 cond_syscall(sys_lookup_dcookie);
 cond_syscall(sys_swapon);
@@ -141,3 +142,10 @@ cond_syscall(compat_sys_migrate_pages);
 cond_syscall(sys_bdflush);
 cond_syscall(sys_ioprio_set);
 cond_syscall(sys_ioprio_get);
+
+/* New file descriptors */
+cond_syscall(sys_signalfd);
+cond_syscall(sys_timerfd);
+cond_syscall(compat_sys_signalfd);
+cond_syscall(compat_sys_timerfd);
+cond_syscall(sys_eventfd);

@@ -55,9 +55,16 @@
 static unsigned long	minors[N_SPI_MINORS / BITS_PER_LONG];
 
 
-/* Bit masks for spi_device.mode management */
-#define SPI_MODE_MASK			(SPI_CPHA | SPI_CPOL)
-
+/* Bit masks for spi_device.mode management.  Note that incorrect
+ * settings for CS_HIGH and 3WIRE can cause *lots* of trouble for other
+ * devices on a shared bus:  CS_HIGH, because this device will be
+ * active when it shouldn't be;  3WIRE, because when active it won't
+ * behave as it should.
+ *
+ * REVISIT should changing those two modes be privileged?
+ */
+#define SPI_MODE_MASK		(SPI_CPHA | SPI_CPOL | SPI_CS_HIGH \
+				| SPI_LSB_FIRST | SPI_3WIRE | SPI_LOOP)
 
 struct spidev_data {
 	struct device		dev;
@@ -168,6 +175,12 @@ static int spidev_message(struct spidev_data *spidev,
 			n--, k_tmp++, u_tmp++) {
 		k_tmp->len = u_tmp->len;
 
+		total += k_tmp->len;
+		if (total > bufsiz) {
+			status = -EMSGSIZE;
+			goto done;
+		}
+
 		if (u_tmp->rx_buf) {
 			k_tmp->rx_buf = buf;
 			if (!access_ok(VERIFY_WRITE, u_tmp->rx_buf, u_tmp->len))
@@ -175,15 +188,10 @@ static int spidev_message(struct spidev_data *spidev,
 		}
 		if (u_tmp->tx_buf) {
 			k_tmp->tx_buf = buf;
-			if (copy_from_user(buf, (const u8 __user *)u_tmp->tx_buf,
+			if (copy_from_user(buf, (const u8 __user *)
+						(ptrdiff_t) u_tmp->tx_buf,
 					u_tmp->len))
 				goto done;
-		}
-
-		total += k_tmp->len;
-		if (total > bufsiz) {
-			status = -EMSGSIZE;
-			goto done;
 		}
 		buf += k_tmp->len;
 
@@ -213,7 +221,8 @@ static int spidev_message(struct spidev_data *spidev,
 	buf = spidev->buffer;
 	for (n = n_xfers, u_tmp = u_xfers; n; n--, u_tmp++) {
 		if (u_tmp->rx_buf) {
-			if (__copy_to_user((u8 __user *)u_tmp->rx_buf, buf,
+			if (__copy_to_user((u8 __user *)
+					(ptrdiff_t) u_tmp->rx_buf, buf,
 					u_tmp->len)) {
 				status = -EFAULT;
 				goto done;
@@ -364,6 +373,7 @@ spidev_ioctl(struct inode *inode, struct file *filp,
 			break;
 		}
 		if (__copy_from_user(ioc, (void __user *)arg, tmp)) {
+			kfree(ioc);
 			retval = -EFAULT;
 			break;
 		}
@@ -484,7 +494,7 @@ static int spidev_probe(struct spi_device *spi)
 	 * Reusing minors is fine so long as udev or mdev is working.
 	 */
 	mutex_lock(&device_list_lock);
-	minor = find_first_zero_bit(minors, ARRAY_SIZE(minors));
+	minor = find_first_zero_bit(minors, N_SPI_MINORS);
 	if (minor < N_SPI_MINORS) {
 		spidev->dev.parent = &spi->dev;
 		spidev->dev.class = &spidev_class;

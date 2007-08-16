@@ -24,7 +24,7 @@ static inline int irq_canonicalize(int irq)
 #define irq_canonicalize(irq) (irq)	/* Sane hardware, sane code ... */
 #endif
 
-#ifdef CONFIG_MIPS_MT_SMTC
+#ifdef CONFIG_MIPS_MT_SMTC_IM_BACKSTOP
 /*
  * Clear interrupt mask handling "backstop" if irq_hwmask
  * entry so indicates. This implies that the ack() or end()
@@ -71,5 +71,14 @@ extern int setup_irq_smtc(unsigned int irq, struct irqaction * new,
 extern int allocate_irqno(void);
 extern void alloc_legacy_irqno(void);
 extern void free_irqno(unsigned int irq);
+
+/*
+ * Before R2 the timer and performance counter interrupts were both fixed to
+ * IE7.  Since R2 their number has to be read from the c0_intctl register.
+ */
+#define CP0_LEGACY_COMPARE_IRQ 7
+
+extern int cp0_compare_irq;
+extern int cp0_perfcount_irq;
 
 #endif /* _ASM_IRQ_H */

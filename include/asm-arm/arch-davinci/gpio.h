@@ -1,4 +1,14 @@
-/* include/asm-arm/arch-davinci/gpio.h */
+/*
+ * TI DaVinci GPIO Support
+ *
+ * Copyright (c) 2006 David Brownell
+ * Copyright (c) 2007, MontaVista Software, Inc. <source@mvista.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ */
 
 #ifndef	__DAVINCI_GPIO_H
 #define	__DAVINCI_GPIO_H
@@ -22,10 +32,9 @@
  * For GPIO IRQs use gpio_to_irq(GPIO(N)) or gpio_to_irq(GPIOV33(N)) etc
  * for now, that's != GPIO(N)
  */
-#define	GPIO(X)		(X)		/* 0 <= X <= 71 */
+#define	GPIO(X)		(X)		/* 0 <= X <= 70 */
 #define	GPIOV18(X)	(X)		/* 1.8V i/o; 0 <= X <= 53 */
 #define	GPIOV33(X)	((X)+54)	/* 3.3V i/o; 0 <= X <= 17 */
-
 
 struct gpio_controller {
 	u32	dir;
@@ -40,8 +49,7 @@ struct gpio_controller {
 	u32	intstat;
 };
 
-
-/* The gpio_to_controller() and gpio_mask() functions inline to constants
+/* The __gpio_to_controller() and __gpio_mask() functions inline to constants
  * with constant parameters; or in outlined code they execute at runtime.
  *
  * You'd access the controller directly when reading or writing more than
@@ -51,7 +59,7 @@ struct gpio_controller {
  * These are NOT part of the cross-platform GPIO interface
  */
 static inline struct gpio_controller *__iomem
-gpio_to_controller(unsigned gpio)
+__gpio_to_controller(unsigned gpio)
 {
 	void *__iomem ptr;
 
@@ -66,11 +74,10 @@ gpio_to_controller(unsigned gpio)
 	return ptr;
 }
 
-static inline u32 gpio_mask(unsigned gpio)
+static inline u32 __gpio_mask(unsigned gpio)
 {
 	return 1 << (gpio % 32);
 }
-
 
 /* The get/set/clear functions will inline when called with constant
  * parameters, for low-overhead bitbanging.  Illegal constant parameters
@@ -80,7 +87,7 @@ static inline u32 gpio_mask(unsigned gpio)
  */
 extern int __error_inval_gpio(void);
 
-extern int __gpio_set(unsigned gpio, int value);
+extern void __gpio_set(unsigned gpio, int value);
 extern int __gpio_get(unsigned gpio);
 
 static inline void gpio_set_value(unsigned gpio, int value)
@@ -92,8 +99,8 @@ static inline void gpio_set_value(unsigned gpio, int value)
 		if (gpio >= DAVINCI_N_GPIO)
 			__error_inval_gpio();
 
-		g = gpio_to_controller(gpio);
-		mask = gpio_mask(gpio);
+		g = __gpio_to_controller(gpio);
+		mask = __gpio_mask(gpio);
 		if (value)
 			__raw_writel(mask, &g->set_data);
 		else
@@ -104,13 +111,15 @@ static inline void gpio_set_value(unsigned gpio, int value)
 	__gpio_set(gpio, value);
 }
 
-/* Returns zero or nonzero, or negative on error; works for gpios
- * configured as inputs OR as outputs.
+/* Returns zero or nonzero; works for gpios configured as inputs OR
+ * as outputs.
  *
  * NOTE: changes in reported values are synchronized to the GPIO clock.
- * This is most easily seen after calls to gpio_set() and gpio_clear(),
- * where set-then-get might return the old value.
+ * This is most easily seen after calling gpio_set_value() and then immediatly
+ * gpio_get_value(), where the gpio_get_value() would return the old value
+ * until the GPIO clock ticks and the new value gets latched.
  */
+
 static inline int gpio_get_value(unsigned gpio)
 {
 	struct gpio_controller	*__iomem g;
@@ -121,28 +130,18 @@ static inline int gpio_get_value(unsigned gpio)
 	if (gpio >= DAVINCI_N_GPIO)
 		return __error_inval_gpio();
 
-	g = gpio_to_controller(gpio);
-	return !!(gpio_mask(gpio) & __raw_readl(&g->in_data));
+	g = __gpio_to_controller(gpio);
+	return !!(__gpio_mask(gpio) & __raw_readl(&g->in_data));
 }
 
 /* powerup default direction is IN */
-
 extern int gpio_direction_input(unsigned gpio);
 extern int gpio_direction_output(unsigned gpio, int value);
 
+#include <asm-generic/gpio.h>	/* cansleep wrappers */
 
-/* NOTE:  currently there's no request/free implementation for GPIOs,
- * so drivers arguing over them will get errors much like they will
- * when the pin isn't muxed properly as gpio ...
- */
-static inline int gpio_request(unsigned gpio, const char *tag)
-{
-	return 0;
-}
-
-static inline void gpio_free(unsigned gpio)
-{
-}
+extern int gpio_request(unsigned gpio, const char *tag);
+extern void gpio_free(unsigned gpio);
 
 static inline int gpio_to_irq(unsigned gpio)
 {
@@ -154,4 +153,4 @@ static inline int irq_to_gpio(unsigned irq)
 	return irq - DAVINCI_N_AINTC_IRQ;
 }
 
-#endif	/* __DAVINCI_GPIO_H */
+#endif				/* __DAVINCI_GPIO_H */

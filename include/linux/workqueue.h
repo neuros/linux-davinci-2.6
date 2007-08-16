@@ -122,7 +122,7 @@ extern struct workqueue_struct *__create_workqueue(const char *name,
 						    int singlethread,
 						    int freezeable);
 #define create_workqueue(name) __create_workqueue((name), 0, 0)
-#define create_freezeable_workqueue(name) __create_workqueue((name), 0, 1)
+#define create_freezeable_workqueue(name) __create_workqueue((name), 1, 1)
 #define create_singlethread_workqueue(name) __create_workqueue((name), 1, 0)
 
 extern void destroy_workqueue(struct workqueue_struct *wq);
@@ -148,7 +148,7 @@ extern int keventd_up(void);
 extern void init_workqueues(void);
 int execute_in_process_context(work_func_t fn, struct execute_work *);
 
-extern void cancel_work_sync(struct work_struct *work);
+extern int cancel_work_sync(struct work_struct *work);
 
 /*
  * Kill off a pending schedule_delayed_work().  Note that the work callback
@@ -160,20 +160,27 @@ static inline int cancel_delayed_work(struct delayed_work *work)
 {
 	int ret;
 
-	ret = del_timer(&work->timer);
+	ret = del_timer_sync(&work->timer);
 	if (ret)
 		work_clear_pending(&work->work);
 	return ret;
 }
 
-extern void cancel_rearming_delayed_work(struct delayed_work *work);
+extern int cancel_delayed_work_sync(struct delayed_work *work);
 
-/* Obsolete. use cancel_rearming_delayed_work() */
+/* Obsolete. use cancel_delayed_work_sync() */
 static inline
 void cancel_rearming_delayed_workqueue(struct workqueue_struct *wq,
 					struct delayed_work *work)
 {
-	cancel_rearming_delayed_work(work);
+	cancel_delayed_work_sync(work);
+}
+
+/* Obsolete. use cancel_delayed_work_sync() */
+static inline
+void cancel_rearming_delayed_work(struct delayed_work *work)
+{
+	cancel_delayed_work_sync(work);
 }
 
 #endif

@@ -56,7 +56,6 @@
 #define ACPI_HOTK_NAME          "Asus Laptop ACPI Extras Driver"
 #define ACPI_HOTK_CLASS         "hotkey"
 #define ACPI_HOTK_DEVICE_NAME   "Hotkey"
-#define ACPI_HOTK_HID           "ATK0100"
 
 /*
  * Some events we use, same for all Asus
@@ -426,14 +425,20 @@ static struct acpi_table_header *asus_info;
 static struct asus_hotk *hotk;
 
 /*
- * The hotkey driver declaration
+ * The hotkey driver and autoloading declaration
  */
 static int asus_hotk_add(struct acpi_device *device);
 static int asus_hotk_remove(struct acpi_device *device, int type);
+static const struct acpi_device_id asus_device_ids[] = {
+	{"ATK0100", 0},
+	{"", 0},
+};
+MODULE_DEVICE_TABLE(acpi, asus_device_ids);
+
 static struct acpi_driver asus_hotk_driver = {
 	.name = "asus_acpi",
 	.class = ACPI_HOTK_CLASS,
-	.ids = ACPI_HOTK_HID,
+	.ids = asus_device_ids,
 	.ops = {
 		.add = asus_hotk_add,
 		.remove = asus_hotk_remove,
@@ -1357,7 +1362,7 @@ static struct backlight_ops asus_backlight_data = {
         .update_status  = set_brightness_status,
 };
 
-static void __exit asus_acpi_exit(void)
+static void asus_acpi_exit(void)
 {
 	if (asus_backlight_device)
 		backlight_device_unregister(asus_backlight_device);
@@ -1398,7 +1403,7 @@ static int __init asus_acpi_init(void)
 	if (!asus_hotk_found) {
 		acpi_bus_unregister_driver(&asus_hotk_driver);
 		remove_proc_entry(PROC_ASUS, acpi_root_dir);
-		return result;
+		return -ENODEV;
 	}
 
 	asus_backlight_device = backlight_device_register("asus",NULL,NULL,
@@ -1407,6 +1412,7 @@ static int __init asus_acpi_init(void)
 		printk(KERN_ERR "Could not register asus backlight device\n");
 		asus_backlight_device = NULL;
 		asus_acpi_exit();
+		return -ENODEV;
 	}
         asus_backlight_device->props.max_brightness = 15;
 

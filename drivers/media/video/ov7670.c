@@ -617,7 +617,7 @@ static struct ov7670_win_size {
 	},
 };
 
-#define N_WIN_SIZES (sizeof(ov7670_win_sizes)/sizeof(ov7670_win_sizes[0]))
+#define N_WIN_SIZES (ARRAY_SIZE(ov7670_win_sizes))
 
 
 /*
@@ -720,11 +720,21 @@ static int ov7670_s_fmt(struct i2c_client *c, struct v4l2_format *fmt)
 	struct ov7670_format_struct *ovfmt;
 	struct ov7670_win_size *wsize;
 	struct ov7670_info *info = i2c_get_clientdata(c);
-	unsigned char com7;
+	unsigned char com7, clkrc;
 
 	ret = ov7670_try_fmt(c, fmt, &ovfmt, &wsize);
 	if (ret)
 		return ret;
+	/*
+	 * HACK: if we're running rgb565 we need to grab then rewrite
+	 * CLKRC.  If we're *not*, however, then rewriting clkrc hoses
+	 * the colors.
+	 */
+	if (fmt->fmt.pix.pixelformat == V4L2_PIX_FMT_RGB565) {
+		ret = ov7670_read(c, REG_CLKRC, &clkrc);
+		if (ret)
+			return ret;
+	}
 	/*
 	 * COM7 is a pain in the ass, it doesn't like to be read then
 	 * quickly written afterward.  But we have everything we need
@@ -744,7 +754,10 @@ static int ov7670_s_fmt(struct i2c_client *c, struct v4l2_format *fmt)
 	if (wsize->regs)
 		ret = ov7670_write_array(c, wsize->regs);
 	info->fmt = ovfmt;
-	return 0;
+
+	if (fmt->fmt.pix.pixelformat == V4L2_PIX_FMT_RGB565 && ret == 0)
+		ret = ov7670_write(c, REG_CLKRC, clkrc);
+	return ret;
 }
 
 /*
@@ -1170,7 +1183,7 @@ static struct ov7670_control {
 		.query = ov7670_q_hflip,
 	},
 };
-#define N_CONTROLS (sizeof(ov7670_controls)/sizeof(ov7670_controls[0]))
+#define N_CONTROLS (ARRAY_SIZE(ov7670_controls))
 
 static struct ov7670_control *ov7670_find_control(__u32 id)
 {
@@ -1267,7 +1280,9 @@ static int ov7670_attach(struct i2c_adapter *adapter)
 	ret = ov7670_detect(client);
 	if (ret)
 		goto out_free_info;
-	i2c_attach_client(client);
+	ret = i2c_attach_client(client);
+	if (ret)
+		goto out_free_info;
 	return 0;
 
   out_free_info:

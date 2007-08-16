@@ -5,7 +5,8 @@
 
 #ifdef CONFIG_SMP
 
-extern void setup_per_cpu_areas(void);
+#define setup_per_cpu_areas()			do { } while (0)
+extern void real_setup_per_cpu_areas(void);
 
 extern unsigned long __per_cpu_base;
 extern unsigned long __per_cpu_shift;
@@ -16,6 +17,11 @@ extern unsigned long __per_cpu_shift;
 /* Separate out the type, so (int[3], foo) works. */
 #define DEFINE_PER_CPU(type, name) \
     __attribute__((__section__(".data.percpu"))) __typeof__(type) per_cpu__##name
+
+#define DEFINE_PER_CPU_SHARED_ALIGNED(type, name)		\
+    __attribute__((__section__(".data.percpu.shared_aligned"))) \
+    __typeof__(type) per_cpu__##name				\
+    ____cacheline_aligned_in_smp
 
 register unsigned long __local_per_cpu_offset asm("g5");
 
@@ -34,8 +40,11 @@ do {								\
 } while (0)
 #else /* ! SMP */
 
+#define real_setup_per_cpu_areas()		do { } while (0)
 #define DEFINE_PER_CPU(type, name) \
     __typeof__(type) per_cpu__##name
+#define DEFINE_PER_CPU_SHARED_ALIGNED(type, name)	\
+    DEFINE_PER_CPU(type, name)
 
 #define per_cpu(var, cpu)			(*((void)cpu, &per_cpu__##var))
 #define __get_cpu_var(var)			per_cpu__##var

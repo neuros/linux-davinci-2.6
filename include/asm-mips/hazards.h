@@ -3,7 +3,7 @@
  * License.  See the file "COPYING" in the main directory of this archive
  * for more details.
  *
- * Copyright (C) 2003, 2004 Ralf Baechle <ralf@linux-mips.org>
+ * Copyright (C) 2003, 04, 07 Ralf Baechle <ralf@linux-mips.org>
  * Copyright (C) MIPS Technologies, Inc.
  *   written by Ralf Baechle <ralf@linux-mips.org>
  */
@@ -22,6 +22,11 @@ static inline void name(void)						\
 {									\
 	__asm__ __volatile__ (#name);					\
 }
+
+/*
+ * MIPS R2 instruction hazard barrier.   Needs to be called as a subroutine.
+ */
+extern void mips_ihb(void);
 
 #endif
 
@@ -176,6 +181,38 @@ ASMMACRO(back_to_back_c0_hazard,
 	)
 #define instruction_hazard() do { } while (0)
 
+#endif
+
+
+/* FPU hazards */
+
+#if defined(CONFIG_CPU_SB1)
+ASMMACRO(enable_fpu_hazard,
+	 .set	push;
+	 .set	mips64;
+	 .set	noreorder;
+	 _ssnop;
+	 bnezl	$0,.+4;
+	 _ssnop;
+	 .set	pop
+)
+ASMMACRO(disable_fpu_hazard,
+)
+
+#elif defined(CONFIG_CPU_MIPSR2)
+ASMMACRO(enable_fpu_hazard,
+	 _ehb
+)
+ASMMACRO(disable_fpu_hazard,
+	 _ehb
+)
+#else
+ASMMACRO(enable_fpu_hazard,
+	 nop; nop; nop; nop
+)
+ASMMACRO(disable_fpu_hazard,
+	 _ehb
+)
 #endif
 
 #endif /* _ASM_HAZARDS_H */

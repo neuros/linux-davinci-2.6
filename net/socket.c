@@ -261,8 +261,7 @@ static void init_once(void *foo, struct kmem_cache *cachep, unsigned long flags)
 {
 	struct socket_alloc *ei = (struct socket_alloc *)foo;
 
-	if (flags & SLAB_CTOR_CONSTRUCTOR)
-		inode_init_once(&ei->vfs_inode);
+	inode_init_once(&ei->vfs_inode);
 }
 
 static int init_inodecache(void)
@@ -273,8 +272,7 @@ static int init_inodecache(void)
 					      (SLAB_HWCACHE_ALIGN |
 					       SLAB_RECLAIM_ACCOUNT |
 					       SLAB_MEM_SPREAD),
-					      init_once,
-					      NULL);
+					      init_once);
 	if (sock_inode_cachep == NULL)
 		return -ENOMEM;
 	return 0;
@@ -1940,9 +1938,7 @@ asmlinkage long sys_recvmsg(int fd, struct msghdr __user *msg,
 	total_len = err;
 
 	cmsg_ptr = (unsigned long)msg_sys.msg_control;
-	msg_sys.msg_flags = 0;
-	if (MSG_CMSG_COMPAT & flags)
-		msg_sys.msg_flags = MSG_CMSG_COMPAT;
+	msg_sys.msg_flags = flags & (MSG_CMSG_CLOEXEC|MSG_CMSG_COMPAT);
 
 	if (sock->file->f_flags & O_NONBLOCK)
 		flags |= MSG_DONTWAIT;

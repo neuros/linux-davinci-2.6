@@ -218,6 +218,7 @@ config FIB_RULES
 	bool
 
 menu "Wireless"
+	depends on !S390
 
 source "net/wireless/Kconfig"
 source "net/mac80211/Kconfig"
@@ -226,6 +227,7 @@ source "net/ieee80211/Kconfig"
 endmenu
 
 source "net/rfkill/Kconfig"
+source "net/9p/Kconfig"
 
 endif   # if NET
 endmenu # Networking

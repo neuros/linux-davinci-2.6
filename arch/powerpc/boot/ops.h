@@ -19,6 +19,8 @@
 #define	MAX_PATH_LEN		256
 #define	MAX_PROP_LEN		256 /* What should this be? */
 
+typedef void (*kernel_entry_t)(unsigned long r3, unsigned long r4, void *r5);
+
 /* Platform specific operations */
 struct platform_ops {
 	void	(*fixups)(void);
@@ -51,7 +53,7 @@ extern struct dt_ops dt_ops;
 /* Console operations */
 struct console_ops {
 	int	(*open)(void);
-	void	(*write)(char *buf, int len);
+	void	(*write)(const char *buf, int len);
 	void	(*edit_cmdline)(char *buf, int len);
 	void	(*close)(void);
 	void	*data;
@@ -79,6 +81,7 @@ void start(void);
 int ft_init(void *dt_blob, unsigned int max_size, unsigned int max_find_device);
 int serial_console_init(void);
 int ns16550_console_init(void *devp, struct serial_console_data *scdp);
+int mpsc_console_init(void *devp, struct serial_console_data *scdp);
 void *simple_alloc_init(char *base, unsigned long heap_size,
 			unsigned long granularity, unsigned long max_allocs);
 extern void flush_cache(void *, unsigned long);

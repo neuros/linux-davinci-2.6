@@ -13,15 +13,18 @@
 #include <linux/fs.h>
 #include <linux/mount.h>
 #include <linux/file.h>
+#include <linux/kernel.h>
 #include <linux/writeback.h>
 #include <linux/pagemap.h>
 #include <linux/highmem.h>
 #include <linux/init.h>
 #include <linux/string.h>
 #include <linux/capability.h>
+#include <linux/ctype.h>
 #include <linux/backing-dev.h>
 #include <linux/hugetlb.h>
 #include <linux/pagevec.h>
+#include <linux/parser.h>
 #include <linux/mman.h>
 #include <linux/quotaops.h>
 #include <linux/slab.h>
@@ -46,6 +49,21 @@ static struct backing_dev_info hugetlbfs_backing_dev_info = {
 };
 
 int sysctl_hugetlb_shm_group;
+
+enum {
+	Opt_size, Opt_nr_inodes,
+	Opt_mode, Opt_uid, Opt_gid,
+	Opt_err,
+};
+
+static match_table_t tokens = {
+	{Opt_size,	"size=%s"},
+	{Opt_nr_inodes,	"nr_inodes=%s"},
+	{Opt_mode,	"mode=%o"},
+	{Opt_uid,	"uid=%u"},
+	{Opt_gid,	"gid=%u"},
+	{Opt_err,	NULL},
+};
 
 static void huge_pagevec_release(struct pagevec *pvec)
 {
@@ -556,8 +574,7 @@ static void init_once(void *foo, struct kmem_cache *cachep, unsigned long flags)
 {
 	struct hugetlbfs_inode_info *ei = (struct hugetlbfs_inode_info *)foo;
 
-	if (flags & SLAB_CTOR_CONSTRUCTOR)
-		inode_init_once(&ei->vfs_inode);
+	inode_init_once(&ei->vfs_inode);
 }
 
 const struct file_operations hugetlbfs_file_operations = {
@@ -595,46 +612,73 @@ static const struct super_operations hugetlbfs_ops = {
 static int
 hugetlbfs_parse_options(char *options, struct hugetlbfs_config *pconfig)
 {
-	char *opt, *value, *rest;
+	char *p, *rest;
+	substring_t args[MAX_OPT_ARGS];
+	int option;
 
 	if (!options)
 		return 0;
-	while ((opt = strsep(&options, ",")) != NULL) {
-		if (!*opt)
+
+	while ((p = strsep(&options, ",")) != NULL) {
+		int token;
+		if (!*p)
 			continue;
 
-		value = strchr(opt, '=');
-		if (!value || !*value)
-			return -EINVAL;
-		else
-			*value++ = '\0';
+		token = match_token(p, tokens, args);
+		switch (token) {
+		case Opt_uid:
+			if (match_int(&args[0], &option))
+ 				goto bad_val;
+			pconfig->uid = option;
+			break;
 
-		if (!strcmp(opt, "uid"))
-			pconfig->uid = simple_strtoul(value, &value, 0);
-		else if (!strcmp(opt, "gid"))
-			pconfig->gid = simple_strtoul(value, &value, 0);
-		else if (!strcmp(opt, "mode"))
-			pconfig->mode = simple_strtoul(value,&value,0) & 0777U;
-		else if (!strcmp(opt, "size")) {
-			unsigned long long size = memparse(value, &rest);
+		case Opt_gid:
+			if (match_int(&args[0], &option))
+ 				goto bad_val;
+			pconfig->gid = option;
+			break;
+
+		case Opt_mode:
+			if (match_octal(&args[0], &option))
+ 				goto bad_val;
+			pconfig->mode = option & 0777U;
+			break;
+
+		case Opt_size: {
+ 			unsigned long long size;
+			/* memparse() will accept a K/M/G without a digit */
+			if (!isdigit(*args[0].from))
+				goto bad_val;
+			size = memparse(args[0].from, &rest);
 			if (*rest == '%') {
 				size <<= HPAGE_SHIFT;
 				size *= max_huge_pages;
 				do_div(size, 100);
-				rest++;
 			}
 			pconfig->nr_blocks = (size >> HPAGE_SHIFT);
-			value = rest;
-		} else if (!strcmp(opt,"nr_inodes")) {
-			pconfig->nr_inodes = memparse(value, &rest);
-			value = rest;
-		} else
-			return -EINVAL;
+			break;
+		}
 
-		if (*value)
+		case Opt_nr_inodes:
+			/* memparse() will accept a K/M/G without a digit */
+			if (!isdigit(*args[0].from))
+				goto bad_val;
+			pconfig->nr_inodes = memparse(args[0].from, &rest);
+			break;
+
+		default:
+			printk(KERN_ERR "hugetlbfs: Bad mount option: \"%s\"\n",
+				 p);
 			return -EINVAL;
+			break;
+		}
 	}
 	return 0;
+
+bad_val:
+ 	printk(KERN_ERR "hugetlbfs: Bad value '%s' for mount option '%s'\n",
+	       args[0].from, p);
+ 	return 1;
 }
 
 static int
@@ -652,7 +696,6 @@ hugetlbfs_fill_super(struct super_block *sb, void *data, int silent)
 	config.gid = current->fsgid;
 	config.mode = 0755;
 	ret = hugetlbfs_parse_options(data, &config);
-
 	if (ret)
 		return ret;
 
@@ -737,15 +780,13 @@ static int can_do_hugetlb_shm(void)
 			can_do_mlock());
 }
 
-struct file *hugetlb_zero_setup(size_t size)
+struct file *hugetlb_file_setup(const char *name, size_t size)
 {
 	int error = -ENOMEM;
 	struct file *file;
 	struct inode *inode;
 	struct dentry *dentry, *root;
 	struct qstr quick_string;
-	char buf[16];
-	static atomic_t counter;
 
 	if (!hugetlbfs_vfsmount)
 		return ERR_PTR(-ENOENT);
@@ -757,8 +798,7 @@ struct file *hugetlb_zero_setup(size_t size)
 		return ERR_PTR(-ENOMEM);
 
 	root = hugetlbfs_vfsmount->mnt_root;
-	snprintf(buf, 16, "%u", atomic_inc_return(&counter));
-	quick_string.name = buf;
+	quick_string.name = name;
 	quick_string.len = strlen(quick_string.name);
 	quick_string.hash = 0;
 	dentry = d_alloc(root, &quick_string);
@@ -808,7 +848,7 @@ static int __init init_hugetlbfs_fs(void)
 
 	hugetlbfs_inode_cachep = kmem_cache_create("hugetlbfs_inode_cache",
 					sizeof(struct hugetlbfs_inode_info),
-					0, 0, init_once, NULL);
+					0, 0, init_once);
 	if (hugetlbfs_inode_cachep == NULL)
 		return -ENOMEM;
 

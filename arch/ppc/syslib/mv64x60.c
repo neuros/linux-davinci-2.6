@@ -14,6 +14,7 @@
 #include <linux/pci.h>
 #include <linux/slab.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/string.h>
 #include <linux/spinlock.h>
 #include <linux/mv643xx.h>
@@ -440,6 +441,32 @@ static struct platform_device i2c_device = {
 };
 #endif
 
+#ifdef CONFIG_WATCHDOG
+static struct mv64x60_wdt_pdata mv64x60_wdt_pdata = {
+	.timeout		= 10,  /* default watchdog expiry in seconds */
+	.bus_clk		= 133, /* default bus clock in MHz */
+};
+
+static struct resource mv64x60_wdt_resources[] = {
+	[0] = {
+		.name	= "mv64x60 wdt base",
+		.start	= MV64x60_WDT_WDC,
+		.end	= MV64x60_WDT_WDC + 8 - 1, /* two 32-bit registers */
+		.flags	= IORESOURCE_MEM,
+	},
+};
+
+static struct platform_device wdt_device = {
+	.name		= MV64x60_WDT_NAME,
+	.id		= 0,
+	.num_resources	= ARRAY_SIZE(mv64x60_wdt_resources),
+	.resource	= mv64x60_wdt_resources,
+	.dev = {
+		.platform_data = &mv64x60_wdt_pdata,
+	},
+};
+#endif
+
 #if defined(CONFIG_SYSFS) && !defined(CONFIG_GT64260)
 static struct mv64xxx_pdata mv64xxx_pdata = {
 	.hs_reg_valid	= 0,
@@ -475,6 +502,9 @@ static struct platform_device *mv64x60_pd_devs[] __initdata = {
 #ifdef	CONFIG_I2C_MV64XXX
 	&i2c_device,
 #endif
+#ifdef	CONFIG_MV64X60_WDT
+	&wdt_device,
+#endif
 #if defined(CONFIG_SYSFS) && !defined(CONFIG_GT64260)
 	&mv64xxx_device,
 #endif
@@ -490,7 +520,7 @@ static struct platform_device *mv64x60_pd_devs[] __initdata = {
 /*
  * mv64x60_init()
  *
- * Initialze the bridge based on setting passed in via 'si'.  The bridge
+ * Initialize the bridge based on setting passed in via 'si'.  The bridge
  * handle, 'bh', will be set so that it can be used to make subsequent
  * calls to routines in this file.
  */
@@ -1704,7 +1734,7 @@ gt64260_disable_all_windows(struct mv64x60_handle *bh,
 /*
  * gt64260a_chip_specific_init()
  *
- * Implement errata work arounds for the GT64260A.
+ * Implement errata workarounds for the GT64260A.
  */
 static void __init
 gt64260a_chip_specific_init(struct mv64x60_handle *bh,
@@ -1776,7 +1806,7 @@ gt64260a_chip_specific_init(struct mv64x60_handle *bh,
 /*
  * gt64260b_chip_specific_init()
  *
- * Implement errata work arounds for the GT64260B.
+ * Implement errata workarounds for the GT64260B.
  */
 static void __init
 gt64260b_chip_specific_init(struct mv64x60_handle *bh,
@@ -2316,7 +2346,7 @@ mv64360_set_mpsc2regs_window(struct mv64x60_handle *bh, u32 base)
 /*
  * mv64360_chip_specific_init()
  *
- * Implement errata work arounds for the MV64360.
+ * Implement errata workarounds for the MV64360.
  */
 static void __init
 mv64360_chip_specific_init(struct mv64x60_handle *bh,
@@ -2336,7 +2366,7 @@ mv64360_chip_specific_init(struct mv64x60_handle *bh,
 /*
  * mv64460_chip_specific_init()
  *
- * Implement errata work arounds for the MV64460.
+ * Implement errata workarounds for the MV64460.
  */
 static void __init
 mv64460_chip_specific_init(struct mv64x60_handle *bh,
@@ -2359,7 +2389,7 @@ mv64460_chip_specific_init(struct mv64x60_handle *bh,
 /* Export the hotswap register via sysfs for enum event monitoring */
 #define	VAL_LEN_MAX	11 /* 32-bit hex or dec stringified number + '\n' */
 
-DECLARE_MUTEX(mv64xxx_hs_lock);
+static DEFINE_MUTEX(mv64xxx_hs_lock);
 
 static ssize_t
 mv64xxx_hs_reg_read(struct kobject *kobj, char *buf, loff_t off, size_t count)
@@ -2372,14 +2402,14 @@ mv64xxx_hs_reg_read(struct kobject *kobj, char *buf, loff_t off, size_t count)
 	if (count < VAL_LEN_MAX)
 		return -EINVAL;
 
-	if (down_interruptible(&mv64xxx_hs_lock))
+	if (mutex_lock_interruptible(&mv64xxx_hs_lock))
 		return -ERESTARTSYS;
 	save_exclude = mv64x60_pci_exclude_bridge;
 	mv64x60_pci_exclude_bridge = 0;
 	early_read_config_dword(&sysfs_hose_a, 0, PCI_DEVFN(0, 0),
 			MV64360_PCICFG_CPCI_HOTSWAP, &v);
 	mv64x60_pci_exclude_bridge = save_exclude;
-	up(&mv64xxx_hs_lock);
+	mutex_unlock(&mv64xxx_hs_lock);
 
 	return sprintf(buf, "0x%08x\n", v);
 }
@@ -2396,14 +2426,14 @@ mv64xxx_hs_reg_write(struct kobject *kobj, char *buf, loff_t off, size_t count)
 		return -EINVAL;
 
 	if (sscanf(buf, "%i", &v) == 1) {
-		if (down_interruptible(&mv64xxx_hs_lock))
+		if (mutex_lock_interruptible(&mv64xxx_hs_lock))
 			return -ERESTARTSYS;
 		save_exclude = mv64x60_pci_exclude_bridge;
 		mv64x60_pci_exclude_bridge = 0;
 		early_write_config_dword(&sysfs_hose_a, 0, PCI_DEVFN(0, 0),
 				MV64360_PCICFG_CPCI_HOTSWAP, v);
 		mv64x60_pci_exclude_bridge = save_exclude;
-		up(&mv64xxx_hs_lock);
+		mutex_unlock(&mv64xxx_hs_lock);
 	}
 	else
 		count = -EINVAL;
@@ -2415,7 +2445,6 @@ static struct bin_attribute mv64xxx_hs_reg_attr = { /* Hotswap register */
 	.attr = {
 		.name = "hs_reg",
 		.mode = S_IRUGO | S_IWUSR,
-		.owner = THIS_MODULE,
 	},
 	.size  = VAL_LEN_MAX,
 	.read  = mv64xxx_hs_reg_read,
@@ -2434,10 +2463,10 @@ mv64xxx_hs_reg_valid_show(struct device *dev, struct device_attribute *attr,
 	pdev = container_of(dev, struct platform_device, dev);
 	pdp = (struct mv64xxx_pdata *)pdev->dev.platform_data;
 
-	if (down_interruptible(&mv64xxx_hs_lock))
+	if (mutex_lock_interruptible(&mv64xxx_hs_lock))
 		return -ERESTARTSYS;
 	v = pdp->hs_reg_valid;
-	up(&mv64xxx_hs_lock);
+	mutex_unlock(&mv64xxx_hs_lock);
 
 	return sprintf(buf, "%i\n", v);
 }

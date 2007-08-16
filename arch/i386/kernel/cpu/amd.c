@@ -231,6 +231,9 @@ static void __cpuinit init_amd(struct cpuinfo_x86 *c)
 
 	switch (c->x86) {
 	case 15:
+	/* Use K8 tuning for Fam10h and Fam11h */
+	case 0x10:
+	case 0x11:
 		set_bit(X86_FEATURE_K8, c->x86_capability);
 		break;
 	case 6:
@@ -272,14 +275,22 @@ static void __cpuinit init_amd(struct cpuinfo_x86 *c)
 	}
 #endif
 
-	if (cpuid_eax(0x80000000) >= 0x80000006)
-		num_cache_leaves = 3;
+	if (cpuid_eax(0x80000000) >= 0x80000006) {
+		if ((c->x86 == 0x10) && (cpuid_edx(0x80000006) & 0xf000))
+			num_cache_leaves = 4;
+		else
+			num_cache_leaves = 3;
+	}
 
 	if (amd_apic_timer_broken())
 		set_bit(X86_FEATURE_LAPIC_TIMER_BROKEN, c->x86_capability);
 
 	if (c->x86 == 0x10 && !force_mwait)
 		clear_bit(X86_FEATURE_MWAIT, c->x86_capability);
+
+	/* K6s reports MCEs but don't actually have all the MSRs */
+	if (c->x86 < 6)
+		clear_bit(X86_FEATURE_MCE, c->x86_capability);
 }
 
 static unsigned int __cpuinit amd_size_cache(struct cpuinfo_x86 * c, unsigned int size)

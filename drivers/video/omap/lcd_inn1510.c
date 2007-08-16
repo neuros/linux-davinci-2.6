@@ -1,6 +1,4 @@
 /*
- * File: drivers/video/omap/lcd-inn1510.c
- *
  * LCD panel support for the TI OMAP1510 Innovator board
  *
  * Copyright (C) 2004 Nokia Corporation
@@ -23,8 +21,7 @@
 
 #include <linux/module.h>
 #include <linux/platform_device.h>
-
-#include <asm/io.h>
+#include <linux/io.h>
 
 #include <asm/arch/fpga.h>
 #include <asm/arch/omapfb.h>
@@ -90,7 +87,8 @@ static int innovator1510_panel_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static int innovator1510_panel_suspend(struct platform_device *pdev, pm_message_t mesg)
+static int innovator1510_panel_suspend(struct platform_device *pdev,
+				       pm_message_t mesg)
 {
 	return 0;
 }

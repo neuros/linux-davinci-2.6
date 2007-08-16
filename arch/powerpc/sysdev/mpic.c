@@ -877,6 +877,8 @@ static int mpic_host_map(struct irq_host *h, unsigned int virq,
 
 	if (hw == mpic->spurious_vec)
 		return -EINVAL;
+	if (mpic->protected && test_bit(hw, mpic->protected))
+		return -EINVAL;
 
 #ifdef CONFIG_SMP
 	else if (hw >= mpic->ipi_vecs[0]) {
@@ -1034,6 +1036,25 @@ struct mpic * __init mpic_alloc(struct device_node *node,
 	if (node && of_get_property(node, "big-endian", NULL) != NULL)
 		mpic->flags |= MPIC_BIG_ENDIAN;
 
+	/* Look for protected sources */
+	if (node) {
+		unsigned int psize, bits, mapsize;
+		const u32 *psrc =
+			of_get_property(node, "protected-sources", &psize);
+		if (psrc) {
+			psize /= 4;
+			bits = intvec_top + 1;
+			mapsize = BITS_TO_LONGS(bits) * sizeof(unsigned long);
+			mpic->protected = alloc_bootmem(mapsize);
+			BUG_ON(mpic->protected == NULL);
+			memset(mpic->protected, 0, mapsize);
+			for (i = 0; i < psize; i++) {
+				if (psrc[i] > intvec_top)
+					continue;
+				__set_bit(psrc[i], mpic->protected);
+			}
+		}
+	}
 
 #ifdef CONFIG_MPIC_WEIRD
 	mpic->hw_set = mpic_infos[MPIC_GET_REGSET(flags)];
@@ -1213,6 +1234,9 @@ void __init mpic_init(struct mpic *mpic)
 		u32 vecpri = MPIC_VECPRI_MASK | i |
 			(8 << MPIC_VECPRI_PRIORITY_SHIFT);
 		
+		/* check if protected */
+		if (mpic->protected && test_bit(i, mpic->protected))
+			continue;
 		/* init hw */
 		mpic_irq_write(i, MPIC_INFO(IRQ_VECTOR_PRI), vecpri);
 		mpic_irq_write(i, MPIC_INFO(IRQ_DESTINATION),
@@ -1407,6 +1431,14 @@ unsigned int mpic_get_one_irq(struct mpic *mpic)
 			mpic_eoi(mpic);
 		return NO_IRQ;
 	}
+	if (unlikely(mpic->protected && test_bit(src, mpic->protected))) {
+		if (printk_ratelimit())
+			printk(KERN_WARNING "%s: Got protected source %d !\n",
+			       mpic->name, (int)src);
+		mpic_eoi(mpic);
+		return NO_IRQ;
+	}
+
 	return irq_linear_revmap(mpic->irqhost, src);
 }
 
@@ -1424,7 +1456,7 @@ unsigned int mpic_get_irq(void)
 void mpic_request_ipis(void)
 {
 	struct mpic *mpic = mpic_primary;
-	int i;
+	int i, err;
 	static char *ipi_names[] = {
 		"IPI0 (call function)",
 		"IPI1 (reschedule)",
@@ -1442,8 +1474,14 @@ void mpic_request_ipis(void)
 			printk(KERN_ERR "Failed to map IPI %d\n", i);
 			break;
 		}
-		request_irq(vipi, mpic_ipi_action, IRQF_DISABLED|IRQF_PERCPU,
-			    ipi_names[i], mpic);
+		err = request_irq(vipi, mpic_ipi_action,
+				  IRQF_DISABLED|IRQF_PERCPU,
+				  ipi_names[i], mpic);
+		if (err) {
+			printk(KERN_ERR "Request of irq %d for IPI %d failed\n",
+			       vipi, i);
+			break;
+		}
 	}
 }
 

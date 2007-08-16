@@ -119,7 +119,7 @@ struct usb_data_stream_properties {
  * @caps: capabilities of the DVB USB device.
  * @pid_filter_count: number of PID filter position in the optional hardware
  *  PID-filter.
- * @streaming_crtl: called to start and stop the MPEG2-TS streaming of the
+ * @streaming_ctrl: called to start and stop the MPEG2-TS streaming of the
  *  device (not URB submitting/killing).
  * @pid_filter_ctrl: called to en/disable the PID filter, if any.
  * @pid_filter: called to set/unset a PID for filtering.
@@ -297,12 +297,6 @@ struct dvb_usb_adapter {
 	int feedcount;
 	int pid_filtering;
 
-	/* tuner programming information */
-	u8 pll_addr;
-	u8 pll_init[4];
-	struct dvb_pll_desc *pll_desc;
-	int (*tuner_pass_ctrl) (struct dvb_frontend *, int, u8);
-
 	/* dvb */
 	struct dvb_adapter   dvb_adap;
 	struct dmxdev        dmxdev;
@@ -387,11 +381,6 @@ extern int dvb_usb_generic_write(struct dvb_usb_device *, u8 *, u16);
 
 /* commonly used remote control parsing */
 extern int dvb_usb_nec_rc_key_to_event(struct dvb_usb_device *, u8[], u32 *, int *);
-
-/* commonly used pll init and set functions */
-extern int dvb_usb_tuner_init_i2c(struct dvb_frontend *);
-extern int dvb_usb_tuner_calc_regs(struct dvb_frontend *, struct dvb_frontend_parameters *, u8 *buf, int buf_len);
-extern int dvb_usb_tuner_set_params_i2c(struct dvb_frontend *, struct dvb_frontend_parameters *);
 
 /* commonly used firmware download types and function */
 struct hexline {

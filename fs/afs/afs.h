@@ -16,6 +16,9 @@
 
 #define AFS_MAXCELLNAME	64		/* maximum length of a cell name */
 #define AFS_MAXVOLNAME	64		/* maximum length of a volume name */
+#define AFSNAMEMAX	256		/* maximum length of a filename plus NUL */
+#define AFSPATHMAX	1024		/* maximum length of a pathname plus NUL */
+#define AFSOPAQUEMAX	1024		/* maximum length of an opaque field */
 
 typedef unsigned			afs_volid_t;
 typedef unsigned			afs_vnodeid_t;
@@ -33,6 +36,13 @@ typedef enum {
 	AFS_FTYPE_DIR		= 2,
 	AFS_FTYPE_SYMLINK	= 3,
 } afs_file_type_t;
+
+typedef enum {
+	AFS_LOCK_READ		= 0,	/* read lock request */
+	AFS_LOCK_WRITE		= 1,	/* write lock request */
+} afs_lock_type_t;
+
+#define AFS_LOCKWAIT		(5 * 60) /* time until a lock times out (seconds) */
 
 /*
  * AFS file identifier
@@ -117,6 +127,7 @@ struct afs_file_status {
 	struct afs_fid		parent;		/* parent dir ID for non-dirs only */
 	time_t			mtime_client;	/* last time client changed data */
 	time_t			mtime_server;	/* last time server changed data */
+	s32			lock_count;	/* file lock count (0=UNLK -1=WRLCK +ve=#RDLCK */
 };
 
 /*
@@ -142,5 +153,25 @@ struct afs_store_status {
 struct afs_volsync {
 	time_t			creation;	/* volume creation time */
 };
+
+/*
+ * AFS volume status record
+ */
+struct afs_volume_status {
+	u32			vid;		/* volume ID */
+	u32			parent_id;	/* parent volume ID */
+	u8			online;		/* true if volume currently online and available */
+	u8			in_service;	/* true if volume currently in service */
+	u8			blessed;	/* same as in_service */
+	u8			needs_salvage;	/* true if consistency checking required */
+	u32			type;		/* volume type (afs_voltype_t) */
+	u32			min_quota;	/* minimum space set aside (blocks) */
+	u32			max_quota;	/* maximum space this volume may occupy (blocks) */
+	u32			blocks_in_use;	/* space this volume currently occupies (blocks) */
+	u32			part_blocks_avail; /* space available in volume's partition */
+	u32			part_max_blocks; /* size of volume's partition */
+};
+
+#define AFS_BLOCK_SIZE	1024
 
 #endif /* AFS_H */

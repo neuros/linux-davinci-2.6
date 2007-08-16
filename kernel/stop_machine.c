@@ -8,6 +8,8 @@
 #include <linux/sched.h>
 #include <linux/stop_machine.h>
 #include <linux/syscalls.h>
+#include <linux/interrupt.h>
+
 #include <asm/atomic.h>
 #include <asm/semaphore.h>
 #include <asm/uaccess.h>
@@ -45,6 +47,7 @@ static int stopmachine(void *cpu)
 		if (stopmachine_state == STOPMACHINE_DISABLE_IRQ 
 		    && !irqs_disabled) {
 			local_irq_disable();
+			hard_irq_disable();
 			irqs_disabled = 1;
 			/* Ack: irqs disabled. */
 			smp_mb(); /* Must read state first. */
@@ -90,10 +93,6 @@ static void stopmachine_set_state(enum stopmachine_state state)
 static int stop_machine(void)
 {
 	int i, ret = 0;
-	struct sched_param param = { .sched_priority = MAX_RT_PRIO-1 };
-
-	/* One high-prio thread per cpu.  We'll do this one. */
-	sched_setscheduler(current, SCHED_FIFO, &param);
 
 	atomic_set(&stopmachine_thread_ack, 0);
 	stopmachine_num_threads = 0;
@@ -124,6 +123,7 @@ static int stop_machine(void)
 
 	/* Make them disable irqs. */
 	local_irq_disable();
+	hard_irq_disable();
 	stopmachine_set_state(STOPMACHINE_DISABLE_IRQ);
 
 	return 0;
@@ -185,6 +185,10 @@ struct task_struct *__stop_machine_run(int (*fn)(void *), void *data,
 
 	p = kthread_create(do_stop, &smdata, "kstopmachine");
 	if (!IS_ERR(p)) {
+		struct sched_param param = { .sched_priority = MAX_RT_PRIO-1 };
+
+		/* One high-prio thread per cpu.  We'll do this one. */
+		sched_setscheduler(p, SCHED_FIFO, &param);
 		kthread_bind(p, cpu);
 		wake_up_process(p);
 		wait_for_completion(&smdata.done);

@@ -2,10 +2,9 @@
 # SATA/PATA driver configuration
 #
 
-menu "Serial ATA (prod) and Parallel ATA (experimental) drivers"
-
-config ATA
-	tristate "ATA device support"
+menuconfig ATA
+	tristate "Serial ATA (prod) and Parallel ATA (experimental) drivers"
+	depends on HAS_IOMEM
 	depends on BLOCK
 	depends on !(M32R || M68K) || BROKEN
 	depends on !SUN4 || BROKEN
@@ -17,11 +16,29 @@ config ATA
 	  that "speaks" the ATA protocol, also called ATA controller),
 	  because you will be asked for it.
 
+	  NOTE: ATA enables basic SCSI support; *however*,
+	  'SCSI disk support', 'SCSI tape support', or
+	  'SCSI CDROM support' may also be needed,
+	  depending on your hardware configuration.
+
 if ATA
 
 config ATA_NONSTANDARD
        bool
        default n
+
+config ATA_ACPI
+	bool
+	depends on ACPI && PCI
+	default y
+	help
+	  This option adds support for ATA-related ACPI objects.
+	  These ACPI objects add the ability to retrieve taskfiles
+	  from the ACPI BIOS and write them to the disk controller.
+	  These objects may be related to performance, security,
+	  power management, or other areas.
+	  You can disable this at kernel boot time by using the
+	  option libata.noacpi=1
 
 config SATA_AHCI
 	tristate "AHCI SATA support"
@@ -120,7 +137,7 @@ config SATA_SIS
 	depends on PCI
 	select PATA_SIS
 	help
-	  This option enables support for SiS Serial ATA on 
+	  This option enables support for SiS Serial ATA on
 	  SiS 964/965/966/180 and Parallel ATA on SiS 180.
 	  The PATA support for SiS 180 requires additionally to
 	  enable the PATA_SIS driver in the config.
@@ -155,19 +172,6 @@ config SATA_INIC162X
 	depends on PCI && EXPERIMENTAL
 	help
 	  This option enables support for Initio 162x Serial ATA.
-
-config SATA_ACPI
-	bool
-	depends on ACPI && PCI
-	default y
-	help
-	  This option adds support for SATA-related ACPI objects.
-	  These ACPI objects add the ability to retrieve taskfiles
-	  from the ACPI BIOS and write them to the disk controller.
-	  These objects may be related to performance, security,
-	  power management, or other areas.
-	  You can disable this at kernel boot time by using the
-	  option libata.noacpi=1
 
 config PATA_ALI
 	tristate "ALi PATA support (Experimental)"
@@ -305,13 +309,21 @@ config PATA_HPT3X2N
 	  If unsure, say N.
 
 config PATA_HPT3X3
-	tristate "HPT 343/363 PATA support (Experimental)"
+	tristate "HPT 343/363 PATA support"
 	depends on PCI
 	help
 	  This option enables support for the HPT 343/363
 	  PATA controllers via the new ATA layer
 
 	  If unsure, say N.
+
+config PATA_HPT3X3_DMA
+	bool "HPT 343/363 DMA support (Experimental)"
+	depends on PATA_HPT3X3
+	help
+	  This option enables DMA support for the HPT343/363
+	  controllers. Enable with care as there are still some
+	  problems with DMA on this chipset.
 
 config PATA_ISAPNP
 	tristate "ISA Plug and Play PATA support (Experimental)"
@@ -584,6 +596,4 @@ config PATA_SCC
 
 	  If unsure, say N.
 
-endif
-endmenu
-
+endif # ATA

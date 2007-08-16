@@ -39,6 +39,8 @@
 #include <asm/cacheflush.h>
 #include <asm/irq_regs.h>
 
+#include "irq.h"
+
 /* If you trust current SCSI layer to handle different SCSI IRQs, enable this. I don't trust it... -jj */
 /* #define DISTRIBUTE_IRQS */
 
@@ -188,7 +190,7 @@ void sun4d_free_irq(unsigned int irq, void *dev_id)
 	kfree(action);
 
 	if (!(*actionp))
-		disable_irq(irq);
+		__disable_irq(irq);
 
 out_unlock:
 	spin_unlock_irqrestore(&irq_action_lock, flags);
@@ -346,7 +348,7 @@ int sun4d_request_irq(unsigned int irq,
 	else
 		*actionp = action;
 		
-	enable_irq(irq);
+	__enable_irq(irq);
 
 	ret = 0;
 out_unlock:
@@ -521,7 +523,7 @@ static void __init sun4d_init_timers(irq_handler_t counter_fn)
 		lvl14_save[2] += smp4d_ticker - real_irq_entry;
 
 		/* For SMP we use the level 14 ticker, however the bootup code
-		 * has copied the firmwares level 14 vector into boot cpu's
+		 * has copied the firmware's level 14 vector into the boot cpu's
 		 * trap table, we must fix this now or we get squashed.
 		 */
 		local_irq_save(flags);

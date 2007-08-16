@@ -1,4 +1,4 @@
-Linux Kernel patch sumbittal checklist
+Linux Kernel patch submission checklist
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Here are some basic things that developers should do if they want to see their
@@ -7,7 +7,6 @@ kernel patch submissions accepted more quickly.
 These are all above and beyond the documentation that is provided in
 Documentation/SubmittingPatches and elsewhere regarding submitting Linux
 kernel patches.
-
 
 
 1: Builds cleanly with applicable or modified CONFIG options =y, =m, and
@@ -73,9 +72,9 @@ kernel patches.
     If the new code is substantial, addition of subsystem-specific fault
     injection might be appropriate.
 
-22: Newly-added code has been compiled with `gcc -W'.  This will generate
-    lots of noise, but is good for finding bugs like "warning: comparison
-    between signed and unsigned".
+22: Newly-added code has been compiled with `gcc -W' (use "make
+    EXTRA_CFLAGS=-W").  This will generate lots of noise, but is good for
+    finding bugs like "warning: comparison between signed and unsigned".
 
 23: Tested after it has been merged into the -mm patchset to make sure
     that it still works with all of the other queued patches and various
@@ -84,3 +83,9 @@ kernel patches.
 24: Avoid whitespace damage such as indenting with spaces or whitespace
     at the end of lines.  You can test this by feeding the patch to
     "git apply --check --whitespace=error-all"
+
+25: Check your patch for general style as detailed in
+    Documentation/CodingStyle.  Check for trivial violations with the
+    patch style checker prior to submission (scripts/checkpatch.pl).
+    You should be able to justify all violations that remain in
+    your patch.

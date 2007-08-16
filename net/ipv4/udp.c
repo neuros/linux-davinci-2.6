@@ -70,6 +70,7 @@
  *	Alexey Kuznetsov:		allow both IPv4 and IPv6 sockets to bind
  *					a single port at the same time.
  *	Derek Atkins <derek@ihtfp.com>: Add Encapulation Support
+ *	James Chapman		:	Add L2TP encapsulation type.
  *
  *
  *		This program is free software; you can redistribute it and/or
@@ -114,33 +115,14 @@ DEFINE_RWLOCK(udp_hash_lock);
 
 static int udp_port_rover;
 
-/*
- * Note about this hash function :
- * Typical use is probably daddr = 0, only dport is going to vary hash
- */
-static inline unsigned int hash_port_and_addr(__u16 port, __be32 addr)
-{
-	addr ^= addr >> 16;
-	addr ^= addr >> 8;
-	return port ^ addr;
-}
-
-static inline int __udp_lib_port_inuse(unsigned int hash, int port,
-	__be32 daddr, struct hlist_head udptable[])
+static inline int __udp_lib_lport_inuse(__u16 num, struct hlist_head udptable[])
 {
 	struct sock *sk;
 	struct hlist_node *node;
-	struct inet_sock *inet;
 
-	sk_for_each(sk, node, &udptable[hash & (UDP_HTABLE_SIZE - 1)]) {
-		if (sk->sk_hash != hash)
-			continue;
-		inet = inet_sk(sk);
-		if (inet->num != port)
-			continue;
-		if (inet->rcv_saddr == daddr)
+	sk_for_each(sk, node, &udptable[num & (UDP_HTABLE_SIZE - 1)])
+		if (sk->sk_hash == num)
 			return 1;
-	}
 	return 0;
 }
 
@@ -161,7 +143,6 @@ int __udp_lib_get_port(struct sock *sk, unsigned short snum,
 	struct hlist_node *node;
 	struct hlist_head *head;
 	struct sock *sk2;
-	unsigned int hash;
 	int    error = 1;
 
 	write_lock_bh(&udp_hash_lock);
@@ -176,9 +157,7 @@ int __udp_lib_get_port(struct sock *sk, unsigned short snum,
 		for (i = 0; i < UDP_HTABLE_SIZE; i++, result++) {
 			int size;
 
-			hash = hash_port_and_addr(result,
-					inet_sk(sk)->rcv_saddr);
-			head = &udptable[hash & (UDP_HTABLE_SIZE - 1)];
+			head = &udptable[result & (UDP_HTABLE_SIZE - 1)];
 			if (hlist_empty(head)) {
 				if (result > sysctl_local_port_range[1])
 					result = sysctl_local_port_range[0] +
@@ -203,17 +182,7 @@ int __udp_lib_get_port(struct sock *sk, unsigned short snum,
 				result = sysctl_local_port_range[0]
 					+ ((result - sysctl_local_port_range[0]) &
 					   (UDP_HTABLE_SIZE - 1));
-			hash = hash_port_and_addr(result, 0);
-			if (__udp_lib_port_inuse(hash, result,
-						 0, udptable))
-				continue;
-			if (!inet_sk(sk)->rcv_saddr)
-				break;
-
-			hash = hash_port_and_addr(result,
-					inet_sk(sk)->rcv_saddr);
-			if (! __udp_lib_port_inuse(hash, result,
-				inet_sk(sk)->rcv_saddr, udptable))
+			if (! __udp_lib_lport_inuse(result, udptable))
 				break;
 		}
 		if (i >= (1 << 16) / UDP_HTABLE_SIZE)
@@ -221,41 +190,21 @@ int __udp_lib_get_port(struct sock *sk, unsigned short snum,
 gotit:
 		*port_rover = snum = result;
 	} else {
-		hash = hash_port_and_addr(snum, 0);
-		head = &udptable[hash & (UDP_HTABLE_SIZE - 1)];
+		head = &udptable[snum & (UDP_HTABLE_SIZE - 1)];
 
 		sk_for_each(sk2, node, head)
-			if (sk2->sk_hash == hash &&
-			    sk2 != sk &&
-			    inet_sk(sk2)->num == snum &&
-			    (!sk2->sk_reuse || !sk->sk_reuse) &&
-			    (!sk2->sk_bound_dev_if || !sk->sk_bound_dev_if ||
-			     sk2->sk_bound_dev_if == sk->sk_bound_dev_if) &&
-			    (*saddr_comp)(sk, sk2))
+			if (sk2->sk_hash == snum                             &&
+			    sk2 != sk                                        &&
+			    (!sk2->sk_reuse        || !sk->sk_reuse)         &&
+			    (!sk2->sk_bound_dev_if || !sk->sk_bound_dev_if
+			     || sk2->sk_bound_dev_if == sk->sk_bound_dev_if) &&
+			    (*saddr_comp)(sk, sk2)                             )
 				goto fail;
-
-		if (inet_sk(sk)->rcv_saddr) {
-			hash = hash_port_and_addr(snum,
-						  inet_sk(sk)->rcv_saddr);
-			head = &udptable[hash & (UDP_HTABLE_SIZE - 1)];
-
-			sk_for_each(sk2, node, head)
-				if (sk2->sk_hash == hash &&
-				    sk2 != sk &&
-				    inet_sk(sk2)->num == snum &&
-				    (!sk2->sk_reuse || !sk->sk_reuse) &&
-				    (!sk2->sk_bound_dev_if ||
-				     !sk->sk_bound_dev_if ||
-				     sk2->sk_bound_dev_if ==
-				     sk->sk_bound_dev_if) &&
-				    (*saddr_comp)(sk, sk2))
-					goto fail;
-		}
 	}
 	inet_sk(sk)->num = snum;
-	sk->sk_hash = hash;
+	sk->sk_hash = snum;
 	if (sk_unhashed(sk)) {
-		head = &udptable[hash & (UDP_HTABLE_SIZE - 1)];
+		head = &udptable[snum & (UDP_HTABLE_SIZE - 1)];
 		sk_add_node(sk, head);
 		sock_prot_inc_use(sk->sk_prot);
 	}
@@ -294,77 +243,63 @@ static struct sock *__udp4_lib_lookup(__be32 saddr, __be16 sport,
 {
 	struct sock *sk, *result = NULL;
 	struct hlist_node *node;
-	unsigned int hash, hashwild;
-	int score, best = -1, hport = ntohs(dport);
-
- 	hash = hash_port_and_addr(hport, daddr);
- 	hashwild = hash_port_and_addr(hport, 0);
+	unsigned short hnum = ntohs(dport);
+	int badness = -1;
 
 	read_lock(&udp_hash_lock);
-
-lookup:
-
-	sk_for_each(sk, node, &udptable[hash & (UDP_HTABLE_SIZE - 1)]) {
+	sk_for_each(sk, node, &udptable[hnum & (UDP_HTABLE_SIZE - 1)]) {
 		struct inet_sock *inet = inet_sk(sk);
 
-		if (sk->sk_hash != hash || ipv6_only_sock(sk) ||
-			inet->num != hport)
-			continue;
-
-		score = (sk->sk_family == PF_INET ? 1 : 0);
-		if (inet->rcv_saddr) {
-			if (inet->rcv_saddr != daddr)
-				continue;
-			score+=2;
-		}
-		if (inet->daddr) {
-			if (inet->daddr != saddr)
-				continue;
-			score+=2;
-		}
-		if (inet->dport) {
-			if (inet->dport != sport)
-				continue;
-			score+=2;
-		}
-		if (sk->sk_bound_dev_if) {
-			if (sk->sk_bound_dev_if != dif)
-				continue;
-			score+=2;
-		}
-		if (score == 9) {
-			result = sk;
-			goto found;
-		} else if (score > best) {
-			result = sk;
-			best = score;
+		if (sk->sk_hash == hnum && !ipv6_only_sock(sk)) {
+			int score = (sk->sk_family == PF_INET ? 1 : 0);
+			if (inet->rcv_saddr) {
+				if (inet->rcv_saddr != daddr)
+					continue;
+				score+=2;
+			}
+			if (inet->daddr) {
+				if (inet->daddr != saddr)
+					continue;
+				score+=2;
+			}
+			if (inet->dport) {
+				if (inet->dport != sport)
+					continue;
+				score+=2;
+			}
+			if (sk->sk_bound_dev_if) {
+				if (sk->sk_bound_dev_if != dif)
+					continue;
+				score+=2;
+			}
+			if (score == 9) {
+				result = sk;
+				break;
+			} else if (score > badness) {
+				result = sk;
+				badness = score;
+			}
 		}
 	}
-
-	if (hash != hashwild) {
-		hash = hashwild;
-		goto lookup;
-	}
-found:
 	if (result)
 		sock_hold(result);
 	read_unlock(&udp_hash_lock);
 	return result;
 }
 
-static inline struct sock *udp_v4_mcast_next(struct sock *sk, unsigned int hnum,
-					     int hport, __be32 loc_addr,
+static inline struct sock *udp_v4_mcast_next(struct sock *sk,
+					     __be16 loc_port, __be32 loc_addr,
 					     __be16 rmt_port, __be32 rmt_addr,
 					     int dif)
 {
 	struct hlist_node *node;
 	struct sock *s = sk;
+	unsigned short hnum = ntohs(loc_port);
 
 	sk_for_each_from(s, node) {
 		struct inet_sock *inet = inet_sk(s);
 
 		if (s->sk_hash != hnum					||
-		    inet->num != hport					||
 		    (inet->daddr && inet->daddr != rmt_addr)		||
 		    (inet->dport != rmt_port && inet->dport)		||
 		    (inet->rcv_saddr && inet->rcv_saddr != loc_addr)	||
@@ -699,8 +634,11 @@ int udp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 						 .dport = dport } } };
 		security_sk_classify_flow(sk, &fl);
 		err = ip_route_output_flow(&rt, &fl, sk, 1);
-		if (err)
+		if (err) {
+			if (err == -ENETUNREACH)
+				IP_INC_STATS_BH(IPSTATS_MIB_OUTNOROUTES);
 			goto out;
+		}
 
 		err = -EACCES;
 		if ((rt->rt_flags & RTCF_BROADCAST) &&
@@ -982,104 +920,6 @@ int udp_disconnect(struct sock *sk, int flags)
 	return 0;
 }
 
-/* return:
- * 	1  if the UDP system should process it
- *	0  if we should drop this packet
- * 	-1 if it should get processed by xfrm4_rcv_encap
- */
-static int udp_encap_rcv(struct sock * sk, struct sk_buff *skb)
-{
-#ifndef CONFIG_XFRM
-	return 1;
-#else
-	struct udp_sock *up = udp_sk(sk);
-	struct udphdr *uh;
-	struct iphdr *iph;
-	int iphlen, len;
-
-	__u8 *udpdata;
-	__be32 *udpdata32;
-	__u16 encap_type = up->encap_type;
-
-	/* if we're overly short, let UDP handle it */
-	len = skb->len - sizeof(struct udphdr);
-	if (len <= 0)
-		return 1;
-
-	/* if this is not encapsulated socket, then just return now */
-	if (!encap_type)
-		return 1;
-
-	/* If this is a paged skb, make sure we pull up
-	 * whatever data we need to look at. */
-	if (!pskb_may_pull(skb, sizeof(struct udphdr) + min(len, 8)))
-		return 1;
-
-	/* Now we can get the pointers */
-	uh = udp_hdr(skb);
-	udpdata = (__u8 *)uh + sizeof(struct udphdr);
-	udpdata32 = (__be32 *)udpdata;
-
-	switch (encap_type) {
-	default:
-	case UDP_ENCAP_ESPINUDP:
-		/* Check if this is a keepalive packet.  If so, eat it. */
-		if (len == 1 && udpdata[0] == 0xff) {
-			return 0;
-		} else if (len > sizeof(struct ip_esp_hdr) && udpdata32[0] != 0) {
-			/* ESP Packet without Non-ESP header */
-			len = sizeof(struct udphdr);
-		} else
-			/* Must be an IKE packet.. pass it through */
-			return 1;
-		break;
-	case UDP_ENCAP_ESPINUDP_NON_IKE:
-		/* Check if this is a keepalive packet.  If so, eat it. */
-		if (len == 1 && udpdata[0] == 0xff) {
-			return 0;
-		} else if (len > 2 * sizeof(u32) + sizeof(struct ip_esp_hdr) &&
-			   udpdata32[0] == 0 && udpdata32[1] == 0) {
-
-			/* ESP Packet with Non-IKE marker */
-			len = sizeof(struct udphdr) + 2 * sizeof(u32);
-		} else
-			/* Must be an IKE packet.. pass it through */
-			return 1;
-		break;
-	}
-
-	/* At this point we are sure that this is an ESPinUDP packet,
-	 * so we need to remove 'len' bytes from the packet (the UDP
-	 * header and optional ESP marker bytes) and then modify the
-	 * protocol to ESP, and then call into the transform receiver.
-	 */
-	if (skb_cloned(skb) && pskb_expand_head(skb, 0, 0, GFP_ATOMIC))
-		return 0;
-
-	/* Now we can update and verify the packet length... */
-	iph = ip_hdr(skb);
-	iphlen = iph->ihl << 2;
-	iph->tot_len = htons(ntohs(iph->tot_len) - len);
-	if (skb->len < iphlen + len) {
-		/* packet is too small!?! */
-		return 0;
-	}
-
-	/* pull the data buffer up to the ESP header and set the
-	 * transport header to point to ESP.  Keep UDP on the stack
-	 * for later.
-	 */
-	__skb_pull(skb, len);
-	skb_reset_transport_header(skb);
-
-	/* modify the protocol (it's ESP!) */
-	iph->protocol = IPPROTO_ESP;
-
-	/* and let the caller know to send this into the ESP processor... */
-	return -1;
-#endif
-}
-
 /* returns:
  *  -1: error
  *   0: success
@@ -1102,28 +942,28 @@ int udp_queue_rcv_skb(struct sock * sk, struct sk_buff *skb)
 
 	if (up->encap_type) {
 		/*
-		 * This is an encapsulation socket, so let's see if this is
-		 * an encapsulated packet.
-		 * If it's a keepalive packet, then just eat it.
-		 * If it's an encapsulateed packet, then pass it to the
-		 * IPsec xfrm input and return the response
-		 * appropriately.  Otherwise, just fall through and
-		 * pass this up the UDP socket.
+		 * This is an encapsulation socket so pass the skb to
+		 * the socket's udp_encap_rcv() hook. Otherwise, just
+		 * fall through and pass this up the UDP socket.
+		 * up->encap_rcv() returns the following value:
+		 * =0 if skb was successfully passed to the encap
+		 *    handler or was discarded by it.
+		 * >0 if skb should be passed on to UDP.
+		 * <0 if skb should be resubmitted as proto -N
 		 */
-		int ret;
 
-		ret = udp_encap_rcv(sk, skb);
-		if (ret == 0) {
-			/* Eat the packet .. */
-			kfree_skb(skb);
-			return 0;
+		/* if we're overly short, let UDP handle it */
+		if (skb->len > sizeof(struct udphdr) &&
+		    up->encap_rcv != NULL) {
+			int ret;
+
+			ret = (*up->encap_rcv)(sk, skb);
+			if (ret <= 0) {
+				UDP_INC_STATS_BH(UDP_MIB_INDATAGRAMS, up->pcflag);
+				return -ret;
+			}
 		}
-		if (ret < 0) {
-			/* process the ESP packet */
-			ret = xfrm4_rcv_encap(skb, up->encap_type);
-			UDP_INC_STATS_BH(UDP_MIB_INDATAGRAMS, up->pcflag);
-			return -ret;
-		}
+
 		/* FALLTHROUGH -- it's a UDP Packet */
 	}
 
@@ -1195,45 +1035,29 @@ static int __udp4_lib_mcast_deliver(struct sk_buff *skb,
 				    __be32 saddr, __be32 daddr,
 				    struct hlist_head udptable[])
 {
-	struct sock *sk, *skw, *sknext;
+	struct sock *sk;
 	int dif;
-	int hport = ntohs(uh->dest);
-	unsigned int hash = hash_port_and_addr(hport, daddr);
-	unsigned int hashwild = hash_port_and_addr(hport, 0);
-
-	dif = skb->dev->ifindex;
 
 	read_lock(&udp_hash_lock);
-
-	sk = sk_head(&udptable[hash & (UDP_HTABLE_SIZE - 1)]);
-	skw = sk_head(&udptable[hashwild & (UDP_HTABLE_SIZE - 1)]);
-
-	sk = udp_v4_mcast_next(sk, hash, hport, daddr, uh->source, saddr, dif);
-	if (!sk) {
-		hash = hashwild;
-		sk = udp_v4_mcast_next(skw, hash, hport, daddr, uh->source,
-			saddr, dif);
-	}
+	sk = sk_head(&udptable[ntohs(uh->dest) & (UDP_HTABLE_SIZE - 1)]);
+	dif = skb->dev->ifindex;
+	sk = udp_v4_mcast_next(sk, uh->dest, daddr, uh->source, saddr, dif);
 	if (sk) {
+		struct sock *sknext = NULL;
+
 		do {
 			struct sk_buff *skb1 = skb;
-			sknext = udp_v4_mcast_next(sk_next(sk), hash, hport,
-						daddr, uh->source, saddr, dif);
-			if (!sknext && hash != hashwild) {
-				hash = hashwild;
-				sknext = udp_v4_mcast_next(skw, hash, hport,
-					daddr, uh->source, saddr, dif);
-			}
+
+			sknext = udp_v4_mcast_next(sk_next(sk), uh->dest, daddr,
+						   uh->source, saddr, dif);
 			if (sknext)
 				skb1 = skb_clone(skb, GFP_ATOMIC);
 
 			if (skb1) {
 				int ret = udp_queue_rcv_skb(sk, skb1);
 				if (ret > 0)
-					/*
-					 * we should probably re-process
-					 * instead of dropping packets here.
-					 */
+					/* we should probably re-process instead
+					 * of dropping packets here. */
 					kfree_skb(skb1);
 			}
 			sk = sknext;
@@ -1320,7 +1144,7 @@ int __udp4_lib_rcv(struct sk_buff *skb, struct hlist_head udptable[],
 		return __udp4_lib_mcast_deliver(skb, uh, saddr, daddr, udptable);
 
 	sk = __udp4_lib_lookup(saddr, uh->source, daddr, uh->dest,
-			       skb->dev->ifindex, udptable);
+			       skb->dev->ifindex, udptable        );
 
 	if (sk != NULL) {
 		int ret = udp_queue_rcv_skb(sk, skb);
@@ -1428,6 +1252,9 @@ int udp_lib_setsockopt(struct sock *sk, int level, int optname,
 		case 0:
 		case UDP_ENCAP_ESPINUDP:
 		case UDP_ENCAP_ESPINUDP_NON_IKE:
+			up->encap_rcv = xfrm4_udp_encap_rcv;
+			/* FALLTHROUGH */
+		case UDP_ENCAP_L2TPINUDP:
 			up->encap_type = val;
 			break;
 		default:

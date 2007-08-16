@@ -1,6 +1,4 @@
 /*
- * File: drivers/video/omap/lcd-inn1610.c
- *
  * LCD panel support for the TI OMAP1610 Innovator board
  *
  * Copyright (C) 2004 Nokia Corporation
@@ -115,7 +113,8 @@ static int innovator1610_panel_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static int innovator1610_panel_suspend(struct platform_device *pdev, pm_message_t mesg)
+static int innovator1610_panel_suspend(struct platform_device *pdev,
+				       pm_message_t mesg)
 {
 	return 0;
 }

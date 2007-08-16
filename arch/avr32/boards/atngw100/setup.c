@@ -13,6 +13,7 @@
 #include <linux/linkage.h>
 #include <linux/platform_device.h>
 #include <linux/types.h>
+#include <linux/leds.h>
 #include <linux/spi/spi.h>
 
 #include <asm/io.h>
@@ -21,6 +22,7 @@
 #include <asm/arch/at32ap7000.h>
 #include <asm/arch/board.h>
 #include <asm/arch/init.h>
+#include <asm/arch/portmux.h>
 
 /* Initialized by bootloader-specific startup code. */
 struct tag *bootloader_tags __initdata;
@@ -94,17 +96,37 @@ static void __init set_hw_addr(struct platform_device *pdev)
 	clk_put(pclk);
 }
 
-struct platform_device *at32_usart_map[1];
-unsigned int at32_nr_usarts = 1;
-
 void __init setup_board(void)
 {
 	at32_map_usart(1, 0);	/* USART 1: /dev/ttyS0, DB9 */
 	at32_setup_serial_console(0);
 }
 
+static const struct gpio_led ngw_leds[] = {
+	{ .name = "sys", .gpio = GPIO_PIN_PA(16), .active_low = 1,
+		.default_trigger = "heartbeat",
+	},
+	{ .name = "a", .gpio = GPIO_PIN_PA(19), .active_low = 1, },
+	{ .name = "b", .gpio = GPIO_PIN_PE(19), .active_low = 1, },
+};
+
+static const struct gpio_led_platform_data ngw_led_data = {
+	.num_leds =	ARRAY_SIZE(ngw_leds),
+	.leds =		(void *) ngw_leds,
+};
+
+static struct platform_device ngw_gpio_leds = {
+	.name =		"leds-gpio",
+	.id =		-1,
+	.dev = {
+		.platform_data = (void *) &ngw_led_data,
+	}
+};
+
 static int __init atngw100_init(void)
 {
+	unsigned	i;
+
 	/*
 	 * ATNGW100 uses 16-bit SDRAM interface, so we don't need to
 	 * reserve any pins for it.
@@ -118,6 +140,12 @@ static int __init atngw100_init(void)
 	set_hw_addr(at32_add_device_eth(1, &eth_data[1]));
 
 	at32_add_device_spi(0, spi0_board_info, ARRAY_SIZE(spi0_board_info));
+
+	for (i = 0; i < ARRAY_SIZE(ngw_leds); i++) {
+		at32_select_gpio(ngw_leds[i].gpio,
+				AT32_GPIOF_OUTPUT | AT32_GPIOF_HIGH);
+	}
+	platform_device_register(&ngw_gpio_leds);
 
 	return 0;
 }

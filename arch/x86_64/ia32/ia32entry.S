@@ -104,7 +104,7 @@ ENTRY(ia32_sysenter_target)
 	pushq	%rax
 	CFI_ADJUST_CFA_OFFSET 8
 	cld
-	SAVE_ARGS 0,0,0
+	SAVE_ARGS 0,0,1
  	/* no need to do an access_ok check here because rbp has been
  	   32bit zero extended */ 
 1:	movl	(%rbp),%r9d
@@ -294,7 +294,7 @@ ia32_badarg:
  */ 				
 
 ENTRY(ia32_syscall)
-	CFI_STARTPROC	simple
+	CFI_STARTPROC32	simple
 	CFI_SIGNAL_FRAME
 	CFI_DEF_CFA	rsp,SS+8-RIP
 	/*CFI_REL_OFFSET	ss,SS-RIP*/
@@ -330,6 +330,7 @@ ia32_sysret:
 
 ia32_tracesys:			 
 	SAVE_REST
+	CLEAR_RREGS
 	movq $-ENOSYS,RAX(%rsp)	/* really needed? */
 	movq %rsp,%rdi        /* &pt_regs -> arg1 */
 	call syscall_trace_enter
@@ -526,7 +527,7 @@ ia32_sys_call_table:
 	.quad sys_init_module
 	.quad sys_delete_module
 	.quad quiet_ni_syscall		/* 130  get_kernel_syms */
-	.quad sys_quotactl
+	.quad sys32_quotactl
 	.quad sys_getpgid
 	.quad sys_fchdir
 	.quad quiet_ni_syscall	/* bdflush */
@@ -620,7 +621,7 @@ ia32_sys_call_table:
 	.quad quiet_ni_syscall		/* tux */
 	.quad quiet_ni_syscall    	/* security */
 	.quad sys_gettid	
-	.quad sys_readahead	/* 225 */
+	.quad sys32_readahead	/* 225 */
 	.quad sys_setxattr
 	.quad sys_lsetxattr
 	.quad sys_fsetxattr
@@ -645,7 +646,7 @@ ia32_sys_call_table:
 	.quad compat_sys_io_getevents
 	.quad compat_sys_io_submit
 	.quad sys_io_cancel
-	.quad sys_fadvise64		/* 250 */
+	.quad sys32_fadvise64		/* 250 */
 	.quad quiet_ni_syscall 	/* free_huge_pages */
 	.quad sys_exit_group
 	.quad sys32_lookup_dcookie
@@ -709,11 +710,15 @@ ia32_sys_call_table:
 	.quad compat_sys_set_robust_list
 	.quad compat_sys_get_robust_list
 	.quad sys_splice
-	.quad sys_sync_file_range
+	.quad sys32_sync_file_range
 	.quad sys_tee			/* 315 */
 	.quad compat_sys_vmsplice
 	.quad compat_sys_move_pages
 	.quad sys_getcpu
 	.quad sys_epoll_pwait
 	.quad compat_sys_utimensat	/* 320 */
-ia32_syscall_end:		
+	.quad compat_sys_signalfd
+	.quad compat_sys_timerfd
+	.quad sys_eventfd
+	.quad sys32_fallocate
+ia32_syscall_end:

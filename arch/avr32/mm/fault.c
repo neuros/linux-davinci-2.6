@@ -12,41 +12,30 @@
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/pagemap.h>
-
 #include <linux/kdebug.h>
+#include <linux/kprobes.h>
+
 #include <asm/mmu_context.h>
 #include <asm/sysreg.h>
 #include <asm/tlb.h>
 #include <asm/uaccess.h>
 
 #ifdef CONFIG_KPROBES
-ATOMIC_NOTIFIER_HEAD(notify_page_fault_chain);
-
-/* Hook to register for page fault notifications */
-int register_page_fault_notifier(struct notifier_block *nb)
+static inline int notify_page_fault(struct pt_regs *regs, int trap)
 {
-	return atomic_notifier_chain_register(&notify_page_fault_chain, nb);
-}
+	int ret = 0;
 
-int unregister_page_fault_notifier(struct notifier_block *nb)
-{
-	return atomic_notifier_chain_unregister(&notify_page_fault_chain, nb);
-}
+	if (!user_mode(regs)) {
+		if (kprobe_running() && kprobe_fault_handler(regs, trap))
+			ret = 1;
+	}
 
-static inline int notify_page_fault(enum die_val val, struct pt_regs *regs,
-				    int trap, int sig)
-{
-	struct die_args args = {
-		.regs = regs,
-		.trapnr = trap,
-	};
-	return atomic_notifier_call_chain(&notify_page_fault_chain, val, &args);
+	return ret;
 }
 #else
-static inline int notify_page_fault(enum die_val val, struct pt_regs *regs,
-				    int trap, int sig)
+static inline int notify_page_fault(struct pt_regs *regs, int trap)
 {
-	return NOTIFY_DONE;
+	return 0;
 }
 #endif
 
@@ -75,9 +64,9 @@ asmlinkage void do_page_fault(unsigned long ecr, struct pt_regs *regs)
 	int writeaccess;
 	long signr;
 	int code;
+	int fault;
 
-	if (notify_page_fault(DIE_PAGE_FAULT, regs,
-			      ecr, SIGSEGV) == NOTIFY_STOP)
+	if (notify_page_fault(regs, ecr))
 		return;
 
 	address = sysreg_read(TLBEAR);
@@ -144,20 +133,18 @@ good_area:
 	 * fault.
 	 */
 survive:
-	switch (handle_mm_fault(mm, vma, address, writeaccess)) {
-	case VM_FAULT_MINOR:
-		tsk->min_flt++;
-		break;
-	case VM_FAULT_MAJOR:
-		tsk->maj_flt++;
-		break;
-	case VM_FAULT_SIGBUS:
-		goto do_sigbus;
-	case VM_FAULT_OOM:
-		goto out_of_memory;
-	default:
+	fault = handle_mm_fault(mm, vma, address, writeaccess);
+	if (unlikely(fault & VM_FAULT_ERROR)) {
+		if (fault & VM_FAULT_OOM)
+			goto out_of_memory;
+		else if (fault & VM_FAULT_SIGBUS)
+			goto do_sigbus;
 		BUG();
 	}
+	if (fault & VM_FAULT_MAJOR)
+		tsk->maj_flt++;
+	else
+		tsk->min_flt++;
 
 	up_read(&mm->mmap_sem);
 	return;
@@ -170,7 +157,7 @@ bad_area:
 	up_read(&mm->mmap_sem);
 
 	if (user_mode(regs)) {
-		if (exception_trace)
+		if (exception_trace && printk_ratelimit())
 			printk("%s%s[%d]: segfault at %08lx pc %08lx "
 			       "sp %08lx ecr %lu\n",
 			       is_init(tsk) ? KERN_EMERG : KERN_INFO,

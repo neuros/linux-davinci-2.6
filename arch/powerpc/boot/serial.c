@@ -27,7 +27,7 @@ static int serial_open(void)
 	return scdp->open();
 }
 
-static void serial_write(char *buf, int len)
+static void serial_write(const char *buf, int len)
 {
 	struct serial_console_data *scdp = console_ops.data;
 
@@ -125,6 +125,8 @@ int serial_console_init(void)
 
 	if (!strcmp(compat, "ns16550"))
 		rc = ns16550_console_init(devp, &serial_cd);
+	else if (!strcmp(compat, "marvell,mpsc"))
+		rc = mpsc_console_init(devp, &serial_cd);
 
 	/* Add other serial console driver calls here */
 

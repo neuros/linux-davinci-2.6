@@ -8,7 +8,6 @@
  * is licensed "as is" without any warranty of any kind, whether express
  * or implied.
  */
-#include <asm/hardware.h>
 #include <asm/arch/io.h>
 #include <asm/arch/irqs.h>
 
@@ -31,4 +30,3 @@
 
 		.macro	irq_prio_table
 		.endm
-

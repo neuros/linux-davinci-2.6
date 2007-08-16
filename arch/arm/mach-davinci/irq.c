@@ -1,11 +1,7 @@
 /*
- * linux/arch/arm/mach-davinci/irq.c
- *
  * Interrupt handler for DaVinci boards.
  *
  * Copyright (C) 2006 Texas Instruments.
- *
- * ----------------------------------------------------------------------------
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,7 +16,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
- * ----------------------------------------------------------------------------
+ *
  */
 #include <linux/kernel.h>
 #include <linux/init.h>
@@ -30,7 +26,6 @@
 #include <asm/hardware.h>
 #include <asm/io.h>
 #include <asm/mach/irq.h>
-
 
 #define IRQ_BIT(irq)		((irq) & 0x1f)
 
@@ -42,7 +37,7 @@
 #define IRQ_ENT_REG1_OFFSET	0x001C
 #define IRQ_INCTL_REG_OFFSET	0x0020
 #define IRQ_EABASE_REG_OFFSET	0x0024
-#define IRQ_INTPRI0_REG_OFFSET	0x0030	/* intpri0..intpri7 */
+#define IRQ_INTPRI0_REG_OFFSET	0x0030
 #define IRQ_INTPRI7_REG_OFFSET	0x004C
 
 static inline unsigned int davinci_irq_readl(int offset)
@@ -116,7 +111,7 @@ static struct irq_chip davinci_irq_chip_0 = {
 
 /* FIQ are pri 0-1; otherwise 2-7, with 7 lowest priority */
 static const u8 default_priorities[DAVINCI_N_AINTC_IRQ] __initdata = {
-	[IRQ_VDINT0]		= 0,	/* always fiq */
+	[IRQ_VDINT0]		= 2,
 	[IRQ_VDINT1]		= 6,
 	[IRQ_VDINT2]		= 6,
 	[IRQ_HISTINT]		= 6,
@@ -148,10 +143,10 @@ static const u8 default_priorities[DAVINCI_N_AINTC_IRQ] __initdata = {
 	[IRQ_DDRINT]		= 7,
 	[IRQ_AEMIFINT]		= 7,
 	[IRQ_VLQINT]		= 4,
-	[IRQ_TINT0_TINT12]	= 2,	/* free run timer */
-	[IRQ_TINT0_TINT34]	= 2,	/* hi res timer */
+	[IRQ_TINT0_TINT12]	= 2,	/* clockevent */
+	[IRQ_TINT0_TINT34]	= 2,	/* clocksource */
 	[IRQ_TINT1_TINT12]	= 7,	/* DSP timer */
-	[IRQ_TINT1_TINT34]	= 2,	/* system tick */
+	[IRQ_TINT1_TINT34]	= 7,	/* system tick */
 	[IRQ_PWMINT0]		= 7,
 	[IRQ_PWMINT1]		= 7,
 	[IRQ_PWMINT2]		= 7,
@@ -183,9 +178,10 @@ static const u8 default_priorities[DAVINCI_N_AINTC_IRQ] __initdata = {
 };
 
 /* ARM Interrupt Controller Initialization */
-void __init davinci_irq_init(const u8 priority[DAVINCI_N_AINTC_IRQ])
+void __init davinci_irq_init(void)
 {
-	unsigned	i;
+	unsigned i;
+	const u8 *priority = default_priorities;
 
 	/* Clear all interrupt requests */
 	davinci_irq_writel(~0x0, FIQ_REG0_OFFSET);
@@ -197,7 +193,7 @@ void __init davinci_irq_init(const u8 priority[DAVINCI_N_AINTC_IRQ])
 	davinci_irq_writel(0x0, IRQ_ENT_REG0_OFFSET);
 	davinci_irq_writel(0x0, IRQ_ENT_REG1_OFFSET);
 
-	/* Interrupts disabled immediately. IRQ entry reflects all interrupts */
+	/* Interrupts disabled immediately, IRQ entry reflects all */
 	davinci_irq_writel(0x0, IRQ_INCTL_REG_OFFSET);
 
 	/* we don't use the hardware vector table, just its entry addresses */
@@ -208,10 +204,6 @@ void __init davinci_irq_init(const u8 priority[DAVINCI_N_AINTC_IRQ])
 	davinci_irq_writel(~0x0, FIQ_REG1_OFFSET);
 	davinci_irq_writel(~0x0, IRQ_REG0_OFFSET);
 	davinci_irq_writel(~0x0, IRQ_REG1_OFFSET);
-
-	/* initialize irq priorities from hw default all=7 */
-	if (priority == NULL)
-		priority = default_priorities;
 
 	for (i = IRQ_INTPRI0_REG_OFFSET; i <= IRQ_INTPRI7_REG_OFFSET; i += 4) {
 		unsigned	j;

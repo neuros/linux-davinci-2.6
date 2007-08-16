@@ -55,6 +55,7 @@ DEFINE_SPINLOCK(rtc_lock);
 void __iomem *mstk48t02_regs = NULL;
 #ifdef CONFIG_PCI
 unsigned long ds1287_regs = 0UL;
+static void __iomem *bq4802_regs;
 #endif
 
 static void __iomem *mstk48t08_regs;
@@ -402,58 +403,9 @@ static struct sparc64_tick_ops hbtick_operations __read_mostly = {
 
 static unsigned long timer_ticks_per_nsec_quotient __read_mostly;
 
-#define TICK_SIZE (tick_nsec / 1000)
-
-#define USEC_AFTER	500000
-#define USEC_BEFORE	500000
-
-static void sync_cmos_clock(unsigned long dummy);
-
-static DEFINE_TIMER(sync_cmos_timer, sync_cmos_clock, 0, 0);
-
-static void sync_cmos_clock(unsigned long dummy)
+int update_persistent_clock(struct timespec now)
 {
-	struct timeval now, next;
-	int fail = 1;
-
-	/*
-	 * If we have an externally synchronized Linux clock, then update
-	 * CMOS clock accordingly every ~11 minutes. Set_rtc_mmss() has to be
-	 * called as close as possible to 500 ms before the new second starts.
-	 * This code is run on a timer.  If the clock is set, that timer
-	 * may not expire at the correct time.  Thus, we adjust...
-	 */
-	if (!ntp_synced())
-		/*
-		 * Not synced, exit, do not restart a timer (if one is
-		 * running, let it run out).
-		 */
-		return;
-
-	do_gettimeofday(&now);
-	if (now.tv_usec >= USEC_AFTER - ((unsigned) TICK_SIZE) / 2 &&
-	    now.tv_usec <= USEC_BEFORE + ((unsigned) TICK_SIZE) / 2)
-		fail = set_rtc_mmss(now.tv_sec);
-
-	next.tv_usec = USEC_AFTER - now.tv_usec;
-	if (next.tv_usec <= 0)
-		next.tv_usec += USEC_PER_SEC;
-
-	if (!fail)
-		next.tv_sec = 659;
-	else
-		next.tv_sec = 0;
-
-	if (next.tv_usec >= USEC_PER_SEC) {
-		next.tv_sec++;
-		next.tv_usec -= USEC_PER_SEC;
-	}
-	mod_timer(&sync_cmos_timer, jiffies + timeval_to_jiffies(&next));
-}
-
-void notify_arch_cmos_timer(void)
-{
-	mod_timer(&sync_cmos_timer, jiffies + 1);
+	return set_rtc_mmss(now.tv_sec);
 }
 
 /* Kick start a stopped clock (procedure from the Sun NVRAM/hostid FAQ). */
@@ -565,12 +517,14 @@ static void __init set_system_time(void)
 	void __iomem *mregs = mstk48t02_regs;
 #ifdef CONFIG_PCI
 	unsigned long dregs = ds1287_regs;
+	void __iomem *bregs = bq4802_regs;
 #else
 	unsigned long dregs = 0UL;
+	void __iomem *bregs = 0UL;
 #endif
 	u8 tmp;
 
-	if (!mregs && !dregs) {
+	if (!mregs && !dregs && !bregs) {
 		prom_printf("Something wrong, clock regs not mapped yet.\n");
 		prom_halt();
 	}		
@@ -589,6 +543,33 @@ static void __init set_system_time(void)
 		day = MSTK_REG_DOM(mregs);
 		mon = MSTK_REG_MONTH(mregs);
 		year = MSTK_CVT_YEAR( MSTK_REG_YEAR(mregs) );
+	} else if (bregs) {
+		unsigned char val = readb(bregs + 0x0e);
+		unsigned int century;
+
+		/* BQ4802 RTC chip. */
+
+		writeb(val | 0x08, bregs + 0x0e);
+
+		sec  = readb(bregs + 0x00);
+		min  = readb(bregs + 0x02);
+		hour = readb(bregs + 0x04);
+		day  = readb(bregs + 0x06);
+		mon  = readb(bregs + 0x09);
+		year = readb(bregs + 0x0a);
+		century = readb(bregs + 0x0f);
+
+		writeb(val, bregs + 0x0e);
+
+		BCD_TO_BIN(sec);
+		BCD_TO_BIN(min);
+		BCD_TO_BIN(hour);
+		BCD_TO_BIN(day);
+		BCD_TO_BIN(mon);
+		BCD_TO_BIN(year);
+		BCD_TO_BIN(century);
+
+		year += (century * 100);
 	} else {
 		/* Dallas 12887 RTC chip. */
 
@@ -650,22 +631,14 @@ static int starfire_set_time(u32 val)
 
 static u32 hypervisor_get_time(void)
 {
-	register unsigned long func asm("%o5");
-	register unsigned long arg0 asm("%o0");
-	register unsigned long arg1 asm("%o1");
+	unsigned long ret, time;
 	int retries = 10000;
 
 retry:
-	func = HV_FAST_TOD_GET;
-	arg0 = 0;
-	arg1 = 0;
-	__asm__ __volatile__("ta	%6"
-			     : "=&r" (func), "=&r" (arg0), "=&r" (arg1)
-			     : "0" (func), "1" (arg0), "2" (arg1),
-			       "i" (HV_FAST_TRAP));
-	if (arg0 == HV_EOK)
-		return arg1;
-	if (arg0 == HV_EWOULDBLOCK) {
+	ret = sun4v_tod_get(&time);
+	if (ret == HV_EOK)
+		return time;
+	if (ret == HV_EWOULDBLOCK) {
 		if (--retries > 0) {
 			udelay(100);
 			goto retry;
@@ -679,20 +652,14 @@ retry:
 
 static int hypervisor_set_time(u32 secs)
 {
-	register unsigned long func asm("%o5");
-	register unsigned long arg0 asm("%o0");
+	unsigned long ret;
 	int retries = 10000;
 
 retry:
-	func = HV_FAST_TOD_SET;
-	arg0 = secs;
-	__asm__ __volatile__("ta	%4"
-			     : "=&r" (func), "=&r" (arg0)
-			     : "0" (func), "1" (arg0),
-			       "i" (HV_FAST_TRAP));
-	if (arg0 == HV_EOK)
+	ret = sun4v_tod_set(secs);
+	if (ret == HV_EOK)
 		return 0;
-	if (arg0 == HV_EWOULDBLOCK) {
+	if (ret == HV_EWOULDBLOCK) {
 		if (--retries > 0) {
 			udelay(100);
 			goto retry;
@@ -712,7 +679,8 @@ static int __init clock_model_matches(const char *model)
 	    strcmp(model, "m5819") &&
 	    strcmp(model, "m5819p") &&
 	    strcmp(model, "m5823") &&
-	    strcmp(model, "ds1287"))
+	    strcmp(model, "ds1287") &&
+	    strcmp(model, "bq4802"))
 		return 0;
 
 	return 1;
@@ -722,8 +690,12 @@ static int __devinit clock_probe(struct of_device *op, const struct of_device_id
 {
 	struct device_node *dp = op->node;
 	const char *model = of_get_property(dp, "model", NULL);
+	const char *compat = of_get_property(dp, "compatible", NULL);
 	unsigned long size, flags;
 	void __iomem *regs;
+
+	if (!model)
+		model = compat;
 
 	if (!model || !clock_model_matches(model))
 		return -ENODEV;
@@ -746,6 +718,8 @@ static int __devinit clock_probe(struct of_device *op, const struct of_device_id
 	    !strcmp(model, "m5819p") ||
 	    !strcmp(model, "m5823")) {
 		ds1287_regs = (unsigned long) regs;
+	} else if (!strcmp(model, "bq4802")) {
+		bq4802_regs = regs;
 	} else
 #endif
 	if (model[5] == '0' && model[6] == '2') {
@@ -812,7 +786,7 @@ static int __init clock_init(void)
 		return 0;
 	}
 
-	return of_register_driver(&clock_driver, &of_bus_type);
+	return of_register_driver(&clock_driver, &of_platform_bus_type);
 }
 
 /* Must be after subsys_initcall() so that busses are probed.  Must
@@ -825,11 +799,7 @@ fs_initcall(clock_init);
 static unsigned long sparc64_init_timers(void)
 {
 	struct device_node *dp;
-	struct property *prop;
 	unsigned long clock;
-#ifdef CONFIG_SMP
-	extern void smp_tick_init(void);
-#endif
 
 	dp = of_find_node_by_path("/");
 	if (tlb_type == spitfire) {
@@ -842,21 +812,15 @@ static unsigned long sparc64_init_timers(void)
 		if (manuf == 0x17 && impl == 0x13) {
 			/* Hummingbird, aka Ultra-IIe */
 			tick_ops = &hbtick_operations;
-			prop = of_find_property(dp, "stick-frequency", NULL);
+			clock = of_getintprop_default(dp, "stick-frequency", 0);
 		} else {
 			tick_ops = &tick_operations;
-			cpu_find_by_instance(0, &dp, NULL);
-			prop = of_find_property(dp, "clock-frequency", NULL);
+			clock = local_cpu_data().clock_tick;
 		}
 	} else {
 		tick_ops = &stick_operations;
-		prop = of_find_property(dp, "stick-frequency", NULL);
+		clock = of_getintprop_default(dp, "stick-frequency", 0);
 	}
-	clock = *(unsigned int *) prop->value;
-
-#ifdef CONFIG_SMP
-	smp_tick_init();
-#endif
 
 	return clock;
 }
@@ -918,6 +882,7 @@ static void sparc64_timer_setup(enum clock_event_mode mode,
 {
 	switch (mode) {
 	case CLOCK_EVT_MODE_ONESHOT:
+	case CLOCK_EVT_MODE_RESUME:
 		break;
 
 	case CLOCK_EVT_MODE_SHUTDOWN:
@@ -993,7 +958,7 @@ void __devinit setup_sparc64_timer(void)
 	clockevents_register_device(sevt);
 }
 
-#define SPARC64_NSEC_PER_CYC_SHIFT	32UL
+#define SPARC64_NSEC_PER_CYC_SHIFT	10UL
 
 static struct clocksource clocksource_tick = {
 	.rating		= 100,
@@ -1018,9 +983,30 @@ static void __init setup_clockevent_multiplier(unsigned long hz)
 	sparc64_clockevent.mult = mult;
 }
 
+static unsigned long tb_ticks_per_usec __read_mostly;
+
+void __delay(unsigned long loops)
+{
+	unsigned long bclock, now;
+
+	bclock = tick_ops->get_tick();
+	do {
+		now = tick_ops->get_tick();
+	} while ((now-bclock) < loops);
+}
+EXPORT_SYMBOL(__delay);
+
+void udelay(unsigned long usecs)
+{
+	__delay(tb_ticks_per_usec * usecs);
+}
+EXPORT_SYMBOL(udelay);
+
 void __init time_init(void)
 {
 	unsigned long clock = sparc64_init_timers();
+
+	tb_ticks_per_usec = clock / USEC_PER_SEC;
 
 	timer_ticks_per_nsec_quotient =
 		clocksource_hz2mult(clock, SPARC64_NSEC_PER_CYC_SHIFT);
@@ -1070,8 +1056,10 @@ static int set_rtc_mmss(unsigned long nowtime)
 	void __iomem *mregs = mstk48t02_regs;
 #ifdef CONFIG_PCI
 	unsigned long dregs = ds1287_regs;
+	void __iomem *bregs = bq4802_regs;
 #else
 	unsigned long dregs = 0UL;
+	void __iomem *bregs = 0UL;
 #endif
 	unsigned long flags;
 	u8 tmp;
@@ -1080,7 +1068,7 @@ static int set_rtc_mmss(unsigned long nowtime)
 	 * Not having a register set can lead to trouble.
 	 * Also starfire doesn't have a tod clock.
 	 */
-	if (!mregs && !dregs) 
+	if (!mregs && !dregs & !bregs)
 		return -1;
 
 	if (mregs) {
@@ -1129,6 +1117,37 @@ static int set_rtc_mmss(unsigned long nowtime)
 
 			return -1;
 		}
+	} else if (bregs) {
+		int retval = 0;
+		unsigned char val = readb(bregs + 0x0e);
+
+		/* BQ4802 RTC chip. */
+
+		writeb(val | 0x08, bregs + 0x0e);
+
+		chip_minutes = readb(bregs + 0x02);
+		BCD_TO_BIN(chip_minutes);
+		real_seconds = nowtime % 60;
+		real_minutes = nowtime / 60;
+		if (((abs(real_minutes - chip_minutes) + 15)/30) & 1)
+			real_minutes += 30;
+		real_minutes %= 60;
+
+		if (abs(real_minutes - chip_minutes) < 30) {
+			BIN_TO_BCD(real_seconds);
+			BIN_TO_BCD(real_minutes);
+			writeb(real_seconds, bregs + 0x00);
+			writeb(real_minutes, bregs + 0x02);
+		} else {
+			printk(KERN_WARNING
+			       "set_rtc_mmss: can't update from %d to %d\n",
+			       chip_minutes, real_minutes);
+			retval = -1;
+		}
+
+		writeb(val, bregs + 0x0e);
+
+		return retval;
 	} else {
 		int retval = 0;
 		unsigned char save_control, save_freq_select;
@@ -1259,38 +1278,306 @@ static void to_tm(int tim, struct rtc_time *tm)
 /* Both Starfire and SUN4V give us seconds since Jan 1st, 1970,
  * aka Unix time.  So we have to convert to/from rtc_time.
  */
-static inline void mini_get_rtc_time(struct rtc_time *time)
+static void starfire_get_rtc_time(struct rtc_time *time)
 {
-	unsigned long flags;
-	u32 seconds;
-
-	spin_lock_irqsave(&rtc_lock, flags);
-	seconds = 0;
-	if (this_is_starfire)
-		seconds = starfire_get_time();
-	else if (tlb_type == hypervisor)
-		seconds = hypervisor_get_time();
-	spin_unlock_irqrestore(&rtc_lock, flags);
+	u32 seconds = starfire_get_time();
 
 	to_tm(seconds, time);
 	time->tm_year -= 1900;
 	time->tm_mon -= 1;
 }
 
-static inline int mini_set_rtc_time(struct rtc_time *time)
+static int starfire_set_rtc_time(struct rtc_time *time)
 {
 	u32 seconds = mktime(time->tm_year + 1900, time->tm_mon + 1,
 			     time->tm_mday, time->tm_hour,
 			     time->tm_min, time->tm_sec);
+
+	return starfire_set_time(seconds);
+}
+
+static void hypervisor_get_rtc_time(struct rtc_time *time)
+{
+	u32 seconds = hypervisor_get_time();
+
+	to_tm(seconds, time);
+	time->tm_year -= 1900;
+	time->tm_mon -= 1;
+}
+
+static int hypervisor_set_rtc_time(struct rtc_time *time)
+{
+	u32 seconds = mktime(time->tm_year + 1900, time->tm_mon + 1,
+			     time->tm_mday, time->tm_hour,
+			     time->tm_min, time->tm_sec);
+
+	return hypervisor_set_time(seconds);
+}
+
+#ifdef CONFIG_PCI
+static void bq4802_get_rtc_time(struct rtc_time *time)
+{
+	unsigned char val = readb(bq4802_regs + 0x0e);
+	unsigned int century;
+
+	writeb(val | 0x08, bq4802_regs + 0x0e);
+
+	time->tm_sec = readb(bq4802_regs + 0x00);
+	time->tm_min = readb(bq4802_regs + 0x02);
+	time->tm_hour = readb(bq4802_regs + 0x04);
+	time->tm_mday = readb(bq4802_regs + 0x06);
+	time->tm_mon = readb(bq4802_regs + 0x09);
+	time->tm_year = readb(bq4802_regs + 0x0a);
+	time->tm_wday = readb(bq4802_regs + 0x08);
+	century = readb(bq4802_regs + 0x0f);
+
+	writeb(val, bq4802_regs + 0x0e);
+
+	BCD_TO_BIN(time->tm_sec);
+	BCD_TO_BIN(time->tm_min);
+	BCD_TO_BIN(time->tm_hour);
+	BCD_TO_BIN(time->tm_mday);
+	BCD_TO_BIN(time->tm_mon);
+	BCD_TO_BIN(time->tm_year);
+	BCD_TO_BIN(time->tm_wday);
+	BCD_TO_BIN(century);
+
+	time->tm_year += (century * 100);
+	time->tm_year -= 1900;
+
+	time->tm_mon--;
+}
+
+static int bq4802_set_rtc_time(struct rtc_time *time)
+{
+	unsigned char val = readb(bq4802_regs + 0x0e);
+	unsigned char sec, min, hrs, day, mon, yrs, century;
+	unsigned int year;
+
+	year = time->tm_year + 1900;
+	century = year / 100;
+	yrs = year % 100;
+
+	mon = time->tm_mon + 1;   /* tm_mon starts at zero */
+	day = time->tm_mday;
+	hrs = time->tm_hour;
+	min = time->tm_min;
+	sec = time->tm_sec;
+
+	BIN_TO_BCD(sec);
+	BIN_TO_BCD(min);
+	BIN_TO_BCD(hrs);
+	BIN_TO_BCD(day);
+	BIN_TO_BCD(mon);
+	BIN_TO_BCD(yrs);
+	BIN_TO_BCD(century);
+
+	writeb(val | 0x08, bq4802_regs + 0x0e);
+
+	writeb(sec, bq4802_regs + 0x00);
+	writeb(min, bq4802_regs + 0x02);
+	writeb(hrs, bq4802_regs + 0x04);
+	writeb(day, bq4802_regs + 0x06);
+	writeb(mon, bq4802_regs + 0x09);
+	writeb(yrs, bq4802_regs + 0x0a);
+	writeb(century, bq4802_regs + 0x0f);
+
+	writeb(val, bq4802_regs + 0x0e);
+
+	return 0;
+}
+
+static void cmos_get_rtc_time(struct rtc_time *rtc_tm)
+{
+	unsigned char ctrl;
+
+	rtc_tm->tm_sec = CMOS_READ(RTC_SECONDS);
+	rtc_tm->tm_min = CMOS_READ(RTC_MINUTES);
+	rtc_tm->tm_hour = CMOS_READ(RTC_HOURS);
+	rtc_tm->tm_mday = CMOS_READ(RTC_DAY_OF_MONTH);
+	rtc_tm->tm_mon = CMOS_READ(RTC_MONTH);
+	rtc_tm->tm_year = CMOS_READ(RTC_YEAR);
+	rtc_tm->tm_wday = CMOS_READ(RTC_DAY_OF_WEEK);
+
+	ctrl = CMOS_READ(RTC_CONTROL);
+	if (!(ctrl & RTC_DM_BINARY) || RTC_ALWAYS_BCD) {
+		BCD_TO_BIN(rtc_tm->tm_sec);
+		BCD_TO_BIN(rtc_tm->tm_min);
+		BCD_TO_BIN(rtc_tm->tm_hour);
+		BCD_TO_BIN(rtc_tm->tm_mday);
+		BCD_TO_BIN(rtc_tm->tm_mon);
+		BCD_TO_BIN(rtc_tm->tm_year);
+		BCD_TO_BIN(rtc_tm->tm_wday);
+	}
+
+	if (rtc_tm->tm_year <= 69)
+		rtc_tm->tm_year += 100;
+
+	rtc_tm->tm_mon--;
+}
+
+static int cmos_set_rtc_time(struct rtc_time *rtc_tm)
+{
+	unsigned char mon, day, hrs, min, sec;
+	unsigned char save_control, save_freq_select;
+	unsigned int yrs;
+
+	yrs = rtc_tm->tm_year;
+	mon = rtc_tm->tm_mon + 1;
+	day = rtc_tm->tm_mday;
+	hrs = rtc_tm->tm_hour;
+	min = rtc_tm->tm_min;
+	sec = rtc_tm->tm_sec;
+
+	if (yrs >= 100)
+		yrs -= 100;
+
+	if (!(CMOS_READ(RTC_CONTROL) & RTC_DM_BINARY) || RTC_ALWAYS_BCD) {
+		BIN_TO_BCD(sec);
+		BIN_TO_BCD(min);
+		BIN_TO_BCD(hrs);
+		BIN_TO_BCD(day);
+		BIN_TO_BCD(mon);
+		BIN_TO_BCD(yrs);
+	}
+
+	save_control = CMOS_READ(RTC_CONTROL);
+	CMOS_WRITE((save_control|RTC_SET), RTC_CONTROL);
+	save_freq_select = CMOS_READ(RTC_FREQ_SELECT);
+	CMOS_WRITE((save_freq_select|RTC_DIV_RESET2), RTC_FREQ_SELECT);
+
+	CMOS_WRITE(yrs, RTC_YEAR);
+	CMOS_WRITE(mon, RTC_MONTH);
+	CMOS_WRITE(day, RTC_DAY_OF_MONTH);
+	CMOS_WRITE(hrs, RTC_HOURS);
+	CMOS_WRITE(min, RTC_MINUTES);
+	CMOS_WRITE(sec, RTC_SECONDS);
+
+	CMOS_WRITE(save_control, RTC_CONTROL);
+	CMOS_WRITE(save_freq_select, RTC_FREQ_SELECT);
+
+	return 0;
+}
+#endif /* CONFIG_PCI */
+
+static void mostek_get_rtc_time(struct rtc_time *rtc_tm)
+{
+	void __iomem *regs = mstk48t02_regs;
+	u8 tmp;
+
+	spin_lock_irq(&mostek_lock);
+
+	tmp = mostek_read(regs + MOSTEK_CREG);
+	tmp |= MSTK_CREG_READ;
+	mostek_write(regs + MOSTEK_CREG, tmp);
+
+	rtc_tm->tm_sec = MSTK_REG_SEC(regs);
+	rtc_tm->tm_min = MSTK_REG_MIN(regs);
+	rtc_tm->tm_hour = MSTK_REG_HOUR(regs);
+	rtc_tm->tm_mday = MSTK_REG_DOM(regs);
+	rtc_tm->tm_mon = MSTK_REG_MONTH(regs);
+	rtc_tm->tm_year = MSTK_CVT_YEAR( MSTK_REG_YEAR(regs) );
+	rtc_tm->tm_wday = MSTK_REG_DOW(regs);
+
+	tmp = mostek_read(regs + MOSTEK_CREG);
+	tmp &= ~MSTK_CREG_READ;
+	mostek_write(regs + MOSTEK_CREG, tmp);
+
+	spin_unlock_irq(&mostek_lock);
+
+	rtc_tm->tm_mon--;
+	rtc_tm->tm_wday--;
+	rtc_tm->tm_year -= 1900;
+}
+
+static int mostek_set_rtc_time(struct rtc_time *rtc_tm)
+{
+	unsigned char mon, day, hrs, min, sec, wday;
+	void __iomem *regs = mstk48t02_regs;
+	unsigned int yrs;
+	u8 tmp;
+
+	yrs = rtc_tm->tm_year + 1900;
+	mon = rtc_tm->tm_mon + 1;
+	day = rtc_tm->tm_mday;
+	wday = rtc_tm->tm_wday + 1;
+	hrs = rtc_tm->tm_hour;
+	min = rtc_tm->tm_min;
+	sec = rtc_tm->tm_sec;
+
+	spin_lock_irq(&mostek_lock);
+
+	tmp = mostek_read(regs + MOSTEK_CREG);
+	tmp |= MSTK_CREG_WRITE;
+	mostek_write(regs + MOSTEK_CREG, tmp);
+
+	MSTK_SET_REG_SEC(regs, sec);
+	MSTK_SET_REG_MIN(regs, min);
+	MSTK_SET_REG_HOUR(regs, hrs);
+	MSTK_SET_REG_DOW(regs, wday);
+	MSTK_SET_REG_DOM(regs, day);
+	MSTK_SET_REG_MONTH(regs, mon);
+	MSTK_SET_REG_YEAR(regs, yrs - MSTK_YEAR_ZERO);
+
+	tmp = mostek_read(regs + MOSTEK_CREG);
+	tmp &= ~MSTK_CREG_WRITE;
+	mostek_write(regs + MOSTEK_CREG, tmp);
+
+	spin_unlock_irq(&mostek_lock);
+
+	return 0;
+}
+
+struct mini_rtc_ops {
+	void (*get_rtc_time)(struct rtc_time *);
+	int (*set_rtc_time)(struct rtc_time *);
+};
+
+static struct mini_rtc_ops starfire_rtc_ops = {
+	.get_rtc_time = starfire_get_rtc_time,
+	.set_rtc_time = starfire_set_rtc_time,
+};
+
+static struct mini_rtc_ops hypervisor_rtc_ops = {
+	.get_rtc_time = hypervisor_get_rtc_time,
+	.set_rtc_time = hypervisor_set_rtc_time,
+};
+
+#ifdef CONFIG_PCI
+static struct mini_rtc_ops bq4802_rtc_ops = {
+	.get_rtc_time = bq4802_get_rtc_time,
+	.set_rtc_time = bq4802_set_rtc_time,
+};
+
+static struct mini_rtc_ops cmos_rtc_ops = {
+	.get_rtc_time = cmos_get_rtc_time,
+	.set_rtc_time = cmos_set_rtc_time,
+};
+#endif /* CONFIG_PCI */
+
+static struct mini_rtc_ops mostek_rtc_ops = {
+	.get_rtc_time = mostek_get_rtc_time,
+	.set_rtc_time = mostek_set_rtc_time,
+};
+
+static struct mini_rtc_ops *mini_rtc_ops;
+
+static inline void mini_get_rtc_time(struct rtc_time *time)
+{
+	unsigned long flags;
+
+	spin_lock_irqsave(&rtc_lock, flags);
+	mini_rtc_ops->get_rtc_time(time);
+	spin_unlock_irqrestore(&rtc_lock, flags);
+}
+
+static inline int mini_set_rtc_time(struct rtc_time *time)
+{
 	unsigned long flags;
 	int err;
 
 	spin_lock_irqsave(&rtc_lock, flags);
-	err = -ENODEV;
-	if (this_is_starfire)
-		err = starfire_set_time(seconds);
-	else  if (tlb_type == hypervisor)
-		err = hypervisor_set_time(seconds);
+	err = mini_rtc_ops->set_rtc_time(time);
 	spin_unlock_irqrestore(&rtc_lock, flags);
 
 	return err;
@@ -1391,7 +1678,19 @@ static int __init rtc_mini_init(void)
 {
 	int retval;
 
-	if (tlb_type != hypervisor && !this_is_starfire)
+	if (tlb_type == hypervisor)
+		mini_rtc_ops = &hypervisor_rtc_ops;
+	else if (this_is_starfire)
+		mini_rtc_ops = &starfire_rtc_ops;
+#ifdef CONFIG_PCI
+	else if (bq4802_regs)
+		mini_rtc_ops = &bq4802_rtc_ops;
+	else if (ds1287_regs)
+		mini_rtc_ops = &cmos_rtc_ops;
+#endif /* CONFIG_PCI */
+	else if (mstk48t02_regs)
+		mini_rtc_ops = &mostek_rtc_ops;
+	else
 		return -ENODEV;
 
 	printk(KERN_INFO "Mini RTC Driver\n");

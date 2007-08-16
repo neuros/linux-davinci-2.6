@@ -304,12 +304,51 @@ int __init audit_register_class(int class, unsigned *list)
 
 int audit_match_class(int class, unsigned syscall)
 {
-	if (unlikely(syscall >= AUDIT_BITMASK_SIZE * sizeof(__u32)))
+	if (unlikely(syscall >= AUDIT_BITMASK_SIZE * 32))
 		return 0;
 	if (unlikely(class >= AUDIT_SYSCALL_CLASSES || !classes[class]))
 		return 0;
 	return classes[class][AUDIT_WORD(syscall)] & AUDIT_BIT(syscall);
 }
+
+#ifdef CONFIG_AUDITSYSCALL
+static inline int audit_match_class_bits(int class, u32 *mask)
+{
+	int i;
+
+	if (classes[class]) {
+		for (i = 0; i < AUDIT_BITMASK_SIZE; i++)
+			if (mask[i] & classes[class][i])
+				return 0;
+	}
+	return 1;
+}
+
+static int audit_match_signal(struct audit_entry *entry)
+{
+	struct audit_field *arch = entry->rule.arch_f;
+
+	if (!arch) {
+		/* When arch is unspecified, we must check both masks on biarch
+		 * as syscall number alone is ambiguous. */
+		return (audit_match_class_bits(AUDIT_CLASS_SIGNAL,
+					       entry->rule.mask) &&
+			audit_match_class_bits(AUDIT_CLASS_SIGNAL_32,
+					       entry->rule.mask));
+	}
+
+	switch(audit_classify_arch(arch->val)) {
+	case 0: /* native */
+		return (audit_match_class_bits(AUDIT_CLASS_SIGNAL,
+					       entry->rule.mask));
+	case 1: /* 32bit on biarch */
+		return (audit_match_class_bits(AUDIT_CLASS_SIGNAL_32,
+					       entry->rule.mask));
+	default:
+		return 1;
+	}
+}
+#endif
 
 /* Common user-space to kernel rule translation. */
 static inline struct audit_entry *audit_to_entry_common(struct audit_rule *rule)
@@ -417,6 +456,13 @@ static struct audit_entry *audit_rule_to_entry(struct audit_rule *rule)
 		case AUDIT_DEVMINOR:
 		case AUDIT_EXIT:
 		case AUDIT_SUCCESS:
+			/* bit ops are only useful on syscall args */
+			if (f->op == AUDIT_BIT_MASK ||
+						f->op == AUDIT_BIT_TEST) {
+				err = -EINVAL;
+				goto exit_free;
+			}
+			break;
 		case AUDIT_ARG0:
 		case AUDIT_ARG1:
 		case AUDIT_ARG2:
@@ -429,6 +475,7 @@ static struct audit_entry *audit_rule_to_entry(struct audit_rule *rule)
 				err = -EINVAL;
 				goto exit_free;
 			}
+			entry->rule.arch_f = f;
 			break;
 		case AUDIT_PERM:
 			if (f->val & ~15)
@@ -519,7 +566,6 @@ static struct audit_entry *audit_data_to_entry(struct audit_rule_data *data,
 		case AUDIT_FSGID:
 		case AUDIT_LOGINUID:
 		case AUDIT_PERS:
-		case AUDIT_ARCH:
 		case AUDIT_MSGTYPE:
 		case AUDIT_PPID:
 		case AUDIT_DEVMAJOR:
@@ -530,6 +576,9 @@ static struct audit_entry *audit_data_to_entry(struct audit_rule_data *data,
 		case AUDIT_ARG1:
 		case AUDIT_ARG2:
 		case AUDIT_ARG3:
+			break;
+		case AUDIT_ARCH:
+			entry->rule.arch_f = f;
 			break;
 		case AUDIT_SUBJ_USER:
 		case AUDIT_SUBJ_ROLE:
@@ -905,7 +954,7 @@ static void audit_update_watch(struct audit_parent *parent,
 
 		/* If the update involves invalidating rules, do the inode-based
 		 * filtering now, so we don't omit records. */
-		if (invalidating &&
+		if (invalidating && current->audit_context &&
 		    audit_filter_inodes(current, current->audit_context) == AUDIT_RECORD_CONTEXT)
 			audit_set_auditable(current->audit_context);
 
@@ -1168,8 +1217,8 @@ static inline int audit_add_rule(struct audit_entry *entry,
 	struct audit_entry *e;
 	struct audit_field *inode_f = entry->rule.inode_f;
 	struct audit_watch *watch = entry->rule.watch;
-	struct nameidata *ndp, *ndw;
-	int h, err, putnd_needed = 0;
+	struct nameidata *ndp = NULL, *ndw = NULL;
+	int h, err;
 #ifdef CONFIG_AUDITSYSCALL
 	int dont_count = 0;
 
@@ -1197,7 +1246,6 @@ static inline int audit_add_rule(struct audit_entry *entry,
 		err = audit_get_nd(watch->path, &ndp, &ndw);
 		if (err)
 			goto error;
-		putnd_needed = 1;
 	}
 
 	mutex_lock(&audit_filter_mutex);
@@ -1221,17 +1269,17 @@ static inline int audit_add_rule(struct audit_entry *entry,
 #ifdef CONFIG_AUDITSYSCALL
 	if (!dont_count)
 		audit_n_rules++;
+
+	if (!audit_match_signal(entry))
+		audit_signals++;
 #endif
 	mutex_unlock(&audit_filter_mutex);
 
-	if (putnd_needed)
-		audit_put_nd(ndp, ndw);
-
+	audit_put_nd(ndp, ndw);		/* NULL args OK */
  	return 0;
 
 error:
-	if (putnd_needed)
-		audit_put_nd(ndp, ndw);
+	audit_put_nd(ndp, ndw);		/* NULL args OK */
 	if (watch)
 		audit_put_watch(watch); /* tmp watch, matches initial get */
 	return err;
@@ -1294,6 +1342,9 @@ static inline int audit_del_rule(struct audit_entry *entry,
 #ifdef CONFIG_AUDITSYSCALL
 	if (!dont_count)
 		audit_n_rules--;
+
+	if (!audit_match_signal(entry))
+		audit_signals--;
 #endif
 	mutex_unlock(&audit_filter_mutex);
 
@@ -1522,6 +1573,10 @@ int audit_comparator(const u32 left, const u32 op, const u32 right)
 		return (left > right);
 	case AUDIT_GREATER_THAN_OR_EQUAL:
 		return (left >= right);
+	case AUDIT_BIT_MASK:
+		return (left & right);
+	case AUDIT_BIT_TEST:
+		return ((left & right) == right);
 	}
 	BUG();
 	return 0;
