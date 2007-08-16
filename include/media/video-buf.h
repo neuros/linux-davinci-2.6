@@ -193,6 +193,8 @@ struct videobuf_queue_ops {
 			  struct videobuf_buffer *vb);
 	void (*buf_release)(struct videobuf_queue *q,
 			    struct videobuf_buffer *vb);
+	void (*buf_config)(struct videobuf_queue *q,
+			unsigned int count);
 
 	/* Helper operations - device dependent.
 	 * If null, videobuf_init defaults all to PCI handling
@@ -201,6 +203,11 @@ struct videobuf_queue_ops {
 	vb_map_sg_t	*vb_map_sg;
 	vb_map_sg_t	*vb_dma_sync_sg;
 	vb_map_sg_t	*vb_unmap_sg;
+};
+
+enum videobuf_buf_type {
+	VIDEOBUF_BUF_LINEAR = 1,
+	VIDEOBUF_BUF_FRAGMENTED = 2,
 };
 
 struct videobuf_queue {
@@ -219,6 +226,7 @@ struct videobuf_queue {
 	/* capture via mmap() + ioctl(QBUF/DQBUF) */
 	unsigned int               streaming;
 	struct list_head           stream;
+	enum videobuf_buf_type     buf_type;
 
 	/* capture via read() */
 	unsigned int               reading;
@@ -232,7 +240,8 @@ struct videobuf_queue {
 void* videobuf_alloc(unsigned int size);
 int videobuf_waiton(struct videobuf_buffer *vb, int non_blocking, int intr);
 int videobuf_iolock(struct videobuf_queue* q, struct videobuf_buffer *vb,
-		struct v4l2_framebuffer *fbuf);
+		    struct v4l2_framebuffer *fbuf);
+int videobuf_set_buftype(struct videobuf_queue *q, enum videobuf_buf_type type);
 
 /* Maps fops to PCI stuff */
 void videobuf_queue_pci(struct videobuf_queue* q);

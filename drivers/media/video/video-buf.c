@@ -246,7 +246,8 @@ int videobuf_dma_sync(struct videobuf_queue* q,struct videobuf_dmabuf *dma)
 	void                   *dev=q->dev;
 
 	MAGIC_CHECK(dma->magic,MAGIC_DMABUF);
-	BUG_ON(!dma->sglen);
+	if(q->buf_type == VIDEOBUF_BUF_FRAGMENTED)
+		BUG_ON(!dma->sglen);
 
 	if (!dma->bus_addr && q->ops->vb_dma_sync_sg)
 		q->ops->vb_dma_sync_sg(dev,dma->sglist,dma->nr_pages,
@@ -448,6 +449,9 @@ void videobuf_queue_init(struct videobuf_queue* q,
 	q->ops     = ops;
 	q->priv_data = priv;
 
+	/* The default buffer type is fragmented */
+	q->buf_type = VIDEOBUF_BUF_FRAGMENTED;
+
 	videobuf_queue_pci(q);
 
 	mutex_init(&q->lock);
@@ -640,6 +644,10 @@ videobuf_reqbufs(struct videobuf_queue *q,
 	if (retval < 0) {
 		dprintk(1,"reqbufs: mmap setup returned %d\n",retval);
 		goto done;
+	}
+
+	if(q->buf_type == VIDEOBUF_BUF_LINEAR){
+		q->ops->buf_config(q, count);
 	}
 
 	req->count = count;
@@ -1362,9 +1370,23 @@ int videobuf_mmap_mapper(struct videobuf_queue *q,
 	map->start    = vma->vm_start;
 	map->end      = vma->vm_end;
 	map->q        = q;
-	vma->vm_ops   = &videobuf_vm_ops;
-	vma->vm_flags |= VM_DONTEXPAND | VM_RESERVED;
-	vma->vm_flags &= ~VM_IO; /* using shared anonymous pages */
+	if(q->buf_type == VIDEOBUF_BUF_LINEAR){
+#ifdef CONFIG_ARM
+		vma->vm_page_prot = pgprot_writecombine(vma->vm_page_prot);
+#else
+		vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+#endif
+		if (io_remap_pfn_range(vma, vma->vm_start, vma->vm_pgoff,
+				       (vma->vm_end - vma->vm_start),
+				       vma->vm_page_prot)){
+			return -EAGAIN;
+		}
+		vma->vm_flags |= VM_RESERVED | VM_IO;
+	} else {
+		vma->vm_ops   = &videobuf_vm_ops;
+		vma->vm_flags |= VM_DONTEXPAND | VM_RESERVED;
+		vma->vm_flags &= ~VM_IO; /* using shared anonymous pages */
+	}
 	vma->vm_private_data = map;
 	dprintk(1,"mmap %p: q=%p %08lx-%08lx pgoff %08lx bufs %d-%d\n",
 		map,q,vma->vm_start,vma->vm_end,vma->vm_pgoff,first,last);
@@ -1373,6 +1395,12 @@ int videobuf_mmap_mapper(struct videobuf_queue *q,
  done:
 	mutex_unlock(&q->lock);
 	return retval;
+}
+
+int videobuf_set_buftype(struct videobuf_queue *q, enum videobuf_buf_type type)
+{
+	q->buf_type = type;
+	return 0;
 }
 
 /* --------------------------------------------------------------------- */
@@ -1417,6 +1445,8 @@ EXPORT_SYMBOL_GPL(videobuf_poll_stream);
 EXPORT_SYMBOL_GPL(videobuf_mmap_setup);
 EXPORT_SYMBOL_GPL(videobuf_mmap_free);
 EXPORT_SYMBOL_GPL(videobuf_mmap_mapper);
+
+EXPORT_SYMBOL_GPL(videobuf_set_buftype);
 
 /*
  * Local variables:
