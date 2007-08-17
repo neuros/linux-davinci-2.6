@@ -59,13 +59,13 @@ static void omap_set_vbus(struct musb *musb, int is_on)
 	 * that must be ignored.
 	 */
 
-	devctl = musb_readb(musb->mregs, MGC_O_HDRC_DEVCTL);
+	devctl = musb_readb(musb->mregs, MUSB_DEVCTL);
 
 	if (is_on) {
 		musb->is_active = 1;
 		musb->xceiv.default_a = 1;
 		musb->xceiv.state = OTG_STATE_A_WAIT_VRISE;
-		devctl |= MGC_M_DEVCTL_SESSION;
+		devctl |= MUSB_DEVCTL_SESSION;
 
 		MUSB_HST_MODE(musb);
 	} else {
@@ -77,16 +77,16 @@ static void omap_set_vbus(struct musb *musb, int is_on)
 
 		musb->xceiv.default_a = 0;
 		musb->xceiv.state = OTG_STATE_B_IDLE;
-		devctl &= ~MGC_M_DEVCTL_SESSION;
+		devctl &= ~MUSB_DEVCTL_SESSION;
 
 		MUSB_DEV_MODE(musb);
 	}
-	musb_writeb(musb->mregs, MGC_O_HDRC_DEVCTL, devctl);
+	musb_writeb(musb->mregs, MUSB_DEVCTL, devctl);
 
 	DBG(1, "VBUS %s, devctl %02x "
 		/* otg %3x conf %08x prcm %08x */ "\n",
 		otg_state_string(musb),
-		musb_readb(musb->mregs, MGC_O_HDRC_DEVCTL));
+		musb_readb(musb->mregs, MUSB_DEVCTL));
 }
 static int omap_set_power(struct otg_transceiver *x, unsigned mA)
 {

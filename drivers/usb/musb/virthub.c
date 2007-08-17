@@ -1,36 +1,36 @@
-/*****************************************************************
+/*
+ * MUSB OTG driver virtual hub support
+ *
  * Copyright 2005 Mentor Graphics Corporation
  * Copyright (C) 2005-2006 by Texas Instruments
- * Copyright (C) 2006 by Nokia Corporation
+ * Copyright (C) 2006-2007 Nokia Corporation
  *
- * This file is part of the Inventra Controller Driver for Linux.
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * version 2 as published by the Free Software Foundation.
  *
- * The Inventra Controller Driver for Linux is free software; you
- * can redistribute it and/or modify it under the terms of the GNU
- * General Public License version 2 as published by the Free Software
- * Foundation.
- *
- * The Inventra Controller Driver for Linux is distributed in
- * the hope that it will be useful, but WITHOUT ANY WARRANTY;
- * without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
- * License for more details.
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with The Inventra Controller Driver for Linux ; if not,
- * write to the Free Software Foundation, Inc., 59 Temple Place,
- * Suite 330, Boston, MA  02111-1307  USA
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA
  *
- * ANY DOWNLOAD, USE, REPRODUCTION, MODIFICATION OR DISTRIBUTION
- * OF THIS DRIVER INDICATES YOUR COMPLETE AND UNCONDITIONAL ACCEPTANCE
- * OF THOSE TERMS.THIS DRIVER IS PROVIDED "AS IS" AND MENTOR GRAPHICS
- * MAKES NO WARRANTIES, EXPRESS OR IMPLIED, RELATED TO THIS DRIVER.
- * MENTOR GRAPHICS SPECIFICALLY DISCLAIMS ALL IMPLIED WARRANTIES
- * OF MERCHANTABILITY; FITNESS FOR A PARTICULAR PURPOSE AND
- * NON-INFRINGEMENT.  MENTOR GRAPHICS DOES NOT PROVIDE SUPPORT
- * SERVICES OR UPDATES FOR THIS DRIVER, EVEN IF YOU ARE A MENTOR
- * GRAPHICS SUPPORT CUSTOMER.
- ******************************************************************/
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
+ * NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
+ * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
 
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -56,21 +56,21 @@ static void musb_port_suspend(struct musb *musb, u8 bSuspend)
 
 	/* NOTE:  this doesn't necessarily put PHY into low power mode,
 	 * turning off its clock; that's a function of PHY integration and
-	 * MGC_M_POWER_ENSUSPEND.  PHY may need a clock (sigh) to detect
+	 * MUSB_POWER_ENSUSPEND.  PHY may need a clock (sigh) to detect
 	 * SE0 changing to connect (J) or wakeup (K) states.
 	 */
-	power = musb_readb(mbase, MGC_O_HDRC_POWER);
+	power = musb_readb(mbase, MUSB_POWER);
 	if (bSuspend) {
 		int retries = 10000;
 
-		power &= ~MGC_M_POWER_RESUME;
-		power |= MGC_M_POWER_SUSPENDM;
-		musb_writeb(mbase, MGC_O_HDRC_POWER, power);
+		power &= ~MUSB_POWER_RESUME;
+		power |= MUSB_POWER_SUSPENDM;
+		musb_writeb(mbase, MUSB_POWER, power);
 
 		/* Needed for OPT A tests */
-		power = musb_readb(mbase, MGC_O_HDRC_POWER);
-		while (power & MGC_M_POWER_SUSPENDM) {
-			power = musb_readb(mbase, MGC_O_HDRC_POWER);
+		power = musb_readb(mbase, MUSB_POWER);
+		while (power & MUSB_POWER_SUSPENDM) {
+			power = musb_readb(mbase, MUSB_POWER);
 			if (retries-- < 1)
 				break;
 		}
@@ -88,16 +88,16 @@ static void musb_port_suspend(struct musb *musb, u8 bSuspend)
 		case OTG_STATE_B_HOST:
 			musb->xceiv.state = OTG_STATE_B_PERIPHERAL;
 			MUSB_DEV_MODE(musb);
-			/* REVISIT restore setting of MGC_M_DEVCTL_HR */
+			/* REVISIT restore setting of MUSB_DEVCTL_HR */
 			break;
 		default:
 			DBG(1, "bogus rh suspend? %s\n",
 				otg_state_string(musb));
 		}
-	} else if (power & MGC_M_POWER_SUSPENDM) {
-		power &= ~MGC_M_POWER_SUSPENDM;
-		power |= MGC_M_POWER_RESUME;
-		musb_writeb(mbase, MGC_O_HDRC_POWER, power);
+	} else if (power & MUSB_POWER_SUSPENDM) {
+		power &= ~MUSB_POWER_SUSPENDM;
+		power |= MUSB_POWER_RESUME;
+		musb_writeb(mbase, MUSB_POWER, power);
 
 		DBG(3, "Root port resuming, power %02x\n", power);
 
@@ -114,9 +114,9 @@ static void musb_port_reset(struct musb *musb, u8 bReset)
 
 #ifdef CONFIG_USB_MUSB_OTG
 	/* REVISIT this looks wrong for HNP */
-	u8 devctl = musb_readb(mbase, MGC_O_HDRC_DEVCTL);
+	u8 devctl = musb_readb(mbase, MUSB_DEVCTL);
 
-	if (musb->delay_port_power_off || !(devctl & MGC_M_DEVCTL_HM)) {
+	if (musb->delay_port_power_off || !(devctl & MUSB_DEVCTL_HM)) {
 		return;
 	}
 #endif
@@ -127,7 +127,7 @@ static void musb_port_reset(struct musb *musb, u8 bReset)
 	/* NOTE:  caller guarantees it will turn off the reset when
 	 * the appropriate amount of time has passed
 	 */
-	power = musb_readb(mbase, MGC_O_HDRC_POWER);
+	power = musb_readb(mbase, MUSB_POWER);
 	if (bReset) {
 
 		/*
@@ -137,31 +137,31 @@ static void musb_port_reset(struct musb *musb, u8 bReset)
 		 * fail with "Error! Did not receive an SOF before suspend
 		 * detected".
 		 */
-		if (power &  MGC_M_POWER_RESUME) {
+		if (power &  MUSB_POWER_RESUME) {
 			while (time_before(jiffies, musb->rh_timer))
 				msleep(1);
-			musb_writeb(mbase, MGC_O_HDRC_POWER,
-				power & ~MGC_M_POWER_RESUME);
+			musb_writeb(mbase, MUSB_POWER,
+				power & ~MUSB_POWER_RESUME);
 			msleep(1);
 		}
 
 		musb->ignore_disconnect = TRUE;
 		power &= 0xf0;
-		musb_writeb(mbase, MGC_O_HDRC_POWER,
-				power | MGC_M_POWER_RESET);
+		musb_writeb(mbase, MUSB_POWER,
+				power | MUSB_POWER_RESET);
 
 		musb->port1_status |= USB_PORT_STAT_RESET;
 		musb->port1_status &= ~USB_PORT_STAT_ENABLE;
 		musb->rh_timer = jiffies + msecs_to_jiffies(50);
 	} else {
 		DBG(4, "root port reset stopped\n");
-		musb_writeb(mbase, MGC_O_HDRC_POWER,
-				power & ~MGC_M_POWER_RESET);
+		musb_writeb(mbase, MUSB_POWER,
+				power & ~MUSB_POWER_RESET);
 
 		musb->ignore_disconnect = FALSE;
 
-		power = musb_readb(mbase, MGC_O_HDRC_POWER);
-		if (power & MGC_M_POWER_HSMODE) {
+		power = musb_readb(mbase, MUSB_POWER);
+		if (power & MUSB_POWER_HSMODE) {
 			DBG(4, "high-speed device connected\n");
 			musb->port1_status |= USB_PORT_STAT_HIGH_SPEED;
 		}
@@ -308,11 +308,11 @@ int musb_hub_control(
 				&& time_after(jiffies, musb->rh_timer)) {
 			u8		power;
 
-			power = musb_readb(musb->mregs, MGC_O_HDRC_POWER);
-			power &= ~MGC_M_POWER_RESUME;
+			power = musb_readb(musb->mregs, MUSB_POWER);
+			power &= ~MUSB_POWER_RESUME;
 			DBG(4, "root port resume stopped, power %02x\n",
 					power);
-			musb_writeb(musb->mregs, MGC_O_HDRC_POWER, power);
+			musb_writeb(musb->mregs, MUSB_POWER, power);
 
 			/* ISSUE:  DaVinci (RTL 1.300) disconnects after
 			 * resume of high speed peripherals (but not full
@@ -368,36 +368,36 @@ int musb_hub_control(
 			switch (wIndex) {
 			case 1:
 				pr_debug("TEST_J\n");
-				temp = MGC_M_TEST_J;
+				temp = MUSB_TEST_J;
 				break;
 			case 2:
 				pr_debug("TEST_K\n");
-				temp = MGC_M_TEST_K;
+				temp = MUSB_TEST_K;
 				break;
 			case 3:
 				pr_debug("TEST_SE0_NAK\n");
-				temp = MGC_M_TEST_SE0_NAK;
+				temp = MUSB_TEST_SE0_NAK;
 				break;
 			case 4:
 				pr_debug("TEST_PACKET\n");
-				temp = MGC_M_TEST_PACKET;
+				temp = MUSB_TEST_PACKET;
 				musb_load_testpacket(musb);
 				break;
 			case 5:
 				pr_debug("TEST_FORCE_ENABLE\n");
-				temp = MGC_M_TEST_FORCE_HOST
-					| MGC_M_TEST_FORCE_HS;
+				temp = MUSB_TEST_FORCE_HOST
+					| MUSB_TEST_FORCE_HS;
 
-				musb_writeb(musb->mregs, MGC_O_HDRC_DEVCTL, MGC_M_DEVCTL_SESSION);
+				musb_writeb(musb->mregs, MUSB_DEVCTL, MUSB_DEVCTL_SESSION);
 				break;
 			case 6:
 				pr_debug("TEST_FIFO_ACCESS\n");
-				temp = MGC_M_TEST_FIFO_ACCESS;
+				temp = MUSB_TEST_FIFO_ACCESS;
 				break;
 			default:
 				goto error;
 			}
-			musb_writeb(musb->mregs, MGC_O_HDRC_TESTMODE, temp);
+			musb_writeb(musb->mregs, MUSB_TESTMODE, temp);
 			break;
 		default:
 			goto error;

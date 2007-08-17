@@ -1,35 +1,36 @@
-/******************************************************************
+/*
+ * MUSB OTG driver ep0 handling
+ *
  * Copyright 2005 Mentor Graphics Corporation
  * Copyright (C) 2005-2006 by Texas Instruments
+ * Copyright (C) 2006-2007 Nokia Corporation
  *
- * This file is part of the Inventra Controller Driver for Linux.
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * version 2 as published by the Free Software Foundation.
  *
- * The Inventra Controller Driver for Linux is free software; you
- * can redistribute it and/or modify it under the terms of the GNU
- * General Public License version 2 as published by the Free Software
- * Foundation.
- *
- * The Inventra Controller Driver for Linux is distributed in
- * the hope that it will be useful, but WITHOUT ANY WARRANTY;
- * without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
- * License for more details.
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with The Inventra Controller Driver for Linux ; if not,
- * write to the Free Software Foundation, Inc., 59 Temple Place,
- * Suite 330, Boston, MA  02111-1307  USA
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA
  *
- * ANY DOWNLOAD, USE, REPRODUCTION, MODIFICATION OR DISTRIBUTION
- * OF THIS DRIVER INDICATES YOUR COMPLETE AND UNCONDITIONAL ACCEPTANCE
- * OF THOSE TERMS.THIS DRIVER IS PROVIDED "AS IS" AND MENTOR GRAPHICS
- * MAKES NO WARRANTIES, EXPRESS OR IMPLIED, RELATED TO THIS DRIVER.
- * MENTOR GRAPHICS SPECIFICALLY DISCLAIMS ALL IMPLIED WARRANTIES
- * OF MERCHANTABILITY; FITNESS FOR A PARTICULAR PURPOSE AND
- * NON-INFRINGEMENT.  MENTOR GRAPHICS DOES NOT PROVIDE SUPPORT
- * SERVICES OR UPDATES FOR THIS DRIVER, EVEN IF YOU ARE A MENTOR
- * GRAPHICS SUPPORT CUSTOMER.
- ******************************************************************/
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
+ * NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
+ * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
 
 #include <linux/kernel.h>
 #include <linux/list.h>
@@ -129,11 +130,11 @@ static int service_tx_status_request(
 
 		musb_ep_select(mbase, epnum);
 		if (is_in)
-			tmp = musb_readw(regs, MGC_O_HDRC_TXCSR)
-						& MGC_M_TXCSR_P_SENDSTALL;
+			tmp = musb_readw(regs, MUSB_TXCSR)
+						& MUSB_TXCSR_P_SENDSTALL;
 		else
-			tmp = musb_readw(regs, MGC_O_HDRC_RXCSR)
-						& MGC_M_RXCSR_P_SENDSTALL;
+			tmp = musb_readw(regs, MUSB_RXCSR)
+						& MUSB_RXCSR_P_SENDSTALL;
 		musb_ep_select(mbase, 0);
 
 		result[0] = tmp ? 1 : 0;
@@ -209,8 +210,8 @@ static inline void musb_try_b_hnp_enable(struct musb *musb)
 	u8		devctl;
 
 	DBG(1, "HNP: Setting HR\n");
-	devctl = musb_readb(mbase, MGC_O_HDRC_DEVCTL);
-	musb_writeb(mbase, MGC_O_HDRC_DEVCTL, devctl | MGC_M_DEVCTL_HR);
+	devctl = musb_readb(mbase, MUSB_DEVCTL);
+	musb_writeb(mbase, MUSB_DEVCTL, devctl | MUSB_DEVCTL_HR);
 }
 
 /*
@@ -307,25 +308,25 @@ __acquires(musb->lock)
 						pr_debug("TEST_J\n");
 						/* TEST_J */
 						musb->test_mode_nr =
-							MGC_M_TEST_J;
+							MUSB_TEST_J;
 						break;
 					case 2:
 						/* TEST_K */
 						pr_debug("TEST_K\n");
 						musb->test_mode_nr =
-							MGC_M_TEST_K;
+							MUSB_TEST_K;
 						break;
 					case 3:
 						/* TEST_SE0_NAK */
 						pr_debug("TEST_SE0_NAK\n");
 						musb->test_mode_nr =
-							MGC_M_TEST_SE0_NAK;
+							MUSB_TEST_SE0_NAK;
 						break;
 					case 4:
 						/* TEST_PACKET */
 						pr_debug("TEST_PACKET\n");
 						musb->test_mode_nr =
-							MGC_M_TEST_PACKET;
+							MUSB_TEST_PACKET;
 						break;
 					default:
 						goto stall;
@@ -391,22 +392,22 @@ stall:
 				musb_ep_select(mbase, epnum);
 				if (is_in) {
 					csr = musb_readw(regs,
-							MGC_O_HDRC_TXCSR);
-					if (csr & MGC_M_TXCSR_FIFONOTEMPTY)
-						csr |= MGC_M_TXCSR_FLUSHFIFO;
-					csr |= MGC_M_TXCSR_P_SENDSTALL
-						| MGC_M_TXCSR_CLRDATATOG
-						| MGC_M_TXCSR_P_WZC_BITS;
-					musb_writew(regs, MGC_O_HDRC_TXCSR,
+							MUSB_TXCSR);
+					if (csr & MUSB_TXCSR_FIFONOTEMPTY)
+						csr |= MUSB_TXCSR_FLUSHFIFO;
+					csr |= MUSB_TXCSR_P_SENDSTALL
+						| MUSB_TXCSR_CLRDATATOG
+						| MUSB_TXCSR_P_WZC_BITS;
+					musb_writew(regs, MUSB_TXCSR,
 							csr);
 				} else {
 					csr = musb_readw(regs,
-							MGC_O_HDRC_RXCSR);
-					csr |= MGC_M_RXCSR_P_SENDSTALL
-						| MGC_M_RXCSR_FLUSHFIFO
-						| MGC_M_RXCSR_CLRDATATOG
-						| MGC_M_TXCSR_P_WZC_BITS;
-					musb_writew(regs, MGC_O_HDRC_RXCSR,
+							MUSB_RXCSR);
+					csr |= MUSB_RXCSR_P_SENDSTALL
+						| MUSB_RXCSR_FLUSHFIFO
+						| MUSB_RXCSR_CLRDATATOG
+						| MUSB_TXCSR_P_WZC_BITS;
+					musb_writew(regs, MUSB_RXCSR,
 							csr);
 				}
 
@@ -449,22 +450,22 @@ static void ep0_rxstate(struct musb *this)
 		unsigned	len = req->length - req->actual;
 
 		/* read the buffer */
-		tmp = musb_readb(regs, MGC_O_HDRC_COUNT0);
+		tmp = musb_readb(regs, MUSB_COUNT0);
 		if (tmp > len) {
 			req->status = -EOVERFLOW;
 			tmp = len;
 		}
 		musb_read_fifo(&this->endpoints[0], tmp, buf);
 		req->actual += tmp;
-		tmp = MGC_M_CSR0_P_SVDRXPKTRDY;
+		tmp = MUSB_CSR0_P_SVDRXPKTRDY;
 		if (tmp < 64 || req->actual == req->length) {
 			this->ep0_state = MGC_END0_STAGE_STATUSIN;
-			tmp |= MGC_M_CSR0_P_DATAEND;
+			tmp |= MUSB_CSR0_P_DATAEND;
 		} else
 			req = NULL;
 	} else
-		tmp = MGC_M_CSR0_P_SVDRXPKTRDY | MGC_M_CSR0_P_SENDSTALL;
-	musb_writew(regs, MGC_O_HDRC_CSR0, tmp);
+		tmp = MUSB_CSR0_P_SVDRXPKTRDY | MUSB_CSR0_P_SENDSTALL;
+	musb_writew(regs, MUSB_CSR0, tmp);
 
 
 	/* NOTE:  we "should" hold off reporting DATAEND and going to
@@ -485,33 +486,33 @@ static void ep0_txstate(struct musb *musb)
 {
 	void __iomem		*regs = musb->control_ep->regs;
 	struct usb_request	*request = next_ep0_request(musb);
-	u16			csr = MGC_M_CSR0_TXPKTRDY;
-	u8			*pFifoSource;
+	u16			csr = MUSB_CSR0_TXPKTRDY;
+	u8			*fifo_src;
 	u8			fifo_count;
 
 	if (!request) {
 		// WARN_ON(1);
-		DBG(2, "odd; csr0 %04x\n", musb_readw(regs, MGC_O_HDRC_CSR0));
+		DBG(2, "odd; csr0 %04x\n", musb_readw(regs, MUSB_CSR0));
 		return;
 	}
 
 	/* load the data */
-	pFifoSource = (u8 *) request->buf + request->actual;
-	fifo_count = min((unsigned) MGC_END0_FIFOSIZE,
+	fifo_src = (u8 *) request->buf + request->actual;
+	fifo_count = min((unsigned) MUSB_EP0_FIFOSIZE,
 		request->length - request->actual);
-	musb_write_fifo(&musb->endpoints[0], fifo_count, pFifoSource);
+	musb_write_fifo(&musb->endpoints[0], fifo_count, fifo_src);
 	request->actual += fifo_count;
 
 	/* update the flags */
 	if (fifo_count < MUSB_MAX_END0_PACKET
 			|| request->actual == request->length) {
 		musb->ep0_state = MGC_END0_STAGE_STATUSOUT;
-		csr |= MGC_M_CSR0_P_DATAEND;
+		csr |= MUSB_CSR0_P_DATAEND;
 	} else
 		request = NULL;
 
 	/* send it out, triggering a "txpktrdy cleared" irq */
-	musb_writew(regs, MGC_O_HDRC_CSR0, csr);
+	musb_writew(regs, MUSB_CSR0, csr);
 
 	/* report completions as soon as the fifo's loaded; there's no
 	 * win in waiting till this last packet gets acked.  (other than
@@ -560,16 +561,16 @@ musb_read_setup(struct musb *musb, struct usb_ctrlrequest *req)
 	 * to switch modes...
 	 */
 	musb->set_address = FALSE;
-	musb->ackpend = MGC_M_CSR0_P_SVDRXPKTRDY;
+	musb->ackpend = MUSB_CSR0_P_SVDRXPKTRDY;
 	if (req->wLength == 0) {
 		if (req->bRequestType & USB_DIR_IN)
-			musb->ackpend |= MGC_M_CSR0_TXPKTRDY;
+			musb->ackpend |= MUSB_CSR0_TXPKTRDY;
 		musb->ep0_state = MGC_END0_STAGE_ACKWAIT;
 	} else if (req->bRequestType & USB_DIR_IN) {
 		musb->ep0_state = MGC_END0_STAGE_TX;
-		musb_writew(regs, MGC_O_HDRC_CSR0, MGC_M_CSR0_P_SVDRXPKTRDY);
-		while ((musb_readw(regs, MGC_O_HDRC_CSR0)
-				& MGC_M_CSR0_RXPKTRDY) != 0)
+		musb_writew(regs, MUSB_CSR0, MUSB_CSR0_P_SVDRXPKTRDY);
+		while ((musb_readw(regs, MUSB_CSR0)
+				& MUSB_CSR0_RXPKTRDY) != 0)
 			cpu_relax();
 		musb->ackpend = 0;
 	} else
@@ -605,29 +606,29 @@ irqreturn_t musb_g_ep0_irq(struct musb *musb)
 	irqreturn_t	retval = IRQ_NONE;
 
 	musb_ep_select(mbase, 0);	/* select ep0 */
-	csr = musb_readw(regs, MGC_O_HDRC_CSR0);
-	len = musb_readb(regs, MGC_O_HDRC_COUNT0);
+	csr = musb_readw(regs, MUSB_CSR0);
+	len = musb_readb(regs, MUSB_COUNT0);
 
 	DBG(4, "csr %04x, count %d, myaddr %d, ep0stage %s\n",
 			csr, len,
-			musb_readb(mbase, MGC_O_HDRC_FADDR),
+			musb_readb(mbase, MUSB_FADDR),
 			decode_ep0stage(musb->ep0_state));
 
 	/* I sent a stall.. need to acknowledge it now.. */
-	if (csr & MGC_M_CSR0_P_SENTSTALL) {
-		musb_writew(regs, MGC_O_HDRC_CSR0,
-				csr & ~MGC_M_CSR0_P_SENTSTALL);
+	if (csr & MUSB_CSR0_P_SENTSTALL) {
+		musb_writew(regs, MUSB_CSR0,
+				csr & ~MUSB_CSR0_P_SENTSTALL);
 		retval = IRQ_HANDLED;
 		musb->ep0_state = MGC_END0_STAGE_SETUP;
-		csr = musb_readw(regs, MGC_O_HDRC_CSR0);
+		csr = musb_readw(regs, MUSB_CSR0);
 	}
 
 	/* request ended "early" */
-	if (csr & MGC_M_CSR0_P_SETUPEND) {
-		musb_writew(regs, MGC_O_HDRC_CSR0, MGC_M_CSR0_P_SVDSETUPEND);
+	if (csr & MUSB_CSR0_P_SETUPEND) {
+		musb_writew(regs, MUSB_CSR0, MUSB_CSR0_P_SVDSETUPEND);
 		retval = IRQ_HANDLED;
 		musb->ep0_state = MGC_END0_STAGE_SETUP;
-		csr = musb_readw(regs, MGC_O_HDRC_CSR0);
+		csr = musb_readw(regs, MUSB_CSR0);
 		/* NOTE:  request may need completion */
 	}
 
@@ -639,7 +640,7 @@ irqreturn_t musb_g_ep0_irq(struct musb *musb)
 
 	case MGC_END0_STAGE_TX:
 		/* irq on clearing txpktrdy */
-		if ((csr & MGC_M_CSR0_TXPKTRDY) == 0) {
+		if ((csr & MUSB_CSR0_TXPKTRDY) == 0) {
 			ep0_txstate(musb);
 			retval = IRQ_HANDLED;
 		}
@@ -647,7 +648,7 @@ irqreturn_t musb_g_ep0_irq(struct musb *musb)
 
 	case MGC_END0_STAGE_RX:
 		/* irq on set rxpktrdy */
-		if (csr & MGC_M_CSR0_RXPKTRDY) {
+		if (csr & MUSB_CSR0_RXPKTRDY) {
 			ep0_rxstate(musb);
 			retval = IRQ_HANDLED;
 		}
@@ -663,17 +664,17 @@ irqreturn_t musb_g_ep0_irq(struct musb *musb)
 		 */
 		if (musb->set_address) {
 			musb->set_address = FALSE;
-			musb_writeb(mbase, MGC_O_HDRC_FADDR, musb->address);
+			musb_writeb(mbase, MUSB_FADDR, musb->address);
 		}
 
 		/* enter test mode if needed (exit by reset) */
 		else if (musb->test_mode) {
 			DBG(1, "entering TESTMODE\n");
 
-			if (MGC_M_TEST_PACKET == musb->test_mode_nr)
+			if (MUSB_TEST_PACKET == musb->test_mode_nr)
 				musb_load_testpacket(musb);
 
-			musb_writeb(mbase, MGC_O_HDRC_TESTMODE,
+			musb_writeb(mbase, MUSB_TESTMODE,
 					musb->test_mode_nr);
 		}
 		/* FALLTHROUGH */
@@ -692,7 +693,7 @@ irqreturn_t musb_g_ep0_irq(struct musb *musb)
 		/* FALLTHROUGH */
 
 	case MGC_END0_STAGE_SETUP:
-		if (csr & MGC_M_CSR0_RXPKTRDY) {
+		if (csr & MUSB_CSR0_RXPKTRDY) {
 			struct usb_ctrlrequest	setup;
 			int			handled = 0;
 
@@ -710,8 +711,8 @@ irqreturn_t musb_g_ep0_irq(struct musb *musb)
 				printk(KERN_NOTICE "%s: peripheral reset "
 						"irq lost!\n",
 						musb_driver_name);
-				power = musb_readb(mbase, MGC_O_HDRC_POWER);
-				musb->g.speed = (power & MGC_M_POWER_HSMODE)
+				power = musb_readb(mbase, MUSB_POWER);
+				musb->g.speed = (power & MUSB_POWER_HSMODE)
 					? USB_SPEED_HIGH : USB_SPEED_FULL;
 
 			}
@@ -729,7 +730,7 @@ irqreturn_t musb_g_ep0_irq(struct musb *musb)
 
 				/* status stage might be immediate */
 				if (handled > 0) {
-					musb->ackpend |= MGC_M_CSR0_P_DATAEND;
+					musb->ackpend |= MUSB_CSR0_P_DATAEND;
 					musb->ep0_state =
 						MGC_END0_STAGE_STATUSIN;
 				}
@@ -742,8 +743,8 @@ irqreturn_t musb_g_ep0_irq(struct musb *musb)
 			case MGC_END0_STAGE_TX:
 				handled = service_in_request(musb, &setup);
 				if (handled > 0) {
-					musb->ackpend = MGC_M_CSR0_TXPKTRDY
-						| MGC_M_CSR0_P_DATAEND;
+					musb->ackpend = MUSB_CSR0_TXPKTRDY
+						| MUSB_CSR0_P_DATAEND;
 					musb->ep0_state =
 						MGC_END0_STAGE_STATUSOUT;
 				}
@@ -772,10 +773,10 @@ irqreturn_t musb_g_ep0_irq(struct musb *musb)
 				musb_ep_select(mbase, 0);
 stall:
 				DBG(3, "stall (%d)\n", handled);
-				musb->ackpend |= MGC_M_CSR0_P_SENDSTALL;
+				musb->ackpend |= MUSB_CSR0_P_SENDSTALL;
 				musb->ep0_state = MGC_END0_STAGE_SETUP;
 finish:
-				musb_writew(regs, MGC_O_HDRC_CSR0,
+				musb_writew(regs, MUSB_CSR0,
 						musb->ackpend);
 				musb->ackpend = 0;
 			}
@@ -792,7 +793,7 @@ finish:
 	default:
 		/* "can't happen" */
 		WARN_ON(1);
-		musb_writew(regs, MGC_O_HDRC_CSR0, MGC_M_CSR0_P_SENDSTALL);
+		musb_writew(regs, MUSB_CSR0, MUSB_CSR0_P_SENDSTALL);
 		musb->ep0_state = MGC_END0_STAGE_SETUP;
 		break;
 	}
@@ -876,8 +877,8 @@ musb_g_ep0_queue(struct usb_ep *e, struct usb_request *r, gfp_t gfp_flags)
 			status = -EINVAL;
 		else {
 			musb->ep0_state = MGC_END0_STAGE_STATUSIN;
-			musb_writew(regs, MGC_O_HDRC_CSR0,
-					musb->ackpend | MGC_M_CSR0_P_DATAEND);
+			musb_writew(regs, MUSB_CSR0,
+					musb->ackpend | MUSB_CSR0_P_DATAEND);
 			musb->ackpend = 0;
 			musb_g_ep0_giveback(ep->musb, r);
 		}
@@ -887,7 +888,7 @@ musb_g_ep0_queue(struct usb_ep *e, struct usb_request *r, gfp_t gfp_flags)
 	 * (after SETUP is acked) are racey.
 	 */
 	} else if (musb->ackpend) {
-		musb_writew(regs, MGC_O_HDRC_CSR0, musb->ackpend);
+		musb_writew(regs, MUSB_CSR0, musb->ackpend);
 		musb->ackpend = 0;
 	}
 
@@ -934,9 +935,9 @@ static int musb_g_ep0_halt(struct usb_ep *e, int value)
 		status = 0;
 
 		musb_ep_select(base, 0);
-		csr = musb_readw(regs, MGC_O_HDRC_CSR0);
-		csr |= MGC_M_CSR0_P_SENDSTALL;
-		musb_writew(regs, MGC_O_HDRC_CSR0, csr);
+		csr = musb_readw(regs, MUSB_CSR0);
+		csr |= MUSB_CSR0_P_SENDSTALL;
+		musb_writew(regs, MUSB_CSR0, csr);
 		musb->ep0_state = MGC_END0_STAGE_SETUP;
 		break;
 	default:

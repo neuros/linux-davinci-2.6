@@ -1,35 +1,36 @@
-/******************************************************************
+/*
+ * MUSB OTG driver debug support
+ *
  * Copyright 2005 Mentor Graphics Corporation
  * Copyright (C) 2005-2006 by Texas Instruments
+ * Copyright (C) 2006-2007 Nokia Corporation
  *
- * This file is part of the Inventra Controller Driver for Linux.
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * version 2 as published by the Free Software Foundation.
  *
- * The Inventra Controller Driver for Linux is free software; you
- * can redistribute it and/or modify it under the terms of the GNU
- * General Public License version 2 as published by the Free Software
- * Foundation.
- *
- * The Inventra Controller Driver for Linux is distributed in
- * the hope that it will be useful, but WITHOUT ANY WARRANTY;
- * without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
- * License for more details.
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with The Inventra Controller Driver for Linux ; if not,
- * write to the Free Software Foundation, Inc., 59 Temple Place,
- * Suite 330, Boston, MA  02111-1307  USA
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA
  *
- * ANY DOWNLOAD, USE, REPRODUCTION, MODIFICATION OR DISTRIBUTION
- * OF THIS DRIVER INDICATES YOUR COMPLETE AND UNCONDITIONAL ACCEPTANCE
- * OF THOSE TERMS.THIS DRIVER IS PROVIDED "AS IS" AND MENTOR GRAPHICS
- * MAKES NO WARRANTIES, EXPRESS OR IMPLIED, RELATED TO THIS DRIVER.
- * MENTOR GRAPHICS SPECIFICALLY DISCLAIMS ALL IMPLIED WARRANTIES
- * OF MERCHANTABILITY; FITNESS FOR A PARTICULAR PURPOSE AND
- * NON-INFRINGEMENT.  MENTOR GRAPHICS DOES NOT PROVIDE SUPPORT
- * SERVICES OR UPDATES FOR THIS DRIVER, EVEN IF YOU ARE A MENTOR
- * GRAPHICS SUPPORT CUSTOMER.
- ******************************************************************/
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
+ * NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
+ * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
 
 /*
  * Inventra Controller Driver (ICD) for Linux.
@@ -157,11 +158,11 @@ static int dump_ep(struct musb_ep *ep, char *buffer, unsigned max)
 				mode, ep->dma ? " dma" : "",
 				musb_readw(regs,
 					(ep->is_in || !ep->current_epnum)
-						? MGC_O_HDRC_TXCSR
-						: MGC_O_HDRC_RXCSR),
+						? MUSB_TXCSR
+						: MUSB_RXCSR),
 				musb_readw(regs, ep->is_in
-						? MGC_O_HDRC_TXMAXP
-						: MGC_O_HDRC_RXMAXP)
+						? MUSB_TXMAXP
+						: MUSB_RXMAXP)
 				);
 		if (code <= 0)
 			break;
@@ -279,20 +280,20 @@ dump_end_info(struct musb *musb, u8 epnum, char *aBuffer, unsigned max)
 					epnum,
 					hw_ep->rx_double_buffered
 						? "2buf" : "1buf",
-					musb_readw(regs, MGC_O_HDRC_RXCSR),
-					musb_readb(regs, MGC_O_HDRC_RXINTERVAL),
-					musb_readw(regs, MGC_O_HDRC_RXMAXP),
-					musb_readb(regs, MGC_O_HDRC_RXTYPE),
+					musb_readw(regs, MUSB_RXCSR),
+					musb_readb(regs, MUSB_RXINTERVAL),
+					musb_readw(regs, MUSB_RXMAXP),
+					musb_readb(regs, MUSB_RXTYPE),
 					/* FIXME:  assumes multipoint */
 					musb_readb(musb->mregs,
-						MGC_BUSCTL_OFFSET(epnum,
-						MGC_O_HDRC_RXFUNCADDR)),
+						MUSB_BUSCTL_OFFSET(epnum,
+						MUSB_RXFUNCADDR)),
 					musb_readb(musb->mregs,
-						MGC_BUSCTL_OFFSET(epnum,
-						MGC_O_HDRC_RXHUBADDR)),
+						MUSB_BUSCTL_OFFSET(epnum,
+						MUSB_RXHUBADDR)),
 					musb_readb(musb->mregs,
-						MGC_BUSCTL_OFFSET(epnum,
-						MGC_O_HDRC_RXHUBPORT))
+						MUSB_BUSCTL_OFFSET(epnum,
+						MUSB_RXHUBPORT))
 					);
 				if (code <= 0)
 					break;
@@ -367,20 +368,20 @@ dump_end_info(struct musb *musb, u8 epnum, char *aBuffer, unsigned max)
 					epnum,
 					hw_ep->tx_double_buffered
 						? "2buf" : "1buf",
-					musb_readw(regs, MGC_O_HDRC_TXCSR),
-					musb_readb(regs, MGC_O_HDRC_TXINTERVAL),
-					musb_readw(regs, MGC_O_HDRC_TXMAXP),
-					musb_readb(regs, MGC_O_HDRC_TXTYPE),
+					musb_readw(regs, MUSB_TXCSR),
+					musb_readb(regs, MUSB_TXINTERVAL),
+					musb_readw(regs, MUSB_TXMAXP),
+					musb_readb(regs, MUSB_TXTYPE),
 					/* FIXME:  assumes multipoint */
 					musb_readb(musb->mregs,
-						MGC_BUSCTL_OFFSET(epnum,
-						MGC_O_HDRC_TXFUNCADDR)),
+						MUSB_BUSCTL_OFFSET(epnum,
+						MUSB_TXFUNCADDR)),
 					musb_readb(musb->mregs,
-						MGC_BUSCTL_OFFSET(epnum,
-						MGC_O_HDRC_TXHUBADDR)),
+						MUSB_BUSCTL_OFFSET(epnum,
+						MUSB_TXHUBADDR)),
 					musb_readb(musb->mregs,
-						MGC_BUSCTL_OFFSET(epnum,
-						MGC_O_HDRC_TXHUBPORT))
+						MUSB_BUSCTL_OFFSET(epnum,
+						MUSB_TXHUBPORT))
 					);
 				if (code <= 0)
 					break;
@@ -491,8 +492,8 @@ static int dump_header_stats(struct musb *musb, char *buffer)
 	count = sprintf(buffer, "Status: %sHDRC, Mode=%s "
 				"(Power=%02x, DevCtl=%02x)\n",
 			(musb->is_multipoint ? "M" : ""), MUSB_MODE(musb),
-			musb_readb(mbase, MGC_O_HDRC_POWER),
-			musb_readb(mbase, MGC_O_HDRC_DEVCTL));
+			musb_readb(mbase, MUSB_POWER),
+			musb_readb(mbase, MUSB_DEVCTL));
 	if (count <= 0)
 		return 0;
 	buffer += count;
@@ -536,7 +537,7 @@ static int dump_header_stats(struct musb *musb, char *buffer)
 
 #ifdef	CONFIG_USB_GADGET_MUSB_HDRC
 	code = sprintf(buffer, "Peripheral address: %02x\n",
-			musb_readb(musb, MGC_O_HDRC_FADDR));
+			musb_readb(musb, MUSB_FADDR));
 	if (code <= 0)
 		goto done;
 	buffer += code;
@@ -651,7 +652,7 @@ static int musb_proc_write(struct file *file, const char __user *buffer,
 			unsigned long count, void *data)
 {
 	char cmd;
-	u8 bReg;
+	u8 reg;
 	struct musb *musb = (struct musb *)data;
 	void __iomem *mbase = musb->mregs;
 
@@ -663,47 +664,47 @@ static int musb_proc_write(struct file *file, const char __user *buffer,
 	switch (cmd) {
 	case 'C':
 		if (mbase) {
-			bReg = musb_readb(mbase, MGC_O_HDRC_POWER)
-					| MGC_M_POWER_SOFTCONN;
-			musb_writeb(mbase, MGC_O_HDRC_POWER, bReg);
+			reg = musb_readb(mbase, MUSB_POWER)
+					| MUSB_POWER_SOFTCONN;
+			musb_writeb(mbase, MUSB_POWER, reg);
 		}
 		break;
 
 	case 'c':
 		if (mbase) {
-			bReg = musb_readb(mbase, MGC_O_HDRC_POWER)
-					& ~MGC_M_POWER_SOFTCONN;
-			musb_writeb(mbase, MGC_O_HDRC_POWER, bReg);
+			reg = musb_readb(mbase, MUSB_POWER)
+					& ~MUSB_POWER_SOFTCONN;
+			musb_writeb(mbase, MUSB_POWER, reg);
 		}
 		break;
 
 	case 'I':
 		if (mbase) {
-			bReg = musb_readb(mbase, MGC_O_HDRC_POWER)
-					| MGC_M_POWER_HSENAB;
-			musb_writeb(mbase, MGC_O_HDRC_POWER, bReg);
+			reg = musb_readb(mbase, MUSB_POWER)
+					| MUSB_POWER_HSENAB;
+			musb_writeb(mbase, MUSB_POWER, reg);
 		}
 		break;
 
 	case 'i':
 		if (mbase) {
-			bReg = musb_readb(mbase, MGC_O_HDRC_POWER)
-					& ~MGC_M_POWER_HSENAB;
-			musb_writeb(mbase, MGC_O_HDRC_POWER, bReg);
+			reg = musb_readb(mbase, MUSB_POWER)
+					& ~MUSB_POWER_HSENAB;
+			musb_writeb(mbase, MUSB_POWER, reg);
 		}
 		break;
 
 	case 'F':
-		bReg = musb_readb(mbase, MGC_O_HDRC_DEVCTL);
-		bReg |= MGC_M_DEVCTL_SESSION;
-		musb_writeb(mbase, MGC_O_HDRC_DEVCTL, bReg);
+		reg = musb_readb(mbase, MUSB_DEVCTL);
+		reg |= MUSB_DEVCTL_SESSION;
+		musb_writeb(mbase, MUSB_DEVCTL, reg);
 		break;
 
 	case 'H':
 		if (mbase) {
-			bReg = musb_readb(mbase, MGC_O_HDRC_DEVCTL);
-			bReg |= MGC_M_DEVCTL_HR;
-			musb_writeb(mbase, MGC_O_HDRC_DEVCTL, bReg);
+			reg = musb_readb(mbase, MUSB_DEVCTL);
+			reg |= MUSB_DEVCTL_HR;
+			musb_writeb(mbase, MUSB_DEVCTL, reg);
 			//MUSB_HST_MODE( ((struct musb*)data) );
 			//WARN("Host Mode\n");
 		}
@@ -711,17 +712,17 @@ static int musb_proc_write(struct file *file, const char __user *buffer,
 
 	case 'h':
 		if (mbase) {
-			bReg = musb_readb(mbase, MGC_O_HDRC_DEVCTL);
-			bReg &= ~MGC_M_DEVCTL_HR;
-			musb_writeb(mbase, MGC_O_HDRC_DEVCTL, bReg);
+			reg = musb_readb(mbase, MUSB_DEVCTL);
+			reg &= ~MUSB_DEVCTL_HR;
+			musb_writeb(mbase, MUSB_DEVCTL, reg);
 		}
 		break;
 
 	case 'T':
 		if (mbase) {
 			musb_load_testpacket(musb);
-			musb_writeb(mbase, MGC_O_HDRC_TESTMODE,
-					MGC_M_TEST_PACKET);
+			musb_writeb(mbase, MUSB_TESTMODE,
+					MUSB_TEST_PACKET);
 		}
 		break;
 

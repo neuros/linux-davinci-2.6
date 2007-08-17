@@ -1,35 +1,36 @@
-/******************************************************************
+/*
+ * MUSB OTG driver defines
+ *
  * Copyright 2005 Mentor Graphics Corporation
  * Copyright (C) 2005-2006 by Texas Instruments
+ * Copyright (C) 2006-2007 Nokia Corporation
  *
- * This file is part of the Inventra Controller Driver for Linux.
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * version 2 as published by the Free Software Foundation.
  *
- * The Inventra Controller Driver for Linux is free software; you
- * can redistribute it and/or modify it under the terms of the GNU
- * General Public License version 2 as published by the Free Software
- * Foundation.
- *
- * The Inventra Controller Driver for Linux is distributed in
- * the hope that it will be useful, but WITHOUT ANY WARRANTY;
- * without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
- * License for more details.
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with The Inventra Controller Driver for Linux ; if not,
- * write to the Free Software Foundation, Inc., 59 Temple Place,
- * Suite 330, Boston, MA  02111-1307  USA
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA
  *
- * ANY DOWNLOAD, USE, REPRODUCTION, MODIFICATION OR DISTRIBUTION
- * OF THIS DRIVER INDICATES YOUR COMPLETE AND UNCONDITIONAL ACCEPTANCE
- * OF THOSE TERMS.THIS DRIVER IS PROVIDED "AS IS" AND MENTOR GRAPHICS
- * MAKES NO WARRANTIES, EXPRESS OR IMPLIED, RELATED TO THIS DRIVER.
- * MENTOR GRAPHICS SPECIFICALLY DISCLAIMS ALL IMPLIED WARRANTIES
- * OF MERCHANTABILITY; FITNESS FOR A PARTICULAR PURPOSE AND
- * NON-INFRINGEMENT.  MENTOR GRAPHICS DOES NOT PROVIDE SUPPORT
- * SERVICES OR UPDATES FOR THIS DRIVER, EVEN IF YOU ARE A MENTOR
- * GRAPHICS SUPPORT CUSTOMER.
- ******************************************************************/
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
+ * NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
+ * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
 
 #ifndef __MUSB_MUSBDEFS_H__
 #define __MUSB_MUSBDEFS_H__
@@ -175,7 +176,7 @@ static inline void musb_host_rx(struct musb *m, u8 e) {}
 #endif
 
 #ifndef MUSB_MAX_END0_PACKET
-#define MUSB_MAX_END0_PACKET ((u16)MGC_END0_FIFOSIZE)
+#define MUSB_MAX_END0_PACKET ((u16)MUSB_EP0_FIFOSIZE)
 #endif
 
 /* host side ep0 states */
@@ -219,19 +220,19 @@ enum musb_g_ep0_state {
 /* TUSB mapping: "flat" plus ep0 special cases */
 #if	defined(CONFIG_USB_TUSB6010)
 #define musb_ep_select(_mbase, _epnum) \
-	musb_writeb((_mbase), MGC_O_HDRC_INDEX, (_epnum))
-#define	MGC_END_OFFSET			MGC_TUSB_OFFSET
+	musb_writeb((_mbase), MUSB_INDEX, (_epnum))
+#define	MGC_END_OFFSET			MUSB_TUSB_OFFSET
 
 /* "flat" mapping: each endpoint has its own i/o address */
 #elif	defined(MUSB_FLAT_REG)
 #define musb_ep_select(_mbase, _epnum)	(((void)(_mbase)),((void)(_epnum)))
-#define	MGC_END_OFFSET			MGC_FLAT_OFFSET
+#define	MGC_END_OFFSET			MUSB_FLAT_OFFSET
 
 /* "indexed" mapping: INDEX register controls register bank select */
 #else
 #define musb_ep_select(_mbase, _epnum) \
-	musb_writeb((_mbase), MGC_O_HDRC_INDEX, (_epnum))
-#define	MGC_END_OFFSET			MGC_INDEXED_OFFSET
+	musb_writeb((_mbase), MUSB_INDEX, (_epnum))
+#define	MGC_END_OFFSET			MUSB_INDEXED_OFFSET
 #endif
 
 /****************************** FUNCTIONS ********************************/
@@ -242,7 +243,7 @@ enum musb_g_ep0_state {
 	{ (_musb)->is_host=FALSE; }
 
 #define test_devctl_hst_mode(_x) \
-	(musb_readb((_x)->mregs, MGC_O_HDRC_DEVCTL)&MGC_M_DEVCTL_HM)
+	(musb_readb((_x)->mregs, MUSB_DEVCTL)&MUSB_DEVCTL_HM)
 
 #define MUSB_MODE(musb) ((musb)->is_host ? "Host" : "Peripheral")
 
@@ -382,7 +383,7 @@ struct musb {
 
 #define VBUSERR_RETRY_COUNT	3
 	u16			vbuserr_retry;
-	u16 wEndMask;
+	u16 epmask;
 	u8 nr_endpoints;
 
 	u8 board_mode;		/* enum musb_mode */

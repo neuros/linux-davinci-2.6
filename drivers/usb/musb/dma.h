@@ -1,35 +1,36 @@
-/******************************************************************
+/*
+ * MUSB OTG driver DMA controller abstraction
+ *
  * Copyright 2005 Mentor Graphics Corporation
  * Copyright (C) 2005-2006 by Texas Instruments
+ * Copyright (C) 2006-2007 Nokia Corporation
  *
- * This file is part of the Inventra Controller Driver for Linux.
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * version 2 as published by the Free Software Foundation.
  *
- * The Inventra Controller Driver for Linux is free software; you
- * can redistribute it and/or modify it under the terms of the GNU
- * General Public License version 2 as published by the Free Software
- * Foundation.
- *
- * The Inventra Controller Driver for Linux is distributed in
- * the hope that it will be useful, but WITHOUT ANY WARRANTY;
- * without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
- * License for more details.
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with The Inventra Controller Driver for Linux ; if not,
- * write to the Free Software Foundation, Inc., 59 Temple Place,
- * Suite 330, Boston, MA  02111-1307  USA
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA
  *
- * ANY DOWNLOAD, USE, REPRODUCTION, MODIFICATION OR DISTRIBUTION
- * OF THIS DRIVER INDICATES YOUR COMPLETE AND UNCONDITIONAL ACCEPTANCE
- * OF THOSE TERMS.THIS DRIVER IS PROVIDED "AS IS" AND MENTOR GRAPHICS
- * MAKES NO WARRANTIES, EXPRESS OR IMPLIED, RELATED TO THIS DRIVER.
- * MENTOR GRAPHICS SPECIFICALLY DISCLAIMS ALL IMPLIED WARRANTIES
- * OF MERCHANTABILITY; FITNESS FOR A PARTICULAR PURPOSE AND
- * NON-INFRINGEMENT.  MENTOR GRAPHICS DOES NOT PROVIDE SUPPORT
- * SERVICES OR UPDATES FOR THIS DRIVER, EVEN IF YOU ARE A MENTOR
- * GRAPHICS SUPPORT CUSTOMER.
- ******************************************************************/
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN
+ * NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
+ * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ */
 
 #ifndef __MUSB_DMA_H__
 #define __MUSB_DMA_H__
@@ -85,15 +86,15 @@ struct musb_hw_ep;
  */
 enum dma_channel_status {
 	/* unallocated */
-	MGC_DMA_STATUS_UNKNOWN,
+	MUSB_DMA_STATUS_UNKNOWN,
 	/* allocated ... but not busy, no errors */
-	MGC_DMA_STATUS_FREE,
+	MUSB_DMA_STATUS_FREE,
 	/* busy ... transactions are active */
-	MGC_DMA_STATUS_BUSY,
+	MUSB_DMA_STATUS_BUSY,
 	/* transaction(s) aborted due to ... dma or memory bus error */
-	MGC_DMA_STATUS_BUS_ABORT,
+	MUSB_DMA_STATUS_BUS_ABORT,
 	/* transaction(s) aborted due to ... core error or USB fault */
-	MGC_DMA_STATUS_CORE_ABORT
+	MUSB_DMA_STATUS_CORE_ABORT
 };
 
 struct dma_controller;
@@ -101,7 +102,7 @@ struct dma_controller;
 /**
  * struct dma_channel - A DMA channel.
  * @private_data: channel-private data
- * @wMaxLength: the maximum number of bytes the channel can move in one
+ * @max_len: the maximum number of bytes the channel can move in one
  *	transaction (typically representing many USB maximum-sized packets)
  * @actual_len: how many bytes have been transferred
  * @status: current channel status (updated e.g. on interrupt)
@@ -120,27 +121,6 @@ struct dma_channel {
 };
 
 /*
- * Program a DMA channel to move data at the core's request.
- * The local core endpoint and direction should already be known,
- * since they are specified in the channel_alloc call.
- *
- * @channel: pointer to a channel obtained by channel_alloc
- * @maxpacket: the maximum packet size
- * @mode: TRUE if mode 1; FALSE if mode 0
- * @dma_addr: base address of data (in DMA space)
- * @length: the number of bytes to transfer; no larger than the channel's
- *	reported max_len
- *
- * Returns TRUE on success, else FALSE
- */
-typedef int (*dma_program_channel) (
-		struct dma_channel	*channel,
-		u16			maxpacket,
-		u8			mode,
-		dma_addr_t		dma_addr,
-		u32			length);
-
-/*
  * dma_channel_status - return status of dma channel
  * @c: the channel
  *
@@ -151,7 +131,7 @@ typedef int (*dma_program_channel) (
 static inline enum dma_channel_status
 dma_channel_status(struct dma_channel *c)
 {
-	return (is_dma_capable() && c) ? c->status : MGC_DMA_STATUS_UNKNOWN;
+	return (is_dma_capable() && c) ? c->status : MUSB_DMA_STATUS_UNKNOWN;
 }
 
 /**
@@ -175,12 +155,15 @@ struct dma_controller {
 	struct dma_channel	*(*channel_alloc)(struct dma_controller *,
 					struct musb_hw_ep *, u8 is_tx);
 	void			(*channel_release)(struct dma_channel *);
-	dma_program_channel	channel_program;
+	int			(*channel_program)(struct dma_channel *channel,
+							u16 maxpacket, u8 mode,
+							dma_addr_t dma_addr,
+							u32 length);
 	int			(*channel_abort)(struct dma_channel *);
 };
 
 /* called after channel_program(), may indicate a fault */
-extern void musb_dma_completion(struct musb *musb, u8 epnum, u8 bTransmit);
+extern void musb_dma_completion(struct musb *musb, u8 epnum, u8 transmit);
 
 
 extern struct dma_controller *__init
