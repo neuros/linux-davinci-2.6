@@ -107,8 +107,7 @@ struct clk *ideclkp = NULL;
 int palm_bk3710_chipinit(void);
 int palm_bk3710_setdmamode(palm_bk3710_ideregs *, unsigned int, unsigned int,
 			   unsigned int);
-int palm_bk3710_setpiomode(palm_bk3710_ideregs *, unsigned int, unsigned int,
-			   unsigned int);
+u8  palm_bk3710_setpiomode(palm_bk3710_ideregs *, unsigned int, unsigned int, u8);
 
 static void palm_bk3710_tune_drive(ide_drive_t *, u8);
 
@@ -224,10 +223,10 @@ int palm_bk3710_setdmamode(palm_bk3710_ideregs * handle, unsigned int dev,
  *  	Handle [IN]                  : IDE Controller info
  *	Dev [IN]                     : drive to tune
  *	level [IN]                   : desired level
- *  	int                         : level in PIO mode
+ *  	u8                           : level in PIO mode
  ******************************************************************************/
-int palm_bk3710_setpiomode(palm_bk3710_ideregs * handle, unsigned int dev,
-			   unsigned int cycletime, unsigned int mode)
+u8 palm_bk3710_setpiomode(palm_bk3710_ideregs * handle, unsigned int dev,
+			   unsigned int cycletime, u8 mode)
 {
 	int is_slave = (dev == 1) ? 1 : 0;
 	char ide_t2, ide_t2i, ide_t0;
@@ -363,7 +362,7 @@ static inline int palm_bk3710_drivedma(ide_drive_t * pDrive)
 		palm_bk3710_tune_drive(pDrive, 255);
 	} else {
 		palm_bk3710_hostdma(pDrive, speed);
-		return ide_dma_enable(pDrive);
+		ide_tune_dma(pDrive);
 	}
 
 	return 0;
@@ -426,21 +425,19 @@ static int palm_bk3710_checkdma(ide_drive_t * drive)
 static void palm_bk3710_tune_drive(ide_drive_t * drive, u8 pio)
 {
 	ide_hwif_t *hwif = HWIF(drive);
-	ide_pio_data_t piodata;
+        unsigned int cycle_time;
 	int is_slave = (&hwif->drives[1] == drive);
 
 	/* Get the best PIO Mode supported by the drive
 	 * Obtain the drive PIO data for tuning the Palm Chip registers
 	 */
-	ide_get_best_pio_mode(drive, pio, 5, &piodata);
+	pio = ide_get_best_pio_mode(drive, pio, 5);
+        cycle_time = ide_pio_cycle_time(drive, pio);
 	/* Check for IORDY here */
-	if (piodata.cycle_time < ide_pio_timings[piodata.pio_mode]
-	    .cycle_time) {
-		piodata.cycle_time = ide_pio_timings[piodata.pio_mode]
-		    .cycle_time;
+	if (cycle_time < ide_pio_timings[pio].cycle_time) {
+		cycle_time = ide_pio_timings[pio].cycle_time;
 	}
-	palm_bk3710_setpiomode(NULL, is_slave, piodata.cycle_time,
-			       piodata.pio_mode);
+	palm_bk3710_setpiomode(NULL, is_slave, cycle_time, pio);
 }
 
 /**
