@@ -467,7 +467,7 @@ static irqreturn_t musb_stage0_irq(struct musb * musb, u8 int_usb,
 		 * a_wait_vrise_tmout triggers VBUS_ERROR transitions
 		 */
 		musb_writeb(mbase, MUSB_DEVCTL, MUSB_DEVCTL_SESSION);
-		musb->ep0_stage = MGC_END0_START;
+		musb->ep0_stage = MUSB_EP0_START;
 		musb->xceiv.state = OTG_STATE_A_IDLE;
 		MUSB_HST_MODE(musb);
 		musb_set_vbus(musb, 1);
@@ -550,14 +550,13 @@ static irqreturn_t musb_stage0_irq(struct musb * musb, u8 int_usb,
 		musb->is_active = 1;
 		set_bit(HCD_FLAG_SAW_IRQ, &hcd->flags);
 
-		musb->ep0_stage = MGC_END0_START;
+		musb->ep0_stage = MUSB_EP0_START;
 
 #ifdef CONFIG_USB_MUSB_OTG
 		/* flush endpoints when transitioning from Device Mode */
 		if (is_peripheral_active(musb)) {
 			// REVISIT HNP; just force disconnect
 		}
-		musb->delay_port_power_off = FALSE;
 		musb_writew(mbase, MUSB_INTRTXE, musb->epmask);
 		musb_writew(mbase, MUSB_INTRRXE, musb->epmask & 0xfffe);
 		musb_writeb(mbase, MUSB_INTRUSBE, 0xf7);
@@ -604,6 +603,7 @@ static irqreturn_t musb_stage0_irq(struct musb * musb, u8 int_usb,
 	 * only host sees babble; only peripheral sees bus reset.
 	 */
 	if (int_usb & MUSB_INTR_RESET) {
+#ifdef CONFIG_USB_MUSB_HDRC_HCD
 		if (devctl & MUSB_DEVCTL_HM) {
 			/*
 			 * Looks like non-HS BABBLE can be ignored, but
@@ -618,7 +618,9 @@ static irqreturn_t musb_stage0_irq(struct musb * musb, u8 int_usb,
 				ERR("Stopping host session because of babble\n");
 				musb_writeb(mbase, MUSB_DEVCTL, 0);
 			}
-		} else {
+		} else
+#endif	/* CONFIG_USB_MUSB_HDRC_HCD */
+		{
 			DBG(1, "BUS RESET\n");
 
 			musb_g_reset(musb);
@@ -1380,7 +1382,7 @@ static int __init musb_core_init(u16 musb_type, struct musb *musb)
 			hw_ep->conf = mbase + 0x400 + (((i - 1) & 0xf) << 2);
 #endif
 
-		hw_ep->regs = MGC_END_OFFSET(i, 0) + mbase;
+		hw_ep->regs = MUSB_EP_OFFSET(i, 0) + mbase;
 #ifdef CONFIG_USB_MUSB_HDRC_HCD
 		hw_ep->target_regs = MUSB_BUSCTL_OFFSET(i, 0) + mbase;
 		hw_ep->rx_reinit = 1;
@@ -1710,7 +1712,6 @@ musb_srp_store(struct device *dev, struct device_attribute *attr,
 		const char *buf, size_t n)
 {
 	struct musb	*musb=dev_to_musb(dev);
-	unsigned long	flags;
 	unsigned short	srp;
 
 	if (sscanf(buf, "%hu", &srp) != 1
@@ -1719,10 +1720,8 @@ musb_srp_store(struct device *dev, struct device_attribute *attr,
 		return -EINVAL;
 	}
 
-	spin_lock_irqsave(&musb->lock, flags);
 	if (srp == 1)
 		musb_g_wakeup(musb);
-	spin_unlock_irqrestore(&musb->lock, flags);
 
 	return n;
 }

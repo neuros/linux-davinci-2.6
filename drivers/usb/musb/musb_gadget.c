@@ -1434,6 +1434,7 @@ static int musb_gadget_wakeup(struct usb_gadget *gadget)
 		status = 0;
 		goto done;
 	default:
+		DBG(2, "Unhandled wake: %s\n", otg_state_string(musb));
 		goto done;
 	}
 
@@ -1931,7 +1932,7 @@ void musb_g_suspend(struct musb *musb)
 	}
 }
 
-/* Called during SRP. Caller must hold lock */
+/* Called during SRP */
 void musb_g_wakeup(struct musb *musb)
 {
 	musb_gadget_wakeup(&musb->g);
@@ -1961,6 +1962,8 @@ void musb_g_disconnect(struct musb *musb)
 	switch (musb->xceiv.state) {
 	default:
 #ifdef	CONFIG_USB_MUSB_OTG
+		DBG(2, "Unhandled disconnect %s, setting a_idle\n",
+			otg_state_string(musb));
 		musb->xceiv.state = OTG_STATE_A_IDLE;
 		break;
 	case OTG_STATE_A_PERIPHERAL:
@@ -1970,6 +1973,7 @@ void musb_g_disconnect(struct musb *musb)
 	case OTG_STATE_B_HOST:
 #endif
 	case OTG_STATE_B_PERIPHERAL:
+	case OTG_STATE_B_IDLE:
 		musb->xceiv.state = OTG_STATE_B_IDLE;
 		break;
 	case OTG_STATE_B_SRP_INIT:
@@ -2015,7 +2019,7 @@ __acquires(musb->lock)
 	musb->is_suspended = 0;
 	MUSB_DEV_MODE(musb);
 	musb->address = 0;
-	musb->ep0_state = MGC_END0_STAGE_SETUP;
+	musb->ep0_state = MUSB_EP0_STAGE_SETUP;
 
 	musb->may_wakeup = 0;
 	musb->g.b_hnp_enable = 0;

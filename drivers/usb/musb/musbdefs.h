@@ -181,21 +181,21 @@ static inline void musb_host_rx(struct musb *m, u8 e) {}
 
 /* host side ep0 states */
 enum musb_h_ep0_state {
-	MGC_END0_IDLE,
-	MGC_END0_START,			/* expect ack of setup */
-	MGC_END0_IN,			/* expect IN DATA */
-	MGC_END0_OUT,			/* expect ack of OUT DATA */
-	MGC_END0_STATUS,		/* expect ack of STATUS */
+	MUSB_EP0_IDLE,
+	MUSB_EP0_START,			/* expect ack of setup */
+	MUSB_EP0_IN,			/* expect IN DATA */
+	MUSB_EP0_OUT,			/* expect ack of OUT DATA */
+	MUSB_EP0_STATUS,		/* expect ack of STATUS */
 } __attribute__ ((packed));
 
 /* peripheral side ep0 states */
 enum musb_g_ep0_state {
-	MGC_END0_STAGE_SETUP,		/* idle, waiting for setup */
-	MGC_END0_STAGE_TX,		/* IN data */
-	MGC_END0_STAGE_RX,		/* OUT data */
-	MGC_END0_STAGE_STATUSIN,	/* (after OUT data) */
-	MGC_END0_STAGE_STATUSOUT,	/* (after IN data) */
-	MGC_END0_STAGE_ACKWAIT,		/* after zlp, before statusin */
+	MUSB_EP0_STAGE_SETUP,		/* idle, waiting for setup */
+	MUSB_EP0_STAGE_TX,		/* IN data */
+	MUSB_EP0_STAGE_RX,		/* OUT data */
+	MUSB_EP0_STAGE_STATUSIN,	/* (after OUT data) */
+	MUSB_EP0_STAGE_STATUSOUT,	/* (after IN data) */
+	MUSB_EP0_STAGE_ACKWAIT,		/* after zlp, before statusin */
 } __attribute__ ((packed));
 
 /* OTG protocol constants */
@@ -221,18 +221,18 @@ enum musb_g_ep0_state {
 #if	defined(CONFIG_USB_TUSB6010)
 #define musb_ep_select(_mbase, _epnum) \
 	musb_writeb((_mbase), MUSB_INDEX, (_epnum))
-#define	MGC_END_OFFSET			MUSB_TUSB_OFFSET
+#define	MUSB_EP_OFFSET			MUSB_TUSB_OFFSET
 
 /* "flat" mapping: each endpoint has its own i/o address */
 #elif	defined(MUSB_FLAT_REG)
 #define musb_ep_select(_mbase, _epnum)	(((void)(_mbase)),((void)(_epnum)))
-#define	MGC_END_OFFSET			MUSB_FLAT_OFFSET
+#define	MUSB_EP_OFFSET			MUSB_FLAT_OFFSET
 
 /* "indexed" mapping: INDEX register controls register bank select */
 #else
 #define musb_ep_select(_mbase, _epnum) \
 	musb_writeb((_mbase), MUSB_INDEX, (_epnum))
-#define	MGC_END_OFFSET			MUSB_INDEXED_OFFSET
+#define	MUSB_EP_OFFSET			MUSB_INDEXED_OFFSET
 #endif
 
 /****************************** FUNCTIONS ********************************/
@@ -448,11 +448,6 @@ struct musb {
 	u16			ackpend;		/* ep0 */
 	struct usb_gadget	g;			/* the gadget */
 	struct usb_gadget_driver *gadget_driver;	/* its driver */
-#endif
-
-#ifdef CONFIG_USB_MUSB_OTG
-	/* FIXME this can't be OTG-specific ... ? */
-	u8 delay_port_power_off;
 #endif
 
 #ifdef MUSB_CONFIG_PROC_FS
