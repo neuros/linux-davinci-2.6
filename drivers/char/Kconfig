@@ -833,6 +833,12 @@ config DS1302
 	  will get access to the real time clock (or hardware clock) built
 	  into your computer.
 
+config DAVINCI_RTC
+	bool "TI DaVinci Real Time Clock"
+	depends on ARCH_DAVINCI && MACH_DAVINCI_EVM && I2C_DAVINCI
+	help
+	  Support for TI DaVinci RTC
+
 config COBALT_LCD
 	bool "Support for Cobalt LCD"
 	depends on MIPS_COBALT

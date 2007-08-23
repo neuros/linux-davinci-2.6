@@ -11,6 +11,8 @@ tuner-$(CONFIG_TUNER_TEA5761)	+= tea5761.o
 
 msp3400-objs	:=	msp3400-driver.o msp3400-kthreads.o
 
+davinci-vpfe-objs   :=  ccdc_davinci.o davinci_vpfe.o
+
 obj-$(CONFIG_VIDEO_DEV) += videodev.o v4l2-common.o compat_ioctl32.o
 
 ifeq ($(CONFIG_VIDEO_V4L1_COMPAT),y)
@@ -114,6 +116,9 @@ obj-$(CONFIG_USB_IBMCAM)        += usbvideo/
 obj-$(CONFIG_USB_KONICAWC)      += usbvideo/
 obj-$(CONFIG_USB_VICAM)         += usbvideo/
 obj-$(CONFIG_USB_QUICKCAM_MESSENGER)	+= usbvideo/
+
+obj-$(CONFIG_VIDEO_DAVINCI)     += davinci-vpfe.o
+obj-$(CONFIG_VIDEO_TVP5146)     += tvp5146.o
 
 obj-$(CONFIG_VIDEO_VIVI) += vivi.o
 

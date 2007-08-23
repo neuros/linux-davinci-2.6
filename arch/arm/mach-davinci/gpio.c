@@ -77,7 +77,7 @@ EXPORT_SYMBOL(__gpio_set);
  */
 int __gpio_get(unsigned gpio)
 {
-	struct gpio_controller *__iomem g = gpio2controller(gpio);
+	struct gpio_controller	*__iomem g = gpio2controller(gpio);
 
 	return !!(__gpio_mask(gpio) & __raw_readl(&g->in_data));
 }
@@ -93,9 +93,9 @@ EXPORT_SYMBOL(__gpio_get);
 
 int gpio_direction_input(unsigned gpio)
 {
-	struct gpio_controller *__iomem g = gpio2controller(gpio);
-	u32 temp;
-	u32 mask;
+	struct gpio_controller	*__iomem g = gpio2controller(gpio);
+	u32			temp;
+	u32			mask;
 
 	if (!g)
 		return -EINVAL;

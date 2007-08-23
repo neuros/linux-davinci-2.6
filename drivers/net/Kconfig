@@ -917,6 +917,15 @@ config SMC91X
 	  module, say M here and read <file:Documentation/kbuild/modules.txt>
 	  as well as <file:Documentation/networking/net-modules.txt>.
 
+config TI_DAVINCI_EMAC
+	tristate "TI DaVinci EMAC Support"
+	depends on NETDEVICES && MACH_DAVINCI_EVM
+	help
+	  This driver supports TI's DaVinci Ethernet .
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called ti_davinci_emac.  This is recommended.
+
 config NET_NETX
 	tristate "NetX Ethernet support"
 	select MII

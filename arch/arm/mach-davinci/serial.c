@@ -42,7 +42,7 @@ static inline unsigned int davinci_serial_in(struct plat_serial8250_port *up,
 	return (unsigned int)__raw_readb(up->membase + offset);
 }
 
-static inline void davinci_serial_outp(struct plat_serial8250_port *p,
+static inline void davinci_serial_outp(struct plat_serial8250_port *p, 
 				       int offset, int value)
 {
 	offset <<= p->regshift;
@@ -71,7 +71,7 @@ static struct platform_device serial_device = {
 		.platform_data	= serial_platform_data,
 	},
 };
-
+  
 static void __init davinci_serial_reset(struct plat_serial8250_port *p)
 {
 	/* reset both transmitter and receiver: bits 14,13 = UTRST, URRST */
@@ -89,6 +89,16 @@ static void __init davinci_serial_reset(struct plat_serial8250_port *p)
 
 static int __init davinci_init(void)
 {
+	struct clk *uart_clk;
+	struct device *dev = &serial_device.dev;
+
+	uart_clk = clk_get(dev, "UART");
+	if (IS_ERR(uart_clk))
+		printk(KERN_ERR "%s:%d: failed to get UART clock\n",
+		       __FUNCTION__, __LINE__);
+	else
+		clk_enable(uart_clk);
+
 	davinci_serial_reset(&serial_platform_data[0]);
 	return platform_device_register(&serial_device);
 }

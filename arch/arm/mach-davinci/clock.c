@@ -59,7 +59,7 @@ struct clk *clk_get(struct device *dev, const char *id)
 			goto found;
 		}
 	}
-
+	
 	list_for_each_entry(p, &clocks, node) {
 		if (strcmp(id, p->name) == 0 && try_module_get(p->owner)) {
 			clk = p;
@@ -102,7 +102,7 @@ int clk_enable(struct clk *clk)
 {
 	unsigned long flags;
 	int ret = 0;
-
+	
 	if (clk == NULL || IS_ERR(clk))
 		return -EINVAL;
 
@@ -291,10 +291,10 @@ static int davinci_ck_show(struct seq_file *m, void *v)
 }
 
 static struct seq_operations davinci_ck_op = {
-	.start	= davinci_ck_start,
-	.next	= davinci_ck_next,
-	.stop	= davinci_ck_stop,
-	.show	= davinci_ck_show
+	.start =	davinci_ck_start,
+	.next =		davinci_ck_next,
+	.stop =		davinci_ck_stop,
+	.show =		davinci_ck_show
 };
 
 static int davinci_ck_open(struct inode *inode, struct file *file)
@@ -320,4 +320,4 @@ static int __init davinci_ck_proc_init(void)
 
 }
 __initcall(davinci_ck_proc_init);
-#endif	/* CONFIG_DEBUG_PROC_FS */
+#endif /* CONFIG_DEBUG_PROC_FS */

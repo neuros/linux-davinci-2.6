@@ -1801,6 +1801,18 @@ config FB_IBM_GXT4500
 	  Say Y here to enable support for the IBM GXT4500P display
 	  adaptor, found on some IBM System P (pSeries) machines.
 
+config FB_DAVINCI
+	bool "Davinci Framebuffer support"
+	depends on FB && ARCH_DAVINCI
+	help
+	  This is the frame buffer device driver for the DaVinci video
+	  hardware found on the TI DaVinci EVM.	 If
+	  unsure, say N.
+
+config FB_VIRTUAL
+	tristate "Virtual Frame Buffer support (ONLY FOR TESTING!)"
+	depends on FB
+
 config FB_PS3
 	tristate "PS3 GPU framebuffer driver"
 	depends on FB && PS3_PS3AV

@@ -218,9 +218,9 @@ void __init davinci_irq_init(void)
 	for (i = 0; i < DAVINCI_N_AINTC_IRQ; i++) {
 		set_irq_chip(i, &davinci_irq_chip_0);
 		set_irq_flags(i, IRQF_VALID | IRQF_PROBE);
-		if (i != IRQ_TINT1_TINT34)
-			set_irq_handler(i, handle_edge_irq);
-		else
-			set_irq_handler(i, handle_level_irq);
+                if (i != IRQ_TINT1_TINT34)
+                        set_irq_handler(i, handle_edge_irq);
+                else
+                        set_irq_handler(i, handle_level_irq);
 	}
 }

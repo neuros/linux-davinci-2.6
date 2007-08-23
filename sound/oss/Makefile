@@ -12,6 +12,9 @@ obj-$(CONFIG_SOUND_OMAP)        += omap-audio-dma-intfc.o omap-audio.o
 obj-$(CONFIG_SOUND_OMAP_TSC2101)+= omap-audio-tsc2101.o
 obj-$(CONFIG_SOUND_OMAP_AIC23)  += omap-audio-aic23.o
 
+obj-$(CONFIG_SOUND_DAVINCI)	+= davinci-audio-dma-intfc.o davinci-audio.o
+obj-$(CONFIG_SOUND_DAVINCI_AIC33) += davinci-audio-aic33.o
+
 # Please leave it as is, cause the link order is significant !
 
 obj-$(CONFIG_SOUND_SH_DAC_AUDIO)	+= sh_dac_audio.o

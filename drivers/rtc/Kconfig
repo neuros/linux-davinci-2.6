@@ -122,6 +122,15 @@ comment "I2C RTC drivers"
 
 if I2C
 
+config RTC_DRV_DAVINCI_EVM
+	tristate "TI DaVinci EVM RTC"
+	depends on RTC_CLASS && I2C_DAVINCI && MACH_DAVINCI_EVM
+	help
+	  Supports the RTC firmware in the MSP430 on the DaVinci EVM.
+
+	  This driver can also be built as a module. If so, the module
+	  will be called rtc-davinci-evm.
+
 config RTC_DRV_DS1307
 	tristate "Dallas/Maxim DS1307/37/38/39/40, ST M41T00"
 	help

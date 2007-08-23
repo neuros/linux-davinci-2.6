@@ -2,6 +2,9 @@
 # Makefile for the Linux network (ethercard) device drivers.
 #
 
+davinci_emac_driver-objs := davinci_emac.o davinci_emac_phy.o
+obj-$(CONFIG_TI_DAVINCI_EMAC) += davinci_emac_driver.o
+
 obj-$(CONFIG_E1000) += e1000/
 obj-$(CONFIG_IBM_EMAC) += ibm_emac/
 obj-$(CONFIG_IXGB) += ixgb/

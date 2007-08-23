@@ -20,6 +20,7 @@ obj-$(CONFIG_SENSORS_TSL2550)	+= tsl2550.o
 obj-$(CONFIG_TWL4030_CORE)      += twl4030_core.o
 obj-$(CONFIG_TWL4030_GPIO)	+= twl4030_gpio.o
 obj-$(CONFIG_RTC_X1205_I2C)	+= x1205.o
+obj-$(CONFIG_GPIOEXPANDER_DAVINCI) += gpio_expander_davinci.o
 
 ifeq ($(CONFIG_I2C_DEBUG_CHIP),y)
 EXTRA_CFLAGS += -DDEBUG

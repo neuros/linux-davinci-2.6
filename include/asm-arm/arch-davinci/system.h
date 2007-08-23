@@ -18,7 +18,7 @@ extern void davinci_watchdog_reset(void);
 
 static void arch_idle(void)
 {
-	cpu_do_idle();
+			cpu_do_idle();
 }
 
 static void arch_reset(char mode)
@@ -26,4 +26,4 @@ static void arch_reset(char mode)
 	davinci_watchdog_reset();
 }
 
-#endif /* __ASM_ARCH_SYSTEM_H */
+#endif				/* __ASM_ARCH_SYSTEM_H */

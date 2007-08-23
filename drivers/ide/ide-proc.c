@@ -69,6 +69,7 @@ static int proc_ide_read_imodel
 		case ide_au1xxx:	name = "au1xxx";	break;
 		case ide_etrax100:	name = "etrax100";	break;
 		case ide_acorn:		name = "acorn";		break;
+		case ide_palm3710:	name = "palm3710";	break;
 		default:		name = "(unknown)";	break;
 	}
 	len = sprintf(page, "%s\n", name);

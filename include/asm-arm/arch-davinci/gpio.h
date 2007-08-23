@@ -64,11 +64,11 @@ __gpio_to_controller(unsigned gpio)
 	void *__iomem ptr;
 
 	if (gpio < 32)
-		ptr = (void *__iomem)IO_ADDRESS(DAVINCI_GPIO_BASE + 0x10);
+		ptr = (void *__iomem) IO_ADDRESS(DAVINCI_GPIO_BASE + 0x10);
 	else if (gpio < 64)
-		ptr = (void *__iomem)IO_ADDRESS(DAVINCI_GPIO_BASE + 0x38);
+		ptr = (void *__iomem) IO_ADDRESS(DAVINCI_GPIO_BASE + 0x38);
 	else if (gpio < DAVINCI_N_GPIO)
-		ptr = (void *__iomem)IO_ADDRESS(DAVINCI_GPIO_BASE + 0x60);
+		ptr = (void *__iomem) IO_ADDRESS(DAVINCI_GPIO_BASE + 0x60);
 	else
 		ptr = NULL;
 	return ptr;
@@ -122,7 +122,7 @@ static inline void gpio_set_value(unsigned gpio, int value)
 
 static inline int gpio_get_value(unsigned gpio)
 {
-	struct gpio_controller *__iomem g;
+	struct gpio_controller	*__iomem g;
 
 	if (!__builtin_constant_p(gpio))
 		return __gpio_get(gpio);
