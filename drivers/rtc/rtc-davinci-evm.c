@@ -230,9 +230,8 @@ static int __devinit evm_rtc_probe(struct platform_device *pdev)
 	if (IS_ERR(rtc))
 		return PTR_ERR(rtc);
 
-	printk(KERN_WARNING "%s: hours 12-23 are misreported as "
-			"duplicate hours 00-11\n",
-			rtc->class_dev.class_id);
+	dev_warn(&pdev->dev, "WARNING: hours 12-23 are misreported as "
+			"duplicate hours 00-11\n");
 
 	platform_set_drvdata(pdev, rtc);
 	return 0;
