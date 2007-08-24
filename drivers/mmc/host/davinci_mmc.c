@@ -30,7 +30,6 @@
 
  */
 
-#include <linux/config.h>
 #include <linux/module.h>
 #include <linux/tty.h>
 #include <linux/ioport.h>
@@ -41,7 +40,7 @@
 #include <linux/clk.h>
 #include <linux/mmc/host.h>
 #include <linux/mmc/card.h>
-#include <linux/mmc/protocol.h>
+#include <linux/mmc/mmc.h>
 
 #include <asm/io.h>
 #include <asm/irq.h>
@@ -66,11 +65,11 @@
 extern void davinci_clean_channel(int ch_no);
 
 /* MMCSD Init clock in Hz in opendain mode */
-#define MMCSD_INIT_CLOCK 		200000
-#define DRIVER_NAME 			"mmc0"
-#define MMCINT_INTERRUPT    		IRQ_MMCINT
-#define MMCSD_REGS_BASE_ADDR  		DAVINCI_MMC_SD_BASE
-#define TCINTEN 			(0x1<<20)
+#define MMCSD_INIT_CLOCK		200000
+#define DRIVER_NAME			"mmc0"
+#define MMCINT_INTERRUPT		IRQ_MMCINT
+#define MMCSD_REGS_BASE_ADDR		DAVINCI_MMC_SD_BASE
+#define TCINTEN				(0x1<<20)
 
 /* This macro could not be defined to 0 (ZERO) or -ve value.
  * This value is multiplied to "HZ"
@@ -112,7 +111,7 @@ static unsigned int new_card_state = 0;	/* tells current state of card */
 static DEFINE_SPINLOCK(mmc_lock);
 
 static void mmc_davinci_start_command(struct mmc_davinci_host *host,
-				      struct mmc_command *cmd)
+		struct mmc_command *cmd)
 {
 	u32 cmd_reg = 0;
 	u32 resp_type = 0;
@@ -149,9 +148,8 @@ static void mmc_davinci_start_command(struct mmc_davinci_host *host,
 			resp_type = 3;
 			if (cmd->opcode == 3)
 				resp_type = 1;
-		} else {
+		} else
 			resp_type = 1;
-		}
 		break;
 	case MMC_RSP_LONG:
 		/* resp 2 */
@@ -173,118 +171,107 @@ static void mmc_davinci_start_command(struct mmc_davinci_host *host,
 	 * rest are ac, except if opendrain
 	 */
 
-	if (host->data_dir) {
+	if (host->data_dir)
 		cmd_type = DAVINCI_MMC_CMDTYPE_ADTC;
-	} else if (resp_type == 0 && cmd->opcode != 15) {
+	else if (resp_type == 0 && cmd->opcode != 15)
 		cmd_type = DAVINCI_MMC_CMDTYPE_BC;
-	} else if (host->bus_mode == MMC_BUSMODE_OPENDRAIN) {
+	else if (host->bus_mode == MMC_BUSMODE_OPENDRAIN)
 		cmd_type = DAVINCI_MMC_CMDTYPE_BCR;
-	} else {
+	else
 		cmd_type = DAVINCI_MMC_CMDTYPE_AC;
-	}
+
 	/* Set command Busy or not */
 	if (cmd->flags & MMC_RSP_BUSY) {
 		/*
 		 * Linux core sending BUSY which is not defined for cmd 24
 		 * as per mmc standard
 		 */
-		if (cmd->opcode != 24) {
-
+		if (cmd->opcode != 24)
 			cmd_reg = cmd_reg | (1 << 8);
-		}
 	}
 
 	/* Set command index */
 	cmd_reg |= cmd->opcode;
 
 	/* Setting initialize clock */
-	if (cmd->opcode == 0) {
+	if (cmd->opcode == 0)
 		cmd_reg = cmd_reg | (1 << 14);
-	}
 
 	/* Set for generating DMA Xfer event */
 	if ((host->use_dma == 1) && (host->data != NULL)
-	    && ((cmd->opcode == 18) || (cmd->opcode == 25)
-		|| (cmd->opcode == 24) || (cmd->opcode == 17))) {
+			&& ((cmd->opcode == 18) || (cmd->opcode == 25)
+				|| (cmd->opcode == 24)
+				|| (cmd->opcode == 17)))
 		cmd_reg = cmd_reg | (1 << 16);
-	}
 
 	/* Setting whether command involves data transfer or not */
-	if (cmd_type == DAVINCI_MMC_CMDTYPE_ADTC) {
+	if (cmd_type == DAVINCI_MMC_CMDTYPE_ADTC)
 		cmd_reg = cmd_reg | (1 << 13);
-	}
 
 	/* Setting whether stream or block transfer */
-	if (cmd->flags & MMC_DATA_STREAM) {
+	if (cmd->flags & MMC_DATA_STREAM)
 		cmd_reg = cmd_reg | (1 << 12);
-	}
 
 	/* Setting whether data read or write */
-	if (host->data_dir == DAVINCI_MMC_DATADIR_WRITE) {
+	if (host->data_dir == DAVINCI_MMC_DATADIR_WRITE)
 		cmd_reg = cmd_reg | (1 << 11);
-	}
 
 	/* Setting response type */
 	cmd_reg = cmd_reg | (resp_type << 9);
 
-	if (host->bus_mode == MMC_BUSMODE_PUSHPULL) {
+	if (host->bus_mode == MMC_BUSMODE_PUSHPULL)
 		cmd_reg = cmd_reg | (1 << 7);
-	}
 
 	/* set Command timeout */
 	mmcsd_regs->mmc_tor = 0xFFFF;
 
 	/* Enable interrupt */
 	if (host->data_dir == DAVINCI_MMC_DATADIR_WRITE) {
-		if (host->use_dma != 1) {
-			mmcsd_regs->mmc_im = (MMCSD_EVENT_EOFCMD |
-					      MMCSD_EVENT_WRITE |
-					      MMCSD_EVENT_ERROR_CMDCRC |
-					      MMCSD_EVENT_ERROR_DATACRC |
-					      MMCSD_EVENT_ERROR_CMDTIMEOUT |
-					      MMCSD_EVENT_ERROR_DATATIMEOUT |
-					      MMCSD_EVENT_BLOCK_XFERRED);
-		} else {
-			mmcsd_regs->mmc_im = (MMCSD_EVENT_EOFCMD |
-					      MMCSD_EVENT_ERROR_CMDCRC |
-					      MMCSD_EVENT_ERROR_DATACRC |
-					      MMCSD_EVENT_ERROR_CMDTIMEOUT |
-					      MMCSD_EVENT_ERROR_DATATIMEOUT |
-					      MMCSD_EVENT_BLOCK_XFERRED);
-		}
+		if (host->use_dma != 1)
+			mmcsd_regs->mmc_im = MMCSD_EVENT_EOFCMD
+					| MMCSD_EVENT_WRITE
+					| MMCSD_EVENT_ERROR_CMDCRC
+					| MMCSD_EVENT_ERROR_DATACRC
+					| MMCSD_EVENT_ERROR_CMDTIMEOUT
+					| MMCSD_EVENT_ERROR_DATATIMEOUT
+					| MMCSD_EVENT_BLOCK_XFERRED;
+		else
+			mmcsd_regs->mmc_im = MMCSD_EVENT_EOFCMD
+					| MMCSD_EVENT_ERROR_CMDCRC
+					| MMCSD_EVENT_ERROR_DATACRC
+					| MMCSD_EVENT_ERROR_CMDTIMEOUT
+					| MMCSD_EVENT_ERROR_DATATIMEOUT
+					| MMCSD_EVENT_BLOCK_XFERRED;
 	} else if (host->data_dir == DAVINCI_MMC_DATADIR_READ) {
-		if (host->use_dma != 1) {
-			mmcsd_regs->mmc_im = (MMCSD_EVENT_EOFCMD |
-					      MMCSD_EVENT_READ |
-					      MMCSD_EVENT_ERROR_CMDCRC |
-					      MMCSD_EVENT_ERROR_DATACRC |
-					      MMCSD_EVENT_ERROR_CMDTIMEOUT |
-					      MMCSD_EVENT_ERROR_DATATIMEOUT |
-					      MMCSD_EVENT_BLOCK_XFERRED);
-		} else {
-			mmcsd_regs->mmc_im = (MMCSD_EVENT_EOFCMD |
-					      MMCSD_EVENT_ERROR_CMDCRC |
-					      MMCSD_EVENT_ERROR_DATACRC |
-					      MMCSD_EVENT_ERROR_CMDTIMEOUT |
-					      MMCSD_EVENT_ERROR_DATATIMEOUT |
-					      MMCSD_EVENT_BLOCK_XFERRED);
-		}
-
-	} else {
-		mmcsd_regs->mmc_im = (MMCSD_EVENT_EOFCMD |
-				      MMCSD_EVENT_ERROR_CMDCRC |
-				      MMCSD_EVENT_ERROR_DATACRC |
-				      MMCSD_EVENT_ERROR_CMDTIMEOUT |
-				      MMCSD_EVENT_ERROR_DATATIMEOUT);
-
-	}
+		if (host->use_dma != 1)
+			mmcsd_regs->mmc_im = MMCSD_EVENT_EOFCMD
+					| MMCSD_EVENT_READ
+					| MMCSD_EVENT_ERROR_CMDCRC
+					| MMCSD_EVENT_ERROR_DATACRC
+					| MMCSD_EVENT_ERROR_CMDTIMEOUT
+					| MMCSD_EVENT_ERROR_DATATIMEOUT
+					| MMCSD_EVENT_BLOCK_XFERRED;
+		else
+			mmcsd_regs->mmc_im = MMCSD_EVENT_EOFCMD
+					| MMCSD_EVENT_ERROR_CMDCRC
+					| MMCSD_EVENT_ERROR_DATACRC
+					| MMCSD_EVENT_ERROR_CMDTIMEOUT
+					| MMCSD_EVENT_ERROR_DATATIMEOUT
+					| MMCSD_EVENT_BLOCK_XFERRED;
+	} else
+		mmcsd_regs->mmc_im = MMCSD_EVENT_EOFCMD
+				| MMCSD_EVENT_ERROR_CMDCRC
+				| MMCSD_EVENT_ERROR_DATACRC
+				| MMCSD_EVENT_ERROR_CMDTIMEOUT
+				| MMCSD_EVENT_ERROR_DATATIMEOUT;
 
 	/*
 	 * It is required by controoler b4 WRITE command that
 	 * FIFO should be populated with 32 bytes
 	 */
-	if ((host->data_dir == DAVINCI_MMC_DATADIR_WRITE) &&
-	    (cmd_type == DAVINCI_MMC_CMDTYPE_ADTC) && (host->use_dma != 1)) {
+	if ((host->data_dir == DAVINCI_MMC_DATADIR_WRITE)
+			&& (cmd_type == DAVINCI_MMC_CMDTYPE_ADTC)
+			&& (host->use_dma != 1)) {
 		byte_cnt = mmcsd_cfg.rw_threshold;
 		host->bytes_left -= mmcsd_cfg.rw_threshold;
 		for (i = 0; i < (byte_cnt / 4); i++) {
@@ -352,7 +339,7 @@ static void mmc_davinci_dma_cb(int lch, u16 ch_status, void *data)
 }
 
 static int mmc_davinci_start_dma_transfer(struct mmc_davinci_host *host,
-					  struct mmc_request *req)
+		struct mmc_request *req)
 {
 	const char *dev_name;
 	int sync_dev, r, edma_ch = 0, tcc = 0;
@@ -424,7 +411,7 @@ r);
 			temp_ccnt = ccnt;
 		}
 
-		src_port = (unsigned int)virt_to_phys(req->data->req->buffer);
+		src_port = (unsigned int)virt_to_phys(req->data->mrq->buffer);
 		mode_src = INCR;
 		fifo_width_src = W8BIT;	/* It's not cared as modeDsr is INCR */
 		src_bidx = 4;
@@ -454,7 +441,7 @@ r);
 		fifo_width_src = W8BIT;
 		src_bidx = 0;
 		src_cidx = 0;
-		dst_port = (unsigned int)virt_to_phys(req->data->req->buffer);
+		dst_port = (unsigned int)virt_to_phys(req->data->mrq->buffer);
 		mode_dst = INCR;
 		fifo_width_dst = W8BIT;	/* It's not cared as modeDsr is INCR */
 		dst_bidx = 4;
@@ -464,9 +451,9 @@ r);
 	}
 
 	davinci_set_dma_src_params(sync_dev, src_port, mode_src,
-				   fifo_width_src);
+			fifo_width_src);
 	davinci_set_dma_dest_params(sync_dev, dst_port, mode_dst,
-				    fifo_width_dst);
+			fifo_width_dst);
 	davinci_set_dma_src_index(sync_dev, src_bidx, src_cidx);
 	davinci_set_dma_dest_index(sync_dev, dst_bidx, dst_cidx);
 	davinci_set_dma_transfer_params(sync_dev, acnt, bcnt, ccnt, bcntrld,
@@ -499,17 +486,19 @@ r);
 		for (i = 0; i < EDMA_MAX_LOGICAL_CHA_ALLOWED; i++) {
 			if (i != 0) {
 				j = i - 1;
-				davinci_get_dma_params(host->edma_ch_details.
-						       chanel_num[j], &temp);
+				davinci_get_dma_params(
+					host->edma_ch_details.chanel_num[j],
+					&temp);
 				temp.opt &= ~TCINTEN;
-				davinci_set_dma_params(host->edma_ch_details.
-						       chanel_num[j], &temp);
+				davinci_set_dma_params(
+					host->edma_ch_details.chanel_num[j],
+					&temp);
 			}
 
 			host->edma_ch_details.cnt_chanel++;
 			davinci_request_dma(DAVINCI_EDMA_PARAM_ANY, "LINK",
-					    NULL, NULL, &edma_chan_num,
-					    &sync_dev, queue_no);
+					NULL, NULL, &edma_chan_num,
+					&sync_dev, queue_no);
 			host->edma_ch_details.chanel_num[i] = edma_chan_num;
 			ccnt = temp.ccnt & 0x0000FFFF;
 			if (sync_dev == DAVINCI_DMA_MMCTXEVT) {
@@ -520,15 +509,13 @@ r);
 			temp.opt |= TCINTEN;
 
 			if ((num_eight_words - temp_ccnt) > MAX_C_CNT) {
-				temp.ccnt =
-				    (temp.ccnt & 0xFFFF0000) | MAX_C_CNT;
+				temp.ccnt = (temp.ccnt & 0xFFFF0000)
+					| MAX_C_CNT;
 				ccnt = temp.ccnt & 0x0000FFFF;
 				temp_ccnt = temp_ccnt + ccnt;
 			} else {
-				temp.ccnt =
-				    (temp.
-				     ccnt & 0xFFFF0000) | (num_eight_words -
-							   temp_ccnt);
+				temp.ccnt = (temp.ccnt & 0xFFFF0000)
+					| (num_eight_words -temp_ccnt);
 				ccnt = temp.ccnt & 0x0000FFFF;
 				temp_ccnt = temp_ccnt + ccnt;
 			}
@@ -536,26 +523,25 @@ r);
 			if (i != 0) {
 				j = i - 1;
 				davinci_dma_link_lch(host->edma_ch_details.
-						     chanel_num[j],
-						     edma_chan_num);
+						chanel_num[j],
+						edma_chan_num);
 			}
-			if (temp_ccnt == num_eight_words) {
+			if (temp_ccnt == num_eight_words)
 				break;
-			}
-
 		}
 		davinci_dma_link_lch(sync_dev,
-				     host->edma_ch_details.chanel_num[0]);
+				host->edma_ch_details.chanel_num[0]);
 	}
 
 	davinci_start_dma(sync_dev);
 	return 0;
 }
 
-static void mmc_davinci_prepare_data(struct mmc_davinci_host *host,
-				     struct mmc_request *req)
+static void
+mmc_davinci_prepare_data(struct mmc_davinci_host *host, struct mmc_request *req)
 {
 	int timeout;
+
 	host->data = req->data;
 	if (req->data == NULL) {
 		host->data_dir = DAVINCI_MMC_DATADIR_NONE;
@@ -569,21 +555,21 @@ static void mmc_davinci_prepare_data(struct mmc_davinci_host *host,
 		(req->data->flags & MMC_DATA_STREAM) ? "stream" : "block",
 		(req->data->flags & MMC_DATA_WRITE) ? "write" : "read",
 		req->data->timeout_clks, req->data->timeout_ns,
-		req->data->blocks, 1 << req->data->blksz_bits);
+		req->data->blocks, req->data->blksz);
 
 	/* Convert ns to clock cycles by assuming 20MHz frequency
 	 * 1 cycle at 20MHz = 500 ns
 	 */
 	timeout = req->data->timeout_clks + req->data->timeout_ns / 500;
-	if (timeout > 0xffff) {
+	if (timeout > 0xffff)
 		timeout = 0xffff;
-	}
 
 	mmcsd_regs->mmc_tod = timeout;
 	mmcsd_regs->mmc_nblk = req->data->blocks;
-	mmcsd_regs->mmc_blen = (1 << req->data->blksz_bits);
-	host->data_dir = (req->data->flags & MMC_DATA_WRITE) ?
-	    DAVINCI_MMC_DATADIR_WRITE : DAVINCI_MMC_DATADIR_READ;
+	mmcsd_regs->mmc_blen = req->data->blksz;
+	host->data_dir = (req->data->flags & MMC_DATA_WRITE)
+			? DAVINCI_MMC_DATADIR_WRITE
+			: DAVINCI_MMC_DATADIR_READ;
 
 	/* Configure the FIFO */
 	switch (host->data_dir) {
@@ -604,14 +590,13 @@ static void mmc_davinci_prepare_data(struct mmc_davinci_host *host,
 	}
 
 	if ((host->use_dma == 1)
-	    && (mmc_davinci_start_dma_transfer(host, req) == 0)) {
+			&& (mmc_davinci_start_dma_transfer(host, req) == 0)) {
 		host->buffer = NULL;
 		host->bytes_left = 0;
 	} else {
 		/* Revert to CPU Copy */
-		host->buffer = (u32 *) (req->data->req->buffer);
-		host->bytes_left =
-		    req->data->blocks * (1 << req->data->blksz_bits);
+		host->buffer = (u32 *) (req->data->mrq->buffer);
+		host->bytes_left = req->data->blocks * req->data->blksz;
 		host->use_dma = 0;
 	}
 }
@@ -620,6 +605,7 @@ static void mmc_davinci_request(struct mmc_host *mmc, struct mmc_request *req)
 {
 	struct mmc_davinci_host *host = mmc_priv(mmc);
 	unsigned long flags;
+
 	if (!is_card_detect_progress) {
 		spin_lock_irqsave(&mmc_lock, flags);
 		is_card_busy = 1;
@@ -639,20 +625,18 @@ static void mmc_davinci_request(struct mmc_host *mmc, struct mmc_request *req)
 static unsigned int calculate_freq_for_card(unsigned int mmc_req_freq)
 {
 	unsigned int mmc_freq = 0, cpu_arm_clk = 0, mmc_push_pull = 0;
-	cpu_arm_clk = mmc_input_clk;
 
-	if (cpu_arm_clk > (2 * mmc_req_freq)) {
-		mmc_push_pull =
-		    ((unsigned int)cpu_arm_clk / (2 * mmc_req_freq)) - 1;
-	} else {
+	cpu_arm_clk = mmc_input_clk;
+	if (cpu_arm_clk > (2 * mmc_req_freq))
+		mmc_push_pull = ((unsigned int)cpu_arm_clk
+				/ (2 * mmc_req_freq)) - 1;
+	else
 		mmc_push_pull = 0;
-	}
 
 	mmc_freq = (unsigned int)cpu_arm_clk / (2 * (mmc_push_pull + 1));
 
-	if (mmc_freq > mmc_req_freq) {
+	if (mmc_freq > mmc_req_freq)
 		mmc_push_pull = mmc_push_pull + 1;
-	}
 
 	return mmc_push_pull;
 }
@@ -670,16 +654,14 @@ static void mmc_davinci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 		ios->vdd / 100, ios->vdd % 100);
 
 	if (ios->bus_mode == MMC_BUSMODE_OPENDRAIN) {
-
-		open_drain_freq =
-		    ((unsigned int)cpu_arm_clk / (2 * MMCSD_INIT_CLOCK)) - 1;
-		mmcsd_regs->mmc_clk =
-		    (mmcsd_regs->mmc_clk & ~(0xFF)) | open_drain_freq;
-
+		open_drain_freq = ((unsigned int)cpu_arm_clk
+				/ (2 * MMCSD_INIT_CLOCK)) - 1;
+		mmcsd_regs->mmc_clk = (mmcsd_regs->mmc_clk & ~(0xFF))
+				| open_drain_freq;
 	} else {
 		mmc_push_pull_freq = calculate_freq_for_card(ios->clock);
-		mmcsd_regs->mmc_clk =
-		    (mmcsd_regs->mmc_clk & ~(0xFF)) | mmc_push_pull_freq;
+		mmcsd_regs->mmc_clk = (mmcsd_regs->mmc_clk & ~(0xFF))
+				| mmc_push_pull_freq;
 	}
 	host->bus_mode = ios->bus_mode;
 	if (ios->power_mode == MMC_POWER_UP) {
@@ -693,14 +675,15 @@ static void mmc_davinci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 	}
 }
 
-static void mmc_davinci_xfer_done(struct mmc_davinci_host *host,
-				  struct mmc_data *data)
+static void
+mmc_davinci_xfer_done(struct mmc_davinci_host *host, struct mmc_data *data)
 {
 	unsigned long flags;
+
 	host->data = NULL;
 	host->data_dir = DAVINCI_MMC_DATADIR_NONE;
 	if (data->error == MMC_ERR_NONE)
-		data->bytes_xfered += data->blocks * (1 << data->blksz_bits);
+		data->bytes_xfered += data->blocks * data->blksz;
 
 	if (data->error == MMC_ERR_TIMEOUT) {
 		spin_lock_irqsave(&mmc_lock, flags);
@@ -725,6 +708,7 @@ static void mmc_davinci_cmd_done(struct mmc_davinci_host *host,
 				 struct mmc_command *cmd)
 {
 	unsigned long flags;
+
 	host->cmd = NULL;
 	switch (cmd->flags & MMC_RSP_MASK) {
 	case MMC_RSP_NONE:
@@ -747,18 +731,16 @@ static void mmc_davinci_cmd_done(struct mmc_davinci_host *host,
 
 	if (host->data == NULL || cmd->error != MMC_ERR_NONE) {
 		host->req = NULL;
-		if (cmd->error == MMC_ERR_TIMEOUT) {
+		if (cmd->error == MMC_ERR_TIMEOUT)
 			cmd->mrq->cmd->retries = 0;
-		}
 		spin_lock_irqsave(&mmc_lock, flags);
 		is_card_busy = 0;
 		spin_unlock_irqrestore(&mmc_lock, flags);
 		mmc_request_done(host->mmc, cmd->mrq);
 	}
-
 }
 
-static irqreturn_t mmc_davinci_irq(int irq, void *dev_id, struct pt_regs *regs)
+static irqreturn_t mmc_davinci_irq(int irq, void *dev_id)
 {
 	struct mmc_davinci_host *host = (struct mmc_davinci_host *)dev_id;
 	u16 status;
@@ -781,9 +763,9 @@ static irqreturn_t mmc_davinci_irq(int irq, void *dev_id, struct pt_regs *regs)
 	end_transfer = 0;
 
 	status = mmcsd_regs->mmc_st0;
-	if (status == 0) {
+	if (status == 0)
 		return IRQ_HANDLED;
-	}
+
 	if (host->is_core_command) {
 		if (is_card_initialized) {
 			if (new_card_state == 0) {
@@ -803,13 +785,13 @@ static irqreturn_t mmc_davinci_irq(int irq, void *dev_id, struct pt_regs *regs)
 					/* Buffer almost empty */
 					if (host->bytes_left > 0) {
 						byte_cnt =
-						    mmcsd_cfg.rw_threshold;
+							mmcsd_cfg.rw_threshold;
 						host->bytes_left -=
-						    mmcsd_cfg.rw_threshold;
+							mmcsd_cfg.rw_threshold;
 						for (i = 0; i < (byte_cnt / 4);
-						     i++) {
+								i++) {
 							mmcsd_regs->mmc_dxr =
-							    *host->buffer;
+								*host->buffer;
 							host->buffer++;
 						}
 					}
@@ -821,13 +803,14 @@ static irqreturn_t mmc_davinci_irq(int irq, void *dev_id, struct pt_regs *regs)
 					/* Buffer almost empty */
 					if (host->bytes_left > 0) {
 						byte_cnt =
-						    mmcsd_cfg.rw_threshold;
+							mmcsd_cfg.rw_threshold;
 						host->bytes_left -=
-						    mmcsd_cfg.rw_threshold;
+							mmcsd_cfg.rw_threshold;
 						for (i = 0; i < (byte_cnt / 4);
-						     i++) {
+								i++) {
 							*host->buffer =
-							    mmcsd_regs->mmc_drr;
+								mmcsd_regs->
+									mmc_drr;
 							host->buffer++;
 						}
 					}
@@ -849,7 +832,7 @@ static irqreturn_t mmc_davinci_irq(int irq, void *dev_id, struct pt_regs *regs)
 					new_card_state = 0;
 					is_card_initialized = 0;
 					spin_unlock_irqrestore(&mmc_lock,
-							       flags);
+						flags);
 					dev_dbg(&mmc_dev,
 						"MMCSD: Data timeout, CMD%d and status is %x\r\n",
 						host->cmd->opcode, status);
@@ -882,17 +865,18 @@ static irqreturn_t mmc_davinci_irq(int irq, void *dev_id, struct pt_regs *regs)
 					 * MMC_SEND_STATUS
 					 */
 					if (host->cmd->opcode !=
-					    MMC_ALL_SEND_CID) {
+							MMC_ALL_SEND_CID) {
 						dev_dbg(&mmc_dev,
-							"MMCSD: Command timeout, CMD%d and status is %x\r\n",
+							"MMCSD: CMD%d timeout,"
+							" status %x\r\n",
 							host->cmd->opcode,
 							status);
 						spin_lock_irqsave(&mmc_lock,
-								  flags);
+							flags);
 						new_card_state = 0;
 						is_card_initialized = 0;
-						spin_unlock_irqrestore
-						    (&mmc_lock, flags);
+						spin_unlock_irqrestore(
+							&mmc_lock, flags);
 					}
 					host->cmd->error |= MMC_ERR_TIMEOUT;
 					end_command = 1;
@@ -928,13 +912,11 @@ static irqreturn_t mmc_davinci_irq(int irq, void *dev_id, struct pt_regs *regs)
 			}
 		}
 
-		if (end_command) {
+		if (end_command)
 			mmc_davinci_cmd_done(host, host->cmd);
-		}
-
-		if (end_transfer) {
+		if (end_transfer)
 			mmc_davinci_xfer_done(host, host->data);
-		}
+
 	} else {
 		if (host->cmd_code == 13) {
 			if (status & MMCSD_EVENT_EOFCMD) {
@@ -955,7 +937,7 @@ static irqreturn_t mmc_davinci_irq(int irq, void *dev_id, struct pt_regs *regs)
 
 			if (is_req_queued_up) {
 				mmc_davinci_request(que_mmc_host,
-						    que_mmc_request);
+						que_mmc_request);
 				spin_lock_irqsave(&mmc_lock, flags);
 				is_req_queued_up = 0;
 				spin_unlock_irqrestore(&mmc_lock, flags);
@@ -983,7 +965,7 @@ static irqreturn_t mmc_davinci_irq(int irq, void *dev_id, struct pt_regs *regs)
 
 			if (is_req_queued_up) {
 				mmc_davinci_request(que_mmc_host,
-						    que_mmc_request);
+						que_mmc_request);
 				spin_lock_irqsave(&mmc_lock, flags);
 				is_req_queued_up = 0;
 				spin_unlock_irqrestore(&mmc_lock, flags);
@@ -1023,6 +1005,7 @@ void mmc_check_card(unsigned long data)
 {
 	struct mmc_davinci_host *host = (struct mmc_davinci_host *)data;
 	unsigned long flags;
+
 	if ((!is_card_detect_progress) || (!is_init_progress)) {
 		if (is_card_initialized) {
 			host->is_core_command = 0;
@@ -1043,28 +1026,27 @@ void mmc_check_card(unsigned long data)
 			mmcsd_regs->mmc_arghl = 0;
 			mmcsd_regs->mmc_cmd = 0x4000;
 		}
-		mmcsd_regs->mmc_im = (MMCSD_EVENT_EOFCMD |
-				      MMCSD_EVENT_ERROR_CMDCRC |
-				      MMCSD_EVENT_ERROR_DATACRC |
-				      MMCSD_EVENT_ERROR_CMDTIMEOUT |
-				      MMCSD_EVENT_ERROR_DATATIMEOUT);
-
+		mmcsd_regs->mmc_im = MMCSD_EVENT_EOFCMD
+				| MMCSD_EVENT_ERROR_CMDCRC
+				| MMCSD_EVENT_ERROR_DATACRC
+				| MMCSD_EVENT_ERROR_CMDTIMEOUT
+				| MMCSD_EVENT_ERROR_DATATIMEOUT;
 	}
 }
+
 static void davinci_mmc_check_status(unsigned long data)
 {
 	unsigned long flags;
 	struct mmc_davinci_host *host = (struct mmc_davinci_host *)data;
+
 	if (!is_card_busy) {
 		if (host->old_card_state ^ new_card_state) {
 			mmc_detect_change(host->mmc, 0);
 			spin_lock_irqsave(&mmc_lock, flags);
 			host->old_card_state = new_card_state;
 			spin_unlock_irqrestore(&mmc_lock, flags);
-		} else {
+		} else
 			mmc_check_card(data);
-		}
-
 	}
 	mod_timer(&host->timer, jiffies + MULTIPILER_TO_HZ * HZ);
 }
@@ -1086,13 +1068,13 @@ static void init_mmcsd_host(void)
 	mmcsd_regs->mmc_ctl = mmcsd_regs->mmc_ctl & ~(1 << 1);
 }
 
-static int davinci_mmcsd_probe(struct device *dev)
+static int davinci_mmcsd_probe(struct platform_device *pdev)
 {
 	struct mmc_davinci_host *host;
 	struct mmc_host *mmc;
 	int ret;
 
-	mmc = mmc_alloc_host(sizeof(struct mmc_davinci_host), dev);
+	mmc = mmc_alloc_host(sizeof(struct mmc_davinci_host), &pdev->dev);
 	if (!mmc) {
 		ret = -ENOMEM;
 		goto out;
@@ -1114,14 +1096,13 @@ static int davinci_mmcsd_probe(struct device *dev)
 	host->use_dma = mmcsd_cfg.use_dma;
 	host->irq = MMCINT_INTERRUPT;
 	host->sd_support = 1;
-	ret =
-	    request_irq(MMCINT_INTERRUPT, mmc_davinci_irq, 0, DRIVER_NAME,
+	ret = request_irq(MMCINT_INTERRUPT, mmc_davinci_irq, 0, DRIVER_NAME,
 			host);
 
 	if (ret)
 		goto out;
 
-	dev_set_drvdata(dev, host);
+	platform_set_drvdata(pdev, host);
 	mmc_add_host(mmc);
 
 	init_timer(&host->timer);
@@ -1132,21 +1113,19 @@ static int davinci_mmcsd_probe(struct device *dev)
 
 	return 0;
 
-      out:
+out:
 	/* TBD: Free other resources too. */
 
 	return ret;
 }
 
-static int davinci_mmcsd_remove(struct device *dev)
+static int davinci_mmcsd_remove(struct platform_device *pdev)
 {
-	struct mmc_davinci_host *host = dev_get_drvdata(dev);
+	struct mmc_davinci_host *host = platform_get_drvdata(pdev);
 
-	dev_set_drvdata(dev, NULL);
-	if (host) {
-		mmc_remove_host(host->mmc);
-		free_irq(host->irq, host);
-	}
+	platform_set_drvdata(pdev, NULL);
+	mmc_remove_host(host->mmc);
+	free_irq(host->irq, host);
 	del_timer(&host->timer);
 	davinci_free_dma(DAVINCI_DMA_MMCTXEVT);
 	davinci_free_dma(DAVINCI_DMA_MMCRXEVT);
@@ -1155,26 +1134,18 @@ static int davinci_mmcsd_remove(struct device *dev)
 }
 
 #ifdef CONFIG_PM
-static int davinci_mmcsd_suspend(struct device *dev, u32 state, u32 level)
+static int davinci_mmcsd_suspend(struct platform_device *pdev, pm_message_t msg)
 {
-	struct mmc_host *mmc = dev_get_drvdata(dev);
-	int ret = 0;
+	struct mmc_davinci_host *host = platform_get_drvdata(pdev);
 
-	if (mmc && level == SUSPEND_DISABLE)
-		ret = mmc_suspend_host(mmc, state);
-
-	return ret;
+	return mmc_suspend_host(host->mmc, msg);
 }
 
-static int davinci_mmcsd_resume(struct device *dev, u32 level)
+static int davinci_mmcsd_resume(struct platform_device *pdev)
 {
-	struct mmc_host *mmc = dev_get_drvdata(dev);
-	int ret = 0;
+	struct mmc_davinci_host *host = platform_get_drvdata(pdev);
 
-	if (mmc && level == RESUME_ENABLE)
-		ret = mmc_resume_host(mmc);
-
-	return ret;
+	return mmc_resume_host(host->mmc);
 }
 
 #else
@@ -1184,15 +1155,20 @@ static int davinci_mmcsd_resume(struct device *dev, u32 level)
 
 #endif
 
-static struct device_driver davinci_mmcsd_driver = {
-	.name = DRIVER_NAME,
-	.bus = &platform_bus_type,
+static struct platform_driver davinci_mmcsd_driver = {
+	.driver = {
+		.name = DRIVER_NAME,
+		.owner = THIS_MODULE,
+	},
 	.probe = davinci_mmcsd_probe,
 	.remove = davinci_mmcsd_remove,
 	.suspend = davinci_mmcsd_suspend,
 	.resume = davinci_mmcsd_resume,
 };
 
+/* FIXME don't be a legacy driver ... register the device as part
+ * of cpu-specific board setup.
+ */
 static void mmc_release(struct device *dev)
 {
 	/* Nothing to release? */
@@ -1202,14 +1178,14 @@ static u64 mmc_dma_mask = 0xffffffff;
 
 static struct resource mmc_resources[] = {
 	{
-	 .start = IO_ADDRESS(MMCSD_REGS_BASE_ADDR),
-	 .end = IO_ADDRESS((MMCSD_REGS_BASE_ADDR) + 0x74),
-	 .flags = IORESOURCE_MEM,
-	 },
+		.start = IO_ADDRESS(MMCSD_REGS_BASE_ADDR),
+		.end = IO_ADDRESS((MMCSD_REGS_BASE_ADDR) + 0x74),
+		.flags = IORESOURCE_MEM,
+	},
 	{
-	 .start = MMCINT_INTERRUPT,
-	 .flags = IORESOURCE_IRQ,
-	 },
+		.start = MMCINT_INTERRUPT,
+		.flags = IORESOURCE_IRQ,
+	},
 };
 
 static struct platform_device mmc_davinci_device = {
@@ -1218,8 +1194,8 @@ static struct platform_device mmc_davinci_device = {
 	.dev = {
 		.release = mmc_release,
 		.dma_mask = &mmc_dma_mask,
-		},
-	.num_resources = ARRAY_SIZE(&mmc_resources),
+	},
+	.num_resources = ARRAY_SIZE(mmc_resources),
 	.resource = mmc_resources,
 };
 
@@ -1227,7 +1203,6 @@ static int davinci_mmcsd_init(void)
 {
 	int ret = 0;
 	struct clk *clkp = NULL;
-
 
 	clkp = clk_get(NULL, "MMCSDCLK");
 	if (clkp != NULL) {
@@ -1239,13 +1214,11 @@ static int davinci_mmcsd_init(void)
 		if (ret != 0)
 			goto free1;
 
-		ret = driver_register(&davinci_mmcsd_driver);
-		mmc_davinci_device.dev.driver = &davinci_mmcsd_driver;
-		mmc_dev = mmc_davinci_device.dev;
+		ret = platform_driver_register(&davinci_mmcsd_driver);
 		if (ret == 0)
 			return 0;
 
-	      free1:
+free1:
 		platform_device_unregister(&mmc_davinci_device);
 	}
 
@@ -1254,8 +1227,7 @@ static int davinci_mmcsd_init(void)
 
 static void __exit davinci_mmcsd_exit(void)
 {
-
-	driver_unregister(&davinci_mmcsd_driver);
+	platform_driver_unregister(&davinci_mmcsd_driver);
 	platform_device_unregister(&mmc_davinci_device);
 	clk_disable(mmc_clkp);
 }
