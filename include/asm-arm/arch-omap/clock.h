@@ -14,6 +14,30 @@
 #define __ARCH_ARM_OMAP_CLOCK_H
 
 struct module;
+struct clk;
+
+#if defined(CONFIG_ARCH_OMAP2)
+
+struct clksel_rate {
+	u8			div;
+	u32			val;
+	u8			flags;
+};
+
+struct clksel {
+	struct clk		 *parent;
+	const struct clksel_rate *rates;
+};
+
+struct dpll_data {
+	void __iomem		*mult_div1_reg;
+	u32			mult_mask;
+	u32			div1_mask;
+	u32			auto_idle_mask;
+	u8			auto_idle_val;
+};
+
+#endif
 
 struct clk {
 	struct list_head	node;
@@ -25,8 +49,6 @@ struct clk {
 	__u32			flags;
 	void __iomem		*enable_reg;
 	__u8			enable_bit;
-	__u8			rate_offset;
-	__u8			src_offset;
 	__s8			usecount;
 	void			(*recalc)(struct clk *);
 	int			(*set_rate)(struct clk *, unsigned long);
@@ -34,8 +56,15 @@ struct clk {
 	void			(*init)(struct clk *);
 	int			(*enable)(struct clk *);
 	void			(*disable)(struct clk *);
-#if defined(CONFIG_ARCH_OMAP2)
+#if defined(CONFIG_ARCH_OMAP2) || defined(CONFIG_ARCH_OMAP3)
 	u8			fixed_div;
+	void __iomem		*clksel_reg;
+	u32			clksel_mask;
+	const struct clksel	*clksel;
+	const struct dpll_data	*dpll_data;
+#else
+	__u8			rate_offset;
+	__u8			src_offset;
 #endif
 };
 
@@ -57,10 +86,12 @@ extern int clk_init(struct clk_functions * custom_clocks);
 extern int clk_register(struct clk *clk);
 extern void clk_unregister(struct clk *clk);
 extern void propagate_rate(struct clk *clk);
+extern void recalculate_root_clocks(void);
 extern void followparent_recalc(struct clk * clk);
 extern void clk_allow_idle(struct clk *clk);
 extern void clk_deny_idle(struct clk *clk);
 extern int clk_get_usecount(struct clk *clk);
+extern void clk_enable_init_clocks(void);
 
 /* Clock flags */
 #define RATE_CKCTL		(1 << 0)	/* Main fixed ratio clocks */
@@ -74,16 +105,8 @@ extern int clk_get_usecount(struct clk *clk);
 #define CLOCK_NO_IDLE_PARENT	(1 << 8)
 #define DELAYED_APP		(1 << 9)	/* Delay application of clock */
 #define CONFIG_PARTICIPANT	(1 << 10)	/* Fundamental clock */
-#define CM_MPU_SEL1		(1 << 11)	/* Domain divider/source */
-#define CM_DSP_SEL1		(1 << 12)
-#define CM_GFX_SEL1		(1 << 13)
-#define CM_MODEM_SEL1		(1 << 14)
-#define CM_CORE_SEL1		(1 << 15)	/* Sets divider for many */
-#define CM_CORE_SEL2		(1 << 16)	/* sets parent for GPT */
-#define CM_WKUP_SEL1		(1 << 17)
-#define CM_PLL_SEL1		(1 << 18)
-#define CM_PLL_SEL2		(1 << 19)
-#define CM_SYSCLKOUT_SEL1	(1 << 20)
+#define ENABLE_ON_INIT		(1 << 11)	/* Enable upon framework init */
+/* bits 12-20 are currently free */
 #define CLOCK_IN_OMAP310	(1 << 21)
 #define CLOCK_IN_OMAP730	(1 << 22)
 #define CLOCK_IN_OMAP1510	(1 << 23)
@@ -93,6 +116,12 @@ extern int clk_get_usecount(struct clk *clk);
 #define CLOCK_IN_OMAP343X	(1 << 27)
 #define PARENT_CONTROLS_CLOCK	(1 << 28)
 
+/* Clksel_rate flags */
+#define DEFAULT_RATE            (1 << 0)
+#define RATE_IN_242X            (1 << 1)
+#define RATE_IN_243X            (1 << 2)
+#define RATE_IN_343X            (1 << 3)
+#define RATE_IN_24XX            (RATE_IN_242X | RATE_IN_243X)
 
 
 /* CM_CLKSEL2_PLL.CORE_CLK_SRC options (24XX) */

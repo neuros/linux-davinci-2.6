@@ -46,15 +46,14 @@ static inline struct musb *hcd_to_musb(struct usb_hcd *hcd)
 	return (void *) hcd->hcd_priv;
 }
 
-/* stored in "usb_host_endpoint.hcpriv" for scheduled endpoints
- */
+/* stored in "usb_host_endpoint.hcpriv" for scheduled endpoints */
 struct musb_qh {
 	struct usb_host_endpoint *hep;		/* usbcore info */
 	struct usb_device	*dev;
 	struct musb_hw_ep	*hw_ep;		/* current binding */
 
 	struct list_head	ring;		/* of musb_qh */
-	//struct musb_qh		*next;		/* for periodic tree */
+	/* struct musb_qh		*next; */	/* for periodic tree */
 
 	unsigned		offset;		/* in urb->transfer_buffer */
 	unsigned		segsize;	/* current xfer fragment */

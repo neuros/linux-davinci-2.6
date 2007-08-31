@@ -312,6 +312,23 @@ void propagate_rate(struct clk * tclk)
 	}
 }
 
+/**
+ * recalculate_root_clocks - recalculate and propagate all root clocks
+ *
+ * Recalculates all root clocks (clocks with no parent), which if the
+ * clock's .recalc is set correctly, should also propagate their rates.
+ * Called at init.
+ */
+void recalculate_root_clocks(void)
+{
+	struct clk *clkp;
+
+	list_for_each_entry(clkp, &clocks, node) {
+		if (unlikely(!clkp->parent) && likely((u32)clkp->recalc))
+			clkp->recalc(clkp);
+	}
+}
+
 int clk_register(struct clk *clk)
 {
 	if (clk == NULL || IS_ERR(clk))
@@ -365,6 +382,17 @@ void clk_allow_idle(struct clk *clk)
 	spin_unlock_irqrestore(&clockfw_lock, flags);
 }
 EXPORT_SYMBOL(clk_allow_idle);
+
+void clk_enable_init_clocks(void)
+{
+	struct clk *clkp;
+
+	list_for_each_entry(clkp, &clocks, node) {
+		if (clkp->flags & ENABLE_ON_INIT)
+			clk_enable(clkp);
+	}
+}
+EXPORT_SYMBOL(clk_enable_init_clocks);
 
 /*-------------------------------------------------------------------------*/
 

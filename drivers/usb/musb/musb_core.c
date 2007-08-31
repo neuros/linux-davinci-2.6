@@ -135,7 +135,7 @@ const char *otg_state_string(struct musb *musb)
 #define DRIVER_AUTHOR "Mentor Graphics, Texas Instruments, Nokia"
 #define DRIVER_DESC "Inventra Dual-Role USB Controller Driver"
 
-#define MUSB_VERSION_BASE "2.2a/db-0.5.2"
+#define MUSB_VERSION_BASE "6.0"
 
 #ifndef MUSB_VERSION_SUFFIX
 #define MUSB_VERSION_SUFFIX	""
@@ -323,8 +323,8 @@ void musb_hnp_stop(struct musb *musb)
 	case OTG_STATE_A_WAIT_VFALL:
 		DBG(1, "HNP: Switching back to A-host\n");
 		musb_g_disconnect(musb);
-		musb_root_disconnect(musb);
 		musb->xceiv.state = OTG_STATE_A_IDLE;
+		MUSB_HST_MODE(musb);
 		musb->is_active = 0;
 		break;
 	case OTG_STATE_B_HOST:
@@ -341,6 +341,14 @@ void musb_hnp_stop(struct musb *musb)
 		DBG(1, "HNP: Stopping in unknown state %s\n",
 			otg_state_string(musb));
 	}
+
+	/*
+	 * When returning to A state after HNP, avoid hub_port_rebounce(),
+	 * which cause occasional OPT A "Did not receive reset after connect"
+	 * errors.
+	 */
+	musb->port1_status &=
+		~(1 << USB_PORT_FEAT_C_CONNECTION);
 }
 
 #endif
@@ -530,7 +538,7 @@ static irqreturn_t musb_stage0_irq(struct musb * musb, u8 int_usb,
 					s = "<AValid"; break;
 				case 2 << MUSB_DEVCTL_VBUS_SHIFT:
 					s = "<VBusValid"; break;
-				//case 3 << MUSB_DEVCTL_VBUS_SHIFT:
+				/* case 3 << MUSB_DEVCTL_VBUS_SHIFT: */
 				default:
 					s = "VALID"; break;
 				}; s; }),
@@ -555,7 +563,7 @@ static irqreturn_t musb_stage0_irq(struct musb * musb, u8 int_usb,
 #ifdef CONFIG_USB_MUSB_OTG
 		/* flush endpoints when transitioning from Device Mode */
 		if (is_peripheral_active(musb)) {
-			// REVISIT HNP; just force disconnect
+			/* REVISIT HNP; just force disconnect */
 		}
 		musb_writew(mbase, MUSB_INTRTXE, musb->epmask);
 		musb_writew(mbase, MUSB_INTRRXE, musb->epmask & 0xfffe);
@@ -682,8 +690,10 @@ static irqreturn_t musb_stage2_irq(struct musb * musb, u8 int_usb,
 		for (epnum = 1; (epnum < musb->nr_endpoints)
 					&& (musb->epmask >= (1 << epnum));
 				epnum++, ep++) {
-			// FIXME handle framecounter wraps (12 bits)
-			// eliminate duplicated StartUrb logic
+			/*
+			 * FIXME handle framecounter wraps (12 bits)
+			 * eliminate duplicated StartUrb logic
+			 */
 			if (ep->dwWaitFrame >= frame) {
 				ep->dwWaitFrame = 0;
 				printk("SOF --> periodic TX%s on %d\n",
@@ -813,7 +823,7 @@ void musb_start(struct musb *musb)
 						| MUSB_POWER_SOFTCONN
 						| MUSB_POWER_HSENAB
 						/* ENSUSPEND wedges tusb */
-						// | MUSB_POWER_ENSUSPEND
+						/* | MUSB_POWER_ENSUSPEND */
 						);
 
 	musb->is_active = 0;
@@ -1143,7 +1153,7 @@ static int __init ep_config_from_table(struct musb *musb)
 
 
 	offset = fifo_setup(musb, hw_ep, &ep0_cfg, 0);
-	// assert(offset > 0)
+	/* assert(offset > 0) */
 
 	/* NOTE:  for RTL versions >= 1.400 EPINFO and RAMINFO would
 	 * be better than static MUSB_C_NUM_EPS and DYN_FIFO_SIZE...
@@ -1497,7 +1507,7 @@ irqreturn_t musb_interrupt(struct musb *musb)
 	ep_num = 1;
 	while (reg) {
 		if (reg & 1) {
-			// musb_ep_select(musb->mregs, ep_num);
+			/* musb_ep_select(musb->mregs, ep_num); */
 			/* REVISIT just retval = ep->rx_irq(...) */
 			retval = IRQ_HANDLED;
 			if (devctl & MUSB_DEVCTL_HM) {
@@ -1518,7 +1528,7 @@ irqreturn_t musb_interrupt(struct musb *musb)
 	ep_num = 1;
 	while (reg) {
 		if (reg & 1) {
-			// musb_ep_select(musb->mregs, ep_num);
+			/* musb_ep_select(musb->mregs, ep_num); */
 			/* REVISIT just retval |= ep->tx_irq(...) */
 			retval = IRQ_HANDLED;
 			if (devctl & MUSB_DEVCTL_HM) {
@@ -1742,12 +1752,17 @@ static DEVICE_ATTR(srp, 0644, NULL, musb_srp_store);
 
 #endif	/* sysfs */
 
-/* Only used to provide cable state change events */
+/* Only used to provide driver mode change events */
 static void musb_irq_work(struct work_struct *data)
 {
 	struct musb *musb = container_of(data, struct musb, irq_work);
+	static int old_state;
 
-	sysfs_notify(&musb->controller->kobj, NULL, "cable");
+	if (musb->xceiv.state != old_state) {
+		old_state = musb->xceiv.state;
+		sysfs_notify(&musb->controller->kobj, NULL, "cable");
+		sysfs_notify(&musb->controller->kobj, NULL, "mode");
+	}
 }
 
 /* --------------------------------------------------------------------------
@@ -1964,7 +1979,7 @@ musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl)
 		goto fail2;
 	}
 	musb->nIrq = nIrq;
-// FIXME this handles wakeup irqs wrong
+/* FIXME this handles wakeup irqs wrong */
 	if (enable_irq_wake(nIrq) == 0)
 		device_init_wakeup(dev, 1);
 

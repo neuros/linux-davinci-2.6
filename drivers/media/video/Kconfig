@@ -197,6 +197,13 @@ config VIDEO_OV7670
 	  OV7670 VGA camera.  It currently only works with the M88ALP01
 	  controller.
 
+config VIDEO_TCM825X
+	tristate "TCM825x camera sensor support"
+	depends on I2C && VIDEO_V4L2
+	---help---
+	  This is a driver for the Toshiba TCM825x VGA camera sensor.
+	  It is used for example in Nokia N800.
+
 config VIDEO_SAA7110
 	tristate "Philips SAA7110 video decoder"
 	depends on VIDEO_V4L1 && I2C
@@ -711,6 +718,14 @@ config VIDEO_CAFE_CCIC
 	  This is a video4linux2 driver for the Marvell 88ALP01 integrated
 	  CMOS camera controller.  This is the controller found on first-
 	  generation OLPC systems.
+
+config VIDEO_OMAP2
+	tristate "OMAP 2 Camera support (EXPERIMENTAL)"
+	select VIDEO_BUF
+	depends on VIDEO_V4L2 && ARCH_OMAP24XX
+	---help---
+	  Driver for an OMAP 2 camera controller.
+
 
 #
 # USB Multimedia device configuration
