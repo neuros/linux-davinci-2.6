@@ -1513,9 +1513,9 @@ void musb_host_rx(struct musb *musb, u8 epnum)
 
 #ifdef CONFIG_USB_INVENTRA_DMA
 		/* done if urb buffer is full or short packet is recd */
-		done = ((urb->actual_length + xfer_len) >=
-				urb->transfer_buffer_length)
-			|| (dma->actual_len & (qh->maxpacket - 1));
+		done = (urb->actual_length + xfer_len >=
+				urb->transfer_buffer_length
+			|| dma->actual_len < qh->maxpacket);
 
 		/* send IN token for next packet, without AUTOREQ */
 		if (!done) {
@@ -2128,9 +2128,14 @@ static int musb_bus_suspend(struct usb_hcd *hcd)
 {
 	struct musb	*musb = hcd_to_musb(hcd);
 
-	if (is_host_active(musb) && musb->is_active)
+	if (musb->xceiv.state == OTG_STATE_A_SUSPEND)
+		return 0;
+
+	if (is_host_active(musb) && musb->is_active) {
+		WARN("trying to suspend as %s is_active=%i\n",
+			otg_state_string(musb), musb->is_active);
 		return -EBUSY;
-	else
+	} else
 		return 0;
 }
 

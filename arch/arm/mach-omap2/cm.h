@@ -30,6 +30,8 @@
 #define OMAP3430_CM_SYSCONFIG		OMAP_CM_REGADDR(OCP_MOD, 0x0010)
 #define OMAP3430_CM_POLCTRL		OMAP_CM_REGADDR(OCP_MOD, 0x009c)
 
+#define OMAP3430_CM_CLKOUT_CTRL		OMAP_CM_REGADDR(OMAP3430_CCR_MOD, 0x0070)
+
 
 /* Clock management global register get/set */
 
@@ -54,6 +56,7 @@ static u32 __attribute__((unused)) cm_read_reg(void __iomem *addr)
 /* Common between 24xx and 34xx */
 
 #define CM_FCLKEN1					0x0000
+#define CM_FCLKEN					CM_FCLKEN1
 #define CM_CLKEN					CM_FCLKEN1
 #define CM_ICLKEN1					0x0010
 #define CM_ICLKEN					CM_ICLKEN1
@@ -72,7 +75,6 @@ static u32 __attribute__((unused)) cm_read_reg(void __iomem *addr)
 
 /* Architecture-specific registers */
 
-#define OMAP24XX_CM_FCLKEN				CM_FCLKEN1
 #define OMAP24XX_CM_FCLKEN2				0x0004
 #define OMAP24XX_CM_ICLKEN4				0x001c
 #define OMAP24XX_CM_AUTOIDLE3				0x0038

@@ -11,6 +11,10 @@ obj-$(CONFIG_OMAP_MPU_TIMER)		+= timer-gp.o
 # Power Management
 obj-$(CONFIG_PM) += pm.o sleep.o
 
+# Clock framework
+obj-$(CONFIG_ARCH_OMAP2)		+= clock24xx.o
+obj-$(CONFIG_ARCH_OMAP3)		+= clock34xx.o
+
 # DSP
 obj-$(CONFIG_OMAP_MMU_FWK)	+= mmu_mach.o
 obj-$(CONFIG_OMAP_MBOX_FWK)	+= mailbox_mach.o

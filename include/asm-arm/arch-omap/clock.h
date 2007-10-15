@@ -16,7 +16,7 @@
 struct module;
 struct clk;
 
-#if defined(CONFIG_ARCH_OMAP2)
+#if defined(CONFIG_ARCH_OMAP2) || defined(CONFIG_ARCH_OMAP3)
 
 struct clksel_rate {
 	u8			div;
@@ -33,8 +33,15 @@ struct dpll_data {
 	void __iomem		*mult_div1_reg;
 	u32			mult_mask;
 	u32			div1_mask;
-	u32			auto_idle_mask;
-	u8			auto_idle_val;
+	void __iomem		*div2_reg;
+	u32			div2_mask;
+#  if defined(CONFIG_ARCH_OMAP3)
+	void __iomem		*control_reg;
+	u32			enable_mask;
+	u8			auto_recal_bit;
+	u8			recal_en_bit;
+	u8			recal_st_bit;
+#  endif
 };
 
 #endif
@@ -106,7 +113,8 @@ extern void clk_enable_init_clocks(void);
 #define DELAYED_APP		(1 << 9)	/* Delay application of clock */
 #define CONFIG_PARTICIPANT	(1 << 10)	/* Fundamental clock */
 #define ENABLE_ON_INIT		(1 << 11)	/* Enable upon framework init */
-/* bits 12-20 are currently free */
+#define INVERT_ENABLE           (1 << 12)       /* 0 enables, 1 disables */
+/* bits 13-20 are currently free */
 #define CLOCK_IN_OMAP310	(1 << 21)
 #define CLOCK_IN_OMAP730	(1 << 22)
 #define CLOCK_IN_OMAP1510	(1 << 23)

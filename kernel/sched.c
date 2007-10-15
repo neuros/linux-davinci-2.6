@@ -668,7 +668,7 @@ static u64 div64_likely32(u64 divident, unsigned long divisor)
 /*
  * Shift right and round:
  */
-#define RSR(x, y) (((x) + (1UL << ((y) - 1))) >> (y))
+#define SRR(x, y) (((x) + (1UL << ((y) - 1))) >> (y))
 
 static unsigned long
 calc_delta_mine(unsigned long delta_exec, unsigned long weight,
@@ -684,10 +684,10 @@ calc_delta_mine(unsigned long delta_exec, unsigned long weight,
 	 * Check whether we'd overflow the 64-bit multiplication:
 	 */
 	if (unlikely(tmp > WMULT_CONST))
-		tmp = RSR(RSR(tmp, WMULT_SHIFT/2) * lw->inv_weight,
+		tmp = SRR(SRR(tmp, WMULT_SHIFT/2) * lw->inv_weight,
 			WMULT_SHIFT/2);
 	else
-		tmp = RSR(tmp * lw->inv_weight, WMULT_SHIFT);
+		tmp = SRR(tmp * lw->inv_weight, WMULT_SHIFT);
 
 	return (unsigned long)min(tmp, (u64)(unsigned long)LONG_MAX);
 }
@@ -858,7 +858,6 @@ static void dec_nr_running(struct task_struct *p, struct rq *rq)
 
 static void set_load_weight(struct task_struct *p)
 {
-	task_rq(p)->cfs.wait_runtime -= p->se.wait_runtime;
 	p->se.wait_runtime = 0;
 
 	if (task_has_rt_policy(p)) {
@@ -1587,6 +1586,7 @@ static void __sched_fork(struct task_struct *p)
 	p->se.wait_start_fair		= 0;
 	p->se.exec_start		= 0;
 	p->se.sum_exec_runtime		= 0;
+	p->se.prev_sum_exec_runtime	= 0;
 	p->se.delta_exec		= 0;
 	p->se.delta_fair_run		= 0;
 	p->se.delta_fair_sleep		= 0;
@@ -1681,6 +1681,11 @@ void fastcall wake_up_new_task(struct task_struct *p, unsigned long clone_flags)
 	update_rq_clock(rq);
 
 	p->prio = effective_prio(p);
+
+	if (rt_prio(p->prio))
+		p->sched_class = &rt_sched_class;
+	else
+		p->sched_class = &fair_sched_class;
 
 	if (!p->sched_class->task_new || !sysctl_sched_child_runs_first ||
 			(clone_flags & CLONE_VM) || task_cpu(p) != this_cpu ||
@@ -2511,7 +2516,7 @@ group_next:
 	 * a think about bumping its value to force at least one task to be
 	 * moved
 	 */
-	if (*imbalance + SCHED_LOAD_SCALE_FUZZ < busiest_load_per_task) {
+	if (*imbalance < busiest_load_per_task) {
 		unsigned long tmp, pwr_now, pwr_move;
 		unsigned int imbn;
 
@@ -2563,10 +2568,8 @@ small_imbalance:
 		pwr_move /= SCHED_LOAD_SCALE;
 
 		/* Move if we gain throughput */
-		if (pwr_move <= pwr_now)
-			goto out_balanced;
-
-		*imbalance = busiest_load_per_task;
+		if (pwr_move > pwr_now)
+			*imbalance = busiest_load_per_task;
 	}
 
 	return busiest;
@@ -4552,10 +4555,7 @@ asmlinkage long sys_sched_yield(void)
 	struct rq *rq = this_rq_lock();
 
 	schedstat_inc(rq, yld_cnt);
-	if (unlikely(rq->nr_running == 1))
-		schedstat_inc(rq, yld_act_empty);
-	else
-		current->sched_class->yield_task(rq, current);
+	current->sched_class->yield_task(rq, current);
 
 	/*
 	 * Since we are going to call schedule() anyway, there's

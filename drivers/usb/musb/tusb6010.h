@@ -13,6 +13,8 @@
 #ifndef __TUSB6010_H__
 #define __TUSB6010_H__
 
+extern u8 tusb_get_revision(struct musb *musb);
+
 #ifdef CONFIG_USB_TUSB6010
 #define musb_in_tusb()			1
 #else
@@ -218,7 +220,7 @@
 
 #define TUSB_DIDR1_LO				0x1f8
 #define TUSB_DIDR1_HI				0x1fc
-#define		TUSB_DIDR1_HI_CHIP_REV(v)		(((v) >> 17) & 0x3)
+#define		TUSB_DIDR1_HI_CHIP_REV(v)		(((v) >> 17) & 0xf)
 #define			TUSB_DIDR1_HI_REV_20		0
 #define			TUSB_DIDR1_HI_REV_30		1
 #define			TUSB_DIDR1_HI_REV_31		2

@@ -296,6 +296,7 @@ static irqreturn_t dma_controller_irq(int irq, void *private_data)
 	struct musb_dma_controller *controller =
 		(struct musb_dma_controller *)private_data;
 	struct musb_dma_channel *pImplChannel;
+	struct musb *musb = controller->pDmaPrivate;
 	u8 *mbase = controller->pCoreBase;
 	struct dma_channel *pChannel;
 	u8 bChannel;
@@ -303,6 +304,9 @@ static irqreturn_t dma_controller_irq(int irq, void *private_data)
 	u32 dwAddress;
 	u8 int_hsdma;
 	irqreturn_t retval = IRQ_NONE;
+	unsigned long flags;
+
+	spin_lock_irqsave(&musb->lock, flags);
 
 	int_hsdma = musb_readb(mbase, MUSB_HSDMA_INTR);
 	if (!int_hsdma)
@@ -322,6 +326,8 @@ static irqreturn_t dma_controller_irq(int irq, void *private_data)
 				pImplChannel->Channel.status =
 					MUSB_DMA_STATUS_BUS_ABORT;
 			else {
+				u8 devctl;
+
 				dwAddress = musb_readl(mbase,
 						MUSB_HSDMA_CHANNEL_OFFSET(
 							bChannel,
@@ -337,8 +343,7 @@ static irqreturn_t dma_controller_irq(int irq, void *private_data)
 						< pImplChannel->len) ?
 					"=> reconfig 0": "=> complete");
 
-				u8 devctl = musb_readb(mbase,
-						MUSB_DEVCTL);
+				devctl = musb_readb(mbase, MUSB_DEVCTL);
 
 				pChannel->status = MUSB_DMA_STATUS_FREE;
 
@@ -358,7 +363,7 @@ static irqreturn_t dma_controller_irq(int irq, void *private_data)
 						MUSB_TXCSR_TXPKTRDY);
 				} else
 					musb_dma_completion(
-						controller->pDmaPrivate,
+						musb,
 						pImplChannel->epnum,
 						pImplChannel->transmit);
 			}
@@ -366,14 +371,15 @@ static irqreturn_t dma_controller_irq(int irq, void *private_data)
 	}
 	retval = IRQ_HANDLED;
 done:
+	spin_unlock_irqrestore(&musb->lock, flags);
 	return retval;
 }
 
 void dma_controller_destroy(struct dma_controller *c)
 {
-	struct musb_dma_controller *controller =
-		(struct musb_dma_controller *) c->private_data;
+	struct musb_dma_controller *controller;
 
+	controller = container_of(c, struct musb_dma_controller, Controller);
 	if (!controller)
 		return;
 
@@ -381,7 +387,6 @@ void dma_controller_destroy(struct dma_controller *c)
 		free_irq(controller->irq, c);
 
 	kfree(controller);
-	c->private_data = NULL;
 }
 
 struct dma_controller *__init
@@ -405,7 +410,6 @@ dma_controller_create(struct musb *musb, void __iomem *pCoreBase)
 	controller->pDmaPrivate = musb;
 	controller->pCoreBase = pCoreBase;
 
-	controller->Controller.private_data = controller;
 	controller->Controller.start = dma_controller_start;
 	controller->Controller.stop = dma_controller_stop;
 	controller->Controller.channel_alloc = dma_channel_allocate;
