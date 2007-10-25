@@ -132,6 +132,7 @@ struct mmc_davinci_host {
 	int power_pin;
 
 	int use_dma;
+	int do_dma;
 	struct completion dma_completion;
 
 	struct timer_list timer;
@@ -143,10 +144,16 @@ struct mmc_davinci_host {
 
 	edma_ch_mmcsd edma_ch_details;
 
+	unsigned int sg_len;
+	int sg_idx;
+	unsigned int buffer_bytes_left;
+	unsigned int dma_len;
+	int dma_state;
 };
 typedef struct {
 	unsigned short rw_threshold;
 	unsigned short use_dma;
+	unsigned short use_4bit_mode;
 } mmcsd_config_def;
 
 typedef enum {
@@ -167,5 +174,21 @@ typedef enum {
  (MMCSD_EVENT_ERROR_DATACRC | MMCSD_EVENT_ERROR_CMDCRC)
 #define MMCSD_EVENT_ERROR \
  (MMCSD_EVENT_TIMEOUT_ERROR | MMCSD_EVENT_CRC_ERROR)
+
+static void init_mmcsd_host(void);
+
+static void davinci_fifo_data_trans(struct mmc_davinci_host *host);
+
+static void mmc_davinci_sg_to_buf(struct mmc_davinci_host *host);
+
+static int mmc_davinci_send_dma_request(struct mmc_davinci_host *host,
+					struct mmc_request *req);
+
+static void mmc_davinci_xfer_done(struct mmc_davinci_host *host,
+				  struct mmc_data *data);
+
+static int mmc_davinci_get_ro(struct mmc_host *mmc);
+
+static void davinci_abort_dma(struct mmc_davinci_host *host);
 
 #endif /* DAVINCI_MMC_H_ */
