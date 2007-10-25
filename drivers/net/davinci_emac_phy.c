@@ -347,7 +347,7 @@ void emac_mdio_finding_state(void)
 		--emac_phy->timeout;
 	} else {
 
-		phy_alive_status = MDIO_REG_LINK;
+		phy_alive_status = MDIO_REG_ALIVE;
 		/* Check phys based upon user mask */
 		phy_alive_status &= emac_phy->phy_mask;
 
