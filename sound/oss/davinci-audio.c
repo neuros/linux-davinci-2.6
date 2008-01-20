@@ -59,7 +59,7 @@
 /***************************** MACROS ************************************/
 
 #undef DEBUG
-//#define DEBUG
+/* #define DEBUG */
 #ifdef DEBUG
 #define DPRINTK  printk
 #define FN_IN printk("[davinci_audio.c:[%s] start\n", __FUNCTION__)
@@ -110,17 +110,15 @@ static int audio_open(struct inode *inode, struct file *file);
 
 static int audio_release(struct inode *inode, struct file *file);
 
-static int audio_probe(struct device *dev);
+static int audio_probe(struct platform_device *dev);
 
-static int audio_remove(struct device *dev);
+static int audio_remove(struct platform_device *dev);
 
-static void audio_shutdown(struct device *dev);
+static void audio_shutdown(struct platform_device *dev);
 
-static int audio_suspend(struct device *dev, pm_message_t state);
+static int audio_suspend(struct platform_device *dev, pm_message_t state);
 
-static int audio_resume(struct device *dev);
-
-static void audio_free(struct device *dev);
+static int audio_resume(struct platform_device *dev);
 
 /***************************** Data Structures ********************************/
 
@@ -146,14 +144,15 @@ static struct file_operations davinci_audio_fops = {
 };
 
 /* Driver information */
-static struct device_driver davinci_audio_driver = {
-	.name = DAVINCI_AUDIO_NAME,
-	.bus = &platform_bus_type,
+static struct platform_driver davinci_audio_driver = {
 	.probe = audio_probe,
 	.remove = audio_remove,
 	.suspend = audio_suspend,
 	.resume = audio_resume,
 	.shutdown = audio_shutdown,
+	.driver	= {
+		.name =	DAVINCI_AUDIO_NAME,
+	},
 };
 
 /* Device Information */
@@ -161,20 +160,14 @@ static struct platform_device davinci_audio_device = {
 	.name = DAVINCI_AUDIO_NAME,
 	.dev = {
 		.driver_data = &audio_state,
-		.release = audio_free,
 		},
 	.id = 0,
 };
 
 /***************************** GLOBAL FUNCTIONs *******************************/
 
+#ifdef CONFIG_PM
 /* Power Management Functions for Linux Device Model  */
-/* DEBUG PUPOSES ONLY! */
-#ifdef CONFIG_PM
-//#undef CONFIG_PM
-#endif
-
-#ifdef CONFIG_PM
 /*******************************************************************************
  *
  * audio_ldm_suspend(): Suspend operation
@@ -272,22 +265,11 @@ static int audio_ldm_resume(void *data)
 
 /*******************************************************************************
  *
- * audio_free(): The Audio driver release function
- * This is a dummy function required by the platform driver
- *
- ******************************************************************************/
-static void audio_free(struct device *dev)
-{
-	/* Nothing to Release! */
-}
-
-/*******************************************************************************
- *
  * audio_probe(): The Audio driver probe function
  * WARNING!!!!  : It is expected that the codec would have registered with us by now
  *
  ******************************************************************************/
-static int audio_probe(struct device *dev)
+static int audio_probe(struct platform_device *dev)
 {
 	int ret;
 	FN_IN;
@@ -305,7 +287,7 @@ static int audio_probe(struct device *dev)
  * audio_remove() Function to handle removal operations
  *
  ******************************************************************************/
-static int audio_remove(struct device *dev)
+static int audio_remove(struct platform_device *dev)
 {
 	FN_IN;
 	if (audio_state.hw_remove) {
@@ -320,7 +302,7 @@ static int audio_remove(struct device *dev)
  * audio_shutdown(): Function to handle shutdown operations
  *
  ******************************************************************************/
-static void audio_shutdown(struct device *dev)
+static void audio_shutdown(struct platform_device *dev)
 {
 	FN_IN;
 	if (audio_state.hw_cleanup) {
@@ -335,24 +317,24 @@ static void audio_shutdown(struct device *dev)
  * audio_suspend(): Function to handle suspend operations
  *
  ******************************************************************************/
-static int audio_suspend(struct device *dev, pm_message_t state)
+static int audio_suspend(struct platform_device *dev, pm_message_t state)
 {
 	int ret = 0;
 
 #ifdef CONFIG_PM
-	void *data = dev->driver_data;
+	void *data = dev->dev.platform_data;
 	FN_IN;
 	if (audio_state.hw_suspend) {
-		ret = audio_ldm_suspend(data);
+		ret = audio_ldm_suspend(&data);
 		if (ret == 0)
 			ret = audio_state.hw_suspend();
 	}
 	if (ret) {
-		DPRINTK("Audio Suspend Failed \n");
+		DPRINTK("Audio suspend failed\n");
 	} else {
-		DPRINTK("Audio Suspend Success \n");
+		DPRINTK("Audio suspend success\n");
 	}
-#endif				/* CONFIG_PM */
+#endif	/* CONFIG_PM */
 
 	FN_OUT(ret);
 	return ret;
@@ -363,24 +345,24 @@ static int audio_suspend(struct device *dev, pm_message_t state)
  * audio_resume(): Function to handle resume operations
  *
  ******************************************************************************/
-static int audio_resume(struct device *dev)
+static int audio_resume(struct platform_device *dev)
 {
 	int ret = 0;
 
 #ifdef  CONFIG_PM
-	void *data = dev->driver_data;
+	void *data = dev->dev.platform_data;
 	FN_IN;
 	if (audio_state.hw_resume) {
-		ret = audio_ldm_resume(data);
+		ret = audio_ldm_resume(&data);
 		if (ret == 0)
 			ret = audio_state.hw_resume();
 	}
 	if (ret) {
-		DPRINTK(" Audio Resume Failed \n");
+		DPRINTK("Audio resume failed \n");
 	} else {
-		DPRINTK(" Audio Resume Success \n");
+		DPRINTK("Audio resume success \n");
 	}
-#endif				/* CONFIG_PM */
+#endif  /* CONFIG_PM */
 
 	FN_OUT(ret);
 	return ret;
@@ -445,20 +427,20 @@ int audio_register_codec(audio_state_t * codec_state)
 
 	ret = platform_device_register(&davinci_audio_device);
 	if (ret != 0) {
-		DPRINTK("Platform dev_register failed =%d\n", ret);
+		DPRINTK("Platform device register failed =%d\n", ret);
 		ret = -ENODEV;
 		goto register_out;
 	}
 
-	ret = driver_register(&davinci_audio_driver);
+	ret = platform_driver_register(&davinci_audio_driver);
 	if (ret != 0) {
-		DPRINTK("Device Register failed =%d\n", ret);
+		DPRINTK("Platform driver register failed =%d\n", ret);
 		ret = -ENODEV;
 		platform_device_unregister(&davinci_audio_device);
 		goto register_out;
 	}
 
-	DPRINTK("audio driver register success\n");
+	DPRINTK("Audio driver register success\n");
 
       register_out:
 
@@ -487,7 +469,7 @@ int audio_unregister_codec(audio_state_t * codec_state)
 		return -EPERM;
 	}
 
-	driver_unregister(&davinci_audio_driver);
+	platform_driver_unregister(&davinci_audio_driver);
 	platform_device_unregister(&davinci_audio_device);
 
 	memset(&audio_state, 0, sizeof(audio_state_t));
