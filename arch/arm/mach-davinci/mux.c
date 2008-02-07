@@ -16,10 +16,6 @@
 
 #include <asm/arch/mux.h>
 
-/* System control register offsets */
-#define PINMUX0         0x00
-#define PINMUX1         0x04
-
 static DEFINE_SPINLOCK(mux_lock);
 
 void davinci_mux_peripheral(unsigned int mux, unsigned int enable)

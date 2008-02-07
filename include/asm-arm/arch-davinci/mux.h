@@ -11,6 +11,11 @@
 #ifndef __ASM_ARCH_MUX_H
 #define __ASM_ARCH_MUX_H
 
+/* System control register offsets */
+#define PINMUX0         	0x00
+#define PINMUX1        	 	0x04
+
+/* System control register bits */
 #define DAVINCI_MUX_AEAW0	0
 #define DAVINCI_MUX_AEAW1	1
 #define DAVINCI_MUX_AEAW2	2

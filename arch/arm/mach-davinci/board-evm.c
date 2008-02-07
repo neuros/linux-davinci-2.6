@@ -14,6 +14,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/platform_device.h>
 #include <linux/mtd/mtd.h>
+#include <linux/mtd/nand.h>
 #include <linux/mtd/partitions.h>
 #include <linux/mtd/physmap.h>
 
@@ -27,6 +28,7 @@
 #include <asm/mach/flash.h>
 
 #include <asm/arch/common.h>
+#include <asm/arch/hardware.h>
 #include <asm/arch/psc.h>
 
 /* other misc. init functions */
@@ -38,7 +40,7 @@ void __init davinci_init_common_hw(void);
 /* NOR Flash base address set to CS0 by default */
 #define NOR_FLASH_PHYS 0x02000000
 
-static struct mtd_partition davinci_evm_partitions[] = {
+static struct mtd_partition davinci_evm_norflash_partitions[] = {
 	/* bootloader (U-Boot, etc) in first 4 sectors */
 	{
 		.name		= "bootloader",
@@ -69,29 +71,62 @@ static struct mtd_partition davinci_evm_partitions[] = {
 	}
 };
 
-static struct physmap_flash_data davinci_evm_flash_data = {
+static struct physmap_flash_data davinci_evm_norflash_data = {
 	.width		= 2,
-	.parts		= davinci_evm_partitions,
-	.nr_parts	= ARRAY_SIZE(davinci_evm_partitions),
+	.parts		= davinci_evm_norflash_partitions,
+	.nr_parts	= ARRAY_SIZE(davinci_evm_norflash_partitions),
 };
 
 /* NOTE: CFI probe will correctly detect flash part as 32M, but EMIF
  * limits addresses to 16M, so using addresses past 16M will wrap */
-static struct resource davinci_evm_flash_resource = {
+static struct resource davinci_evm_norflash_resource = {
 	.start		= NOR_FLASH_PHYS,
 	.end		= NOR_FLASH_PHYS + SZ_16M - 1,
 	.flags		= IORESOURCE_MEM,
 };
 
-static struct platform_device davinci_evm_flash_device = {
+static struct platform_device davinci_evm_norflash_device = {
 	.name		= "physmap-flash",
 	.id		= 0,
 	.dev		= {
-		.platform_data	= &davinci_evm_flash_data,
+		.platform_data	= &davinci_evm_norflash_data,
 	},
 	.num_resources	= 1,
-	.resource	= &davinci_evm_flash_resource,
+	.resource	= &davinci_evm_norflash_resource,
 };
+
+#if defined(CONFIG_MTD_NAND_DAVINCI) || defined(CONFIG_MTD_NAND_DAVINCI_MODULE)
+struct mtd_partition davinci_evm_nandflash_partition[] = {
+	/* 5 MB space at the beginning for bootloader and kernel */
+	{
+		.name		= "NAND filesystem",
+		.offset		= 5 * SZ_1M,
+		.size		= MTDPART_SIZ_FULL,
+		.mask_flags	= 0,
+	}
+};
+
+static struct nand_platform_data davinci_evm_nandflash_data = {
+	.parts		= davinci_evm_nandflash_partition,
+	.nr_parts	= ARRAY_SIZE(davinci_evm_nandflash_partition),
+};
+
+static struct resource davinci_evm_nandflash_resource = {
+	.start		= DAVINCI_ASYNC_EMIF_DATA_CE0_BASE,
+	.end		= DAVINCI_ASYNC_EMIF_DATA_CE0_BASE + SZ_16K - 1,
+	.flags		= IORESOURCE_MEM,
+};
+
+static struct platform_device davinci_evm_nandflash_device = {
+	.name		= "davinci_nand",
+	.id		= 0,
+	.dev		= {
+		.platform_data	= &davinci_evm_nandflash_data,
+	},
+	.num_resources	= 1,
+	.resource	= &davinci_evm_nandflash_resource,
+};
+#endif
 
 #if defined(CONFIG_FB_DAVINCI) || defined(CONFIG_FB_DAVINCI_MODULE)
 
@@ -168,7 +203,10 @@ static struct platform_device rtc_dev = {
 };
 
 static struct platform_device *davinci_evm_devices[] __initdata = {
-	&davinci_evm_flash_device,
+	&davinci_evm_norflash_device,
+#if defined(CONFIG_MTD_NAND_DAVINCI) || defined(CONFIG_MTD_NAND_DAVINCI_MODULE)
+	&davinci_evm_nandflash_device,
+#endif
 #if defined(CONFIG_FB_DAVINCI) || defined(CONFIG_FB_DAVINCI_MODULE)
 	&davinci_fb_device,
 #endif

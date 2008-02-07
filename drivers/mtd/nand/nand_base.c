@@ -2456,6 +2456,13 @@ int nand_scan_tail(struct mtd_info *mtd)
 		chip->ecc.write_page_raw = nand_write_page_raw;
 
 	switch (chip->ecc.mode) {
+#ifdef CONFIG_NAND_FLASH_HW_ECC
+	case NAND_ECC_HW12_2048:
+	case NAND_ECC_HW8_512:
+	case NAND_ECC_HW6_512:
+	case NAND_ECC_HW3_512:
+	case NAND_ECC_HW3_256:
+#endif
 	case NAND_ECC_HW:
 		/* Use standard hwecc read page function ? */
 		if (!chip->ecc.read_page)

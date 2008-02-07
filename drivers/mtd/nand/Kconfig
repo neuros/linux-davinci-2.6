@@ -293,5 +293,17 @@ config MTD_NAND_PLATFORM
 	  devices. You will need to provide platform-specific functions
 	  via platform_data.
 
+config MTD_NAND_DAVINCI
+        tristate "NAND Flash device on DaVinci SoC"
+        depends on MTD_NAND
+	select MTD_PARTITIONS
+        help
+          Support for NAND flash on Texas Instruments DaVinci SoC.
+
+config NAND_FLASH_HW_ECC
+        bool "Hardware ECC Support on NAND Device for DaVinci"
+        depends on MTD_NAND_DAVINCI
+        help
+          Support for Hardware ECC on NAND device for DaVinci.
 
 endif # MTD_NAND
