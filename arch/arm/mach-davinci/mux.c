@@ -9,6 +9,7 @@
  * or implied.
  */
 #include <linux/io.h>
+#include <linux/module.h>
 #include <linux/spinlock.h>
 
 #include <asm/hardware.h>
@@ -39,3 +40,4 @@ void davinci_mux_peripheral(unsigned int mux, unsigned int enable)
 	davinci_writel(pinmux, DAVINCI_SYSTEM_MODULE_BASE + muxreg);
 	spin_unlock(&mux_lock);
 }
+EXPORT_SYMBOL(davinci_mux_peripheral);
