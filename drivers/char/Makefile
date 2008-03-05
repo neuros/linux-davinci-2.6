@@ -103,6 +103,9 @@ obj-$(CONFIG_DRM)		+= drm/
 obj-$(CONFIG_PCMCIA)		+= pcmcia/
 obj-$(CONFIG_IPMI_HANDLER)	+= ipmi/
 
+davinci_rsz_driver-objs 	:= davinci_resizer_hw.o davinci_resizer.o
+obj-$(CONFIG_RESIZER) 		+= davinci_rsz_driver.o
+
 obj-$(CONFIG_HANGCHECK_TIMER)	+= hangcheck-timer.o
 obj-$(CONFIG_TCG_TPM)		+= tpm/
 obj-$(CONFIG_DAVINCI_RTC)	+= davinci-rtc.o

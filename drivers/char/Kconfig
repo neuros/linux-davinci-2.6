@@ -116,7 +116,7 @@ config ROCKETPORT
 	tristate "Comtrol RocketPort support"
 	depends on SERIAL_NONSTANDARD && (ISA || EISA || PCI)
 	help
-	  This driver supports Comtrol RocketPort and RocketModem PCI boards.   
+	  This driver supports Comtrol RocketPort and RocketModem PCI boards.
           These boards provide 2, 4, 8, 16, or 32 high-speed serial ports or
           modems.  For information about the RocketPort/RocketModem  boards
           and this driver read <file:Documentation/rocket.txt>.
@@ -1030,6 +1030,12 @@ config HPET_MMAP
 	  registers may also contain other things that shouldn't be
 	  exposed to the user.  If this applies to your hardware,
 	  say N here.
+
+config RESIZER
+	tristate "DaVinci Resizer Driver"
+	default n
+	help
+		DaVinci Resizer Driver.
 
 config HANGCHECK_TIMER
 	tristate "Hangcheck timer"
