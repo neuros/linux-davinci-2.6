@@ -23,7 +23,7 @@
 /* include Linux files */
 #include <asm/arch/hardware.h>
 #include <asm/io.h>
-#include <linux/config.h>
+#include <linux/autoconf.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/init.h>
@@ -48,7 +48,7 @@
 #include <linux/version.h>
 #include <asm/irq.h>
 #include <asm/io.h>
-#include <asm/hardware/clock.h>
+#include <asm-arm/arch-davinci/clock.h>
 #include <linux/errno.h>
 #include <linux/sched.h>
 #include <asm/arch/hardware.h>

@@ -36,7 +36,7 @@ void rsz_hardware_setup(channel_config_t * rsz_conf_chan)
 	/* for getting the coefficient offset */
 	int coeffoffset = ZERO;
 
-	dev_dbg(rsz_device, __FUNCTION__ "E\n");
+	dev_dbg(rsz_device, __FUNCTION__);
 
 	/* clear the VPSS_PCR register buffer overflow bits     */
 	regw(0x003c0000, VPSS_PCR);
@@ -107,7 +107,7 @@ void rsz_hardware_setup(channel_config_t * rsz_conf_chan)
 		coeffoffset = coeffoffset + COEFF_ADDRESS_OFFSET;
 	}
 
-	dev_dbg(rsz_device, __FUNCTION__ "L\n");
+	dev_dbg(rsz_device, __FUNCTION__);
 
 }
 
@@ -118,7 +118,7 @@ void rsz_hardware_setup(channel_config_t * rsz_conf_chan)
 int rsz_enable(channel_config_t * rsz_conf_chan)
 {
 
-	dev_dbg(rsz_device, __FUNCTION__ "E\n");
+	dev_dbg(rsz_device, __FUNCTION__);
 
 	/* Eanbling the resizer the setting enable bit */
 	rsz_conf_chan->register_config.rsz_pcr =
@@ -130,7 +130,7 @@ int rsz_enable(channel_config_t * rsz_conf_chan)
 
 	regw(0x003c0000, VPSS_PCR);
 
-	dev_dbg(rsz_device, __FUNCTION__ "L\n");
+	dev_dbg(rsz_device, __FUNCTION__);
 
 	return SUCESS;
 }
