@@ -10,6 +10,14 @@ config ARCH_DAVINCI644x
 
 comment "DaVinci Board Type"
 
+config MACH_DAVINCI_NTOSD_644XA
+	bool "Neuros OSD (644x Revision A)"
+	default n
+	depends on ARCH_DAVINCI644x
+	help
+	  Configure this option to use Neuros OSD dm644x revision A
+	  hardware.
+
 config MACH_DAVINCI_EVM
 	bool "TI DaVinci EVM"
 	default y
