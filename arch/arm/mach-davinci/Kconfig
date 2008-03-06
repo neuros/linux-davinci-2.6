@@ -10,7 +10,7 @@ config ARCH_DAVINCI644x
 
 comment "DaVinci Board Type"
 
-config MACH_DAVINCI_NTOSD_644XA
+config MACH_NTOSD_644XA
 	bool "Neuros OSD (644x Revision A)"
 	default n
 	depends on ARCH_DAVINCI644x
