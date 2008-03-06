@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
 # Linux kernel version: 2.6.23-davinci1
-# Thu Mar  6 01:49:16 2008
+# Thu Mar  6 20:08:16 2008
 #
 CONFIG_ARM=y
 CONFIG_SYS_SUPPORTS_APM_EMULATION=y
@@ -155,7 +155,7 @@ CONFIG_ARCH_DAVINCI644x=y
 #
 # DaVinci Board Type
 #
-CONFIG_MACH_DAVINCI_NTOSD_644XA=y
+CONFIG_MACH_NTOSD_644XA=y
 # CONFIG_MACH_DAVINCI_EVM is not set
 CONFIG_DAVINCI_I2C_EXPANDER=y
 CONFIG_DAVINCI_MCBSP=y
@@ -718,7 +718,7 @@ CONFIG_HW_RANDOM=y
 # CONFIG_NVRAM is not set
 # CONFIG_R3964 is not set
 # CONFIG_RAW_DRIVER is not set
-# CONFIG_RESIZER is not set
+CONFIG_RESIZER=y
 # CONFIG_TCG_TPM is not set
 CONFIG_I2C=y
 CONFIG_I2C_BOARDINFO=y
