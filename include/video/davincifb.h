@@ -13,7 +13,7 @@
 #ifndef _DAVINCIFB_H_
 #define _DAVINCIFB_H_
 
-#include <asm/arch/io.h>
+#include <linux/fb.h>
 
 /* Base registers */
 #define	VPBE_REG_BASE				IO_ADDRESS(0x01c72780)
