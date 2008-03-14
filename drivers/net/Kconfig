@@ -919,7 +919,7 @@ config SMC91X
 
 config TI_DAVINCI_EMAC
 	tristate "TI DaVinci EMAC Support"
-	depends on NETDEVICES && MACH_DAVINCI_EVM
+	depends on NETDEVICES && MACH_NTOSD_644XA
 	help
 	  This driver supports TI's DaVinci Ethernet .
 
