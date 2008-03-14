@@ -18,8 +18,13 @@
 
 /* davinci_previewer.c file */
 
+/* Copyright (c) 2008 Neuros Technology
+ * ported to udev for 2.6.23. -------- 03-14-2008 steven.zhang@neuros
+ *
+ */
+
 /* include Linux files */
-#include <linux/config.h>
+#include <linux/autoconf.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/kernel.h>	/* printk() */
@@ -30,9 +35,9 @@
 #include <linux/cdev.h>		/* Used for struct cdev */
 #include <linux/dma-mapping.h>	/* For class_simple_create */
 #include <linux/interrupt.h>	/* For IRQ_HANDLED and irqreturn_t */
+#include <linux/platform_device.h>  /* For platform dependent device */
 #include <asm/uaccess.h>	/* for VERIFY_READ/VERIFY_WRITE/
 				   copy_from_user */
-#include <linux/devfs_fs_kernel.h>	/* for devfs */
 #include <asm/semaphore.h>
 
 #include <asm/arch/davinci_previewer_hw.h>
@@ -62,7 +67,7 @@ void inline prev_free_pages(unsigned long addr, unsigned long bufsize)
    reduction depending on the features enabled by the application. */
 void prev_calculate_crop(struct prev_params *config, struct prev_cropsize *crop)
 {
-	dev_dbg(prev_dev, __FUNCTION__ "E\n");
+	dev_dbg(prev_dev, __FUNCTION__);
 
 	if (!config || !crop) {
 
@@ -119,13 +124,13 @@ int get_status(struct prev_status *status)
 irqreturn_t previewer_isr(int irq, void *device_id, struct pt_regs * regs)
 {
 	struct prev_device *prevdevice = (struct prev_device *)device_id;
-	dev_dbg(prev_dev, __FUNCTION__ "E\n");
+	dev_dbg(prev_dev, __FUNCTION__);
 
 	/* indicate the completion ofr frame processing */
 	if (prevdevice)
 		complete(&(prevdevice->wfc));
 
-	dev_dbg(prev_dev, __FUNCTION__ "L\n");
+	dev_dbg(prev_dev, __FUNCTION__);
 	return IRQ_HANDLED;
 }
 
@@ -136,7 +141,7 @@ int request_buffer(struct prev_device *device, struct prev_reqbufs *reqbufs)
 	unsigned long adr;
 	u32 size;
 
-	dev_dbg(prev_dev, __FUNCTION__ "E\n");
+	dev_dbg(prev_dev, __FUNCTION__);
 	if (!reqbufs || !device) {
 		dev_err(prev_dev, "request_buffer: error in argument\n");
 		return -EINVAL;
@@ -474,7 +479,7 @@ int request_buffer(struct prev_device *device, struct prev_reqbufs *reqbufs)
 		return -EINVAL;
 	}
 
-	dev_dbg(prev_dev, __FUNCTION__ "L\n");
+	dev_dbg(prev_dev, __FUNCTION__);
 	return 0;
 }
 
@@ -483,7 +488,7 @@ int request_buffer(struct prev_device *device, struct prev_reqbufs *reqbufs)
 	in prev_buffer. */
 int query_buffer(struct prev_device *device, struct prev_buffer *buffer)
 {
-	dev_dbg(prev_dev, __FUNCTION__ "E\n");
+	dev_dbg(prev_dev, __FUNCTION__);
 
 	if (!buffer || !device) {
 		dev_err(prev_dev, "query_buffer: error in argument\n");
@@ -522,7 +527,7 @@ int query_buffer(struct prev_device *device, struct prev_buffer *buffer)
 		return -EINVAL;
 	}
 
-	dev_dbg(prev_dev, __FUNCTION__ "L\n");
+	dev_dbg(prev_dev, __FUNCTION__);
 	return 0;
 }
 
@@ -530,7 +535,7 @@ int validate_params(struct prev_params *params)
 {
 	struct prev_cropsize crop;
 
-	dev_dbg(prev_dev, __FUNCTION__ "E\n");
+	dev_dbg(prev_dev, __FUNCTION__);
 
 	if (!params) {
 		dev_err(prev_dev, "validate_params:error in argument");
@@ -606,7 +611,7 @@ int validate_params(struct prev_params *params)
 		return -EINVAL;
 	}
 
-	dev_dbg(prev_dev, __FUNCTION__ "L\n");
+	dev_dbg(prev_dev, __FUNCTION__);
 	return 0;
 }
 
@@ -615,7 +620,7 @@ int free_buffers(struct prev_device *device)
 {
 	int i;
 	unsigned long adr;
-	dev_dbg(prev_dev, __FUNCTION__ "E\n");
+	dev_dbg(prev_dev, __FUNCTION__);
 	if (!device) {
 		dev_err(prev_dev, "\nfree_buffers:error in argument");
 		return -EINVAL;
@@ -651,7 +656,7 @@ int free_buffers(struct prev_device *device)
 	}
 
 	device->out_numbuffers = 0;
-	dev_dbg(prev_dev, __FUNCTION__ "L\n");
+	dev_dbg(prev_dev, __FUNCTION__);
 	return 0;
 }
 
@@ -662,7 +667,7 @@ int preview(struct prev_device *device, struct prev_convert *convert)
 	int bpp, size, cropsize;
 	unsigned long in_addr, out_addr;
 	struct prev_cropsize crop;
-	dev_dbg(prev_dev, __FUNCTION__ "E\n");
+	dev_dbg(prev_dev, __FUNCTION__);
 
 	/* error checking */
 	if (!convert || !device) {
@@ -778,7 +783,7 @@ int preview(struct prev_device *device, struct prev_convert *convert)
 	/* wait untill processing is not completed */
 	wait_for_completion_interruptible(&(device->wfc));
 
-	dev_dbg(prev_dev, __FUNCTION__ "L\n");
+	dev_dbg(prev_dev, __FUNCTION__);
 	return 0;
 }
 
@@ -795,7 +800,7 @@ int previewer_open(struct inode *inode, struct file *filp)
 	struct prev_params *config = NULL;
 	struct prev_device *device = &prevdevice;
 
-	dev_dbg(prev_dev, __FUNCTION__ "E\n");
+	dev_dbg(prev_dev, __FUNCTION__);
 
 	if (device->opened || filp->f_flags & O_NONBLOCK) {
 		dev_err
@@ -821,7 +826,7 @@ int previewer_open(struct inode *inode, struct file *filp)
 	prevdevice.wfc.done = 0;
 	init_MUTEX(&(prevdevice.sem));
 
-	dev_dbg(prev_dev, __FUNCTION__ "L\n");
+	dev_dbg(prev_dev, __FUNCTION__);
 	return 0;
 }
 
@@ -830,7 +835,7 @@ int previewer_release(struct inode *inode, struct file *filp)
 	/* get the configuratin from private_date member of file */
 	struct prev_params *config = filp->private_data;
 	struct prev_device *device = &prevdevice;
-	dev_dbg(prev_dev, __FUNCTION__ "E\n");
+	dev_dbg(prev_dev, __FUNCTION__);
 
 	/* call free_buffers to free memory allocated to buffers */
 	free_buffers(device);
@@ -846,7 +851,7 @@ int previewer_release(struct inode *inode, struct file *filp)
 	/* change the device status to available */
 	device->opened = 0;
 
-	dev_dbg(prev_dev, __FUNCTION__ "L\n");
+	dev_dbg(prev_dev, __FUNCTION__);
 	return 0;
 }
 
@@ -857,7 +862,7 @@ int previewer_mmap(struct file *filp, struct vm_area_struct *vma)
 	int i, flag = 0;
 	/* get the page offset */
 	unsigned long offset = vma->vm_pgoff << PAGE_SHIFT;
-	dev_dbg(prev_dev, __FUNCTION__ "E\n");
+	dev_dbg(prev_dev, __FUNCTION__);
 
 	/* page offset passed in mmap should one from input buffers */
 	for (i = 0; i < device->in_numbuffers; i++) {
@@ -887,7 +892,7 @@ int previewer_mmap(struct file *filp, struct vm_area_struct *vma)
 		return -EAGAIN;
 	}
 
-	dev_dbg(prev_dev, __FUNCTION__ "L\n");
+	dev_dbg(prev_dev, __FUNCTION__);
 	return 0;
 }
 int previewer_ioctl(struct inode *inode, struct file *file,
@@ -899,7 +904,7 @@ int previewer_ioctl(struct inode *inode, struct file *file,
 	/* get the address of global object of prev_device structure */
 	struct prev_device *device = &prevdevice;
 
-	dev_dbg(prev_dev, __FUNCTION__ "E\n");
+	dev_dbg(prev_dev, __FUNCTION__);
 
 	/* Before decoding check for correctness of cmd */
 	if (_IOC_TYPE(cmd) != PREV_IOC_BASE) {
@@ -1017,7 +1022,7 @@ int previewer_ioctl(struct inode *inode, struct file *file,
 		ret = -EINVAL;
 	}
 
-	dev_dbg(prev_dev, __FUNCTION__ "L\n");
+	dev_dbg(prev_dev, __FUNCTION__);
 	return ret;
 }
 static void previewer_platform_release(struct device *device)
@@ -1052,7 +1057,7 @@ static struct cdev cdev;
 /* global variable which keeps major and minor number of the driver in it */
 static dev_t dev;
 
-static struct class_simple *prev_class = NULL;
+static struct class *prev_class = NULL;
 
 static struct platform_device previewer_device = {
 	.name = "davinci_previewer",
@@ -1120,7 +1125,7 @@ int __init previewer_init(void)
 		return -EINVAL;
 	}
 
-	prev_class = class_simple_create(THIS_MODULE, "davinci_previewer");
+	prev_class = class_create(THIS_MODULE, "davinci_previewer");
 	if (!prev_class) {
 		printk("previewer_init: error in creating device class\n");
 		driver_unregister(&previewer_driver);
@@ -1131,21 +1136,8 @@ int __init previewer_init(void)
 		return -EIO;
 	}
 
-	/* make entry in the devfs */
-	result = devfs_mk_cdev(dev, S_IFCHR | S_IRUGO | S_IWUSR, "%s%d",
-			       "davinci_previewer", 0);
-
-	if (result < 0) {
-		printk("previewer_init: error in devfs_register_chrdev\n");
-		unregister_chrdev_region(dev, 1);
-		class_simple_destroy(prev_class);
-		unregister_chrdev(MAJOR(dev), DRIVERNAME);
-		cdev_del(&cdev);
-		return result;
-	}
-
-	/* register simple device class */
-	class_simple_device_add(prev_class, dev, NULL, "davinci_previewer");
+	/* register device class */
+	class_device_create(prev_class, NULL, dev, NULL, "davinci_previewer");
 
 	/* Set up the Interrupt handler for PRVINT interrupt */
 	result = request_irq(IRQ_PRVUINT, previewer_isr, SA_INTERRUPT,
@@ -1155,9 +1147,8 @@ int __init previewer_init(void)
 		printk("previewer_init:cannot get irq\n");
 
 		unregister_chrdev_region(dev, 1);
-		class_simple_device_remove(dev);
-		devfs_remove("%s%d", "davinci_previewer", 0);
-		class_simple_destroy(prev_class);
+		class_device_destroy(prev_class, dev);
+		class_destroy(prev_class);
 		driver_unregister(&previewer_driver);
 		platform_device_unregister(&previewer_device);
 		cdev_del(&cdev);
@@ -1177,14 +1168,11 @@ void __exit previewer_cleanup(void)
 	/* remove major number allocated to this driver */
 	unregister_chrdev_region(dev, 1);
 
-	/* remove simple class device */
-	class_simple_device_remove(dev);
+	/* destroy class device */
+	class_device_destroy(prev_class, dev);
 
-	/* remove prev device from devfs */
-	devfs_remove("%s%d", "davinci_previewer", 0);
-
-	/* destroy simple class */
-	class_simple_destroy(prev_class);
+	/* destroy class */
+	class_destroy(prev_class);
 
 	/* Remove platform driver */
 	driver_unregister(&previewer_driver);
