@@ -1076,5 +1076,11 @@ config DEVPORT
 
 source "drivers/s390/char/Kconfig"
 
+config PREVIEWER
+	tristate "DaVinci Previewer Driver Support"
+	default n
+	help
+		DaVinci Previewer Driver
+
 endmenu
 
