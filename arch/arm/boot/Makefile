@@ -83,9 +83,14 @@ initrd:
 	@test "$(INITRD)" != "" || \
 	(echo You must specify INITRD; exit -1)
 
-install: $(obj)/Image
-	$(CONFIG_SHELL) $(srctree)/$(src)/install.sh $(KERNELRELEASE) \
+#install: $(obj)/Image
+#	$(CONFIG_SHELL) $(srctree)/$(src)/install.sh $(KERNELRELEASE) \
 	$(obj)/Image System.map "$(INSTALL_PATH)"
+
+#NT_PORT
+install: $(obj)/uImage
+	@$(CONFIG_SHELL) $(obj)/install.sh $(KERNELRELEASE) \
+	 $(obj)/uImage System.map "$(PRJROOT)/images"
 
 zinstall: $(obj)/zImage
 	$(CONFIG_SHELL) $(srctree)/$(src)/install.sh $(KERNELRELEASE) \
