@@ -155,6 +155,16 @@ static DECLARE_WORK(evm_vbus_work, evm_deferred_drvvbus);
 #endif	/* modified board */
 #endif	/* EVM */
 
+#ifdef CONFIG_MACH_NTOSD_644XA
+static void ntosd_644XA_deferred_drvbus(struct work_struct *ignored)
+{
+        gpio_direction_output(GPIO(46),!vbus_state);
+        gpio_set_value(GPIO(46),!vbus_state);
+        vbus_state = !vbus_state;
+}
+static DECLARE_WORK(ntosd_644XA_vbus_work, ntosd_644XA_deferred_drvbus);
+#endif
+
 static void davinci_source_power(struct musb *musb, int is_on, int immediate)
 {
 	if (is_on)
@@ -181,6 +191,15 @@ static void davinci_source_power(struct musb *musb, int is_on, int immediate)
 		else
 			schedule_work(&evm_vbus_work);
 #endif
+	}
+#endif
+#ifdef CONFIG_MACH_NTOSD_644XA
+	printk("ntosd_644xa source power: is_on = %d, immediate = %d\n", is_on, immediate);
+	if(immediate) {
+	    gpio_direction_output(GPIO(46), !is_on);
+	    gpio_set_value(GPIO(46), !is_on);
+	} else {
+	    schedule_work(&ntosd_644XA_vbus_work);
 	}
 #endif
 	if (immediate)
