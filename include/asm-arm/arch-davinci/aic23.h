@@ -107,7 +107,7 @@
 // Digital interface register
 #define ACT_ON				0x0001
 
-#define TLV320AIC23ID1                  (0x1a)	// cs low
+#define TLV320AIC23ID1                  (0x18)	// cs low
 #define TLV320AIC23ID2                  (0x1b)	// cs high
 
 void tlv320aic23_power_up(void);
