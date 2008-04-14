@@ -1992,6 +1992,8 @@ musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl)
 	if (status < 0)
 		goto fail2;
 
+	INIT_WORK(&musb->irq_work, musb_irq_work);
+
 	/* attach to the IRQ */
 	if (request_irq (nIrq, musb->isr, 0, dev->bus_id, musb)) {
 		dev_err(dev, "request_irq %d failed!\n", nIrq);
@@ -2071,7 +2073,6 @@ fail:
 		return status;
 	}
 
-	INIT_WORK(&musb->irq_work, musb_irq_work);
 
 #ifdef CONFIG_SYSFS
 	status = device_create_file(dev, &dev_attr_mode);

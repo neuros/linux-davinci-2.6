@@ -20,6 +20,13 @@
 #   $4 - default install path (blank if root directory)
 #
 
+#NT_PORT
+if [ "`basename $2`" = "uImage" ]; then
+    echo "Install uImage to $4"
+    cp $2 $4/uImage
+    exit
+fi
+
 # User may have a custom install script
 if [ -x ~/bin/${CROSS_COMPILE}installkernel ]; then exec ~/bin/${CROSS_COMPILE}installkernel "$@"; fi
 if [ -x /sbin/${CROSS_COMPILE}installkernel ]; then exec /sbin/${CROSS_COMPILE}installkernel "$@"; fi
