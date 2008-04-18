@@ -123,6 +123,11 @@ config SENSORS_TLV320AIC23
 	  If you say yes here you get support for the I2C control
 	  interface for Texas Instruments TLV320AIC23 audio codec.
 
+config SENSORS_TLV320AIC32
+        tristate "Texas Instruments TLV320AIC32 Codec"
+        depends on I2C && I2C_DAVINCI
+        select SENSORS_TLV320AIC23
+
 config SENSORS_TLV320AIC33
 	tristate "Texas Instruments TLV320AIC33 Codec"
 	depends on I2C && I2C_DAVINCI

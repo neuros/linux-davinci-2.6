@@ -120,6 +120,8 @@ static int audio_suspend(struct platform_device *dev, pm_message_t state);
 
 static int audio_resume(struct platform_device *dev);
 
+static void	audio_device_release(struct device *dev);
+
 /***************************** Data Structures ********************************/
 
 /*
@@ -160,6 +162,7 @@ static struct platform_device davinci_audio_device = {
 	.name = DAVINCI_AUDIO_NAME,
 	.dev = {
 		.driver_data = &audio_state,
+		.release = &audio_device_release,
 		},
 	.id = 0,
 };
@@ -297,6 +300,18 @@ static int audio_remove(struct platform_device *dev)
 	return 0;
 }
 
+/*******************************************************************************
+*
+* audio_device_release Fucntion to handle release operations
+*
+*****************************************************************************/
+static void audio_device_release(struct device *dev)
+{
+	FN_IN;
+	/* do nothing */
+
+	FN_OUT(0);
+}
 /*******************************************************************************
  *
  * audio_shutdown(): Function to handle shutdown operations

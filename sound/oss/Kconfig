@@ -661,6 +661,18 @@ config SOUND_DAVINCI
 	---help---
 	DaVinci Sound driver
 
+choice 
+	prompt "Sound driver"
+	depends on SOUND_DAVINCI
+	
+config SOUND_DAVINCI_AIC32
+       tristate "AIC32 Stereo Codec"
+       depends on SOUND_DAVINCI
+       select SENSORS_TLV320AIC32
+       ---help---
+         If you say yes here you get support for the I2C control
+         interface for Texas Instruments TLV320AIC32 audio codec.
+
 config SOUND_DAVINCI_AIC33
        tristate "AIC33 Stereo Codec"
        depends on SOUND_DAVINCI
@@ -668,6 +680,7 @@ config SOUND_DAVINCI_AIC33
        ---help---
          If you say yes here you get support for the I2C control
          interface for Texas Instruments TLV320AIC33 audio codec.
+endchoice
 
 menu "DaVinci Audio Options"
 	depends on SOUND_DAVINCI
