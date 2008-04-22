@@ -212,12 +212,8 @@ i2c_davinci_xfer_msg(struct i2c_adapter *adap, struct i2c_msg *msg, int stop)
 	int i;
 
 	/* Introduce a 100musec delay.  Required for Davinci EVM board only */
-#ifdef CONFIG_MACH_DAVINCI_EVM
+#if defined(CONFIG_MACH_DAVINCI_EVM) || defined(CONFIG_MACH_NTOSD_644XA)
 	udelay(100);
-#else
-#ifdef CONFIG_MACH_NTOSD_644XA
-	udelay(100);
-#endif
 #endif
 
 	/* set the slave address */
@@ -505,17 +501,13 @@ davinci_i2c_probe(struct platform_device *pdev)
 	 *	 so that the MSP430, which is doing software i2c, has
 	 *	 some extra processing time
 	 */
-#ifdef CONFIG_MACH_DAVINCI_EVM
-	bus_freq = 20;
-#else
-#ifdef CONFIG_MACH_NTOSD_644XA
+#if defined(CONFIG_MACH_DAVINCI_EVM) || defined(CONFIG_MACH_NTOSD_644XA)
 	bus_freq = 20;
 #else
 	if (bus_freq > 200)
 		bus_freq = 400;	/* Fast mode */
 	else
 		bus_freq = 100;	/* Standard mode */
-#endif
 #endif
 
 	dev->clk = clk_get (&pdev->dev, "I2CCLK");
