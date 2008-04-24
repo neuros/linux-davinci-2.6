@@ -23,6 +23,7 @@
  * ----------------------------------------------------------------------------
  Modifications:
  ver. 1.0: Oct 2005, Swaminathan S
+ Apr 2008, Neuros Technology
  -
  *
  */
@@ -467,6 +468,8 @@ int palm_bk3710_init(void)
 		 *
 		 * Ensure both are not Enabled.
 		 */
+
+#ifdef CONFIG_MACH_DAVINCI_EVM
 #ifdef CONFIG_DAVINCI_BLK_DEV_CF
 		davinci_i2c_expander_op (0x3A, ATA_SEL, 1);
 		davinci_i2c_expander_op (0x3A, CF_RESET, 1);
@@ -475,6 +478,8 @@ int palm_bk3710_init(void)
 		davinci_i2c_expander_op (0x3A, CF_SEL, 1);
 		davinci_i2c_expander_op (0x3A, ATA_SEL, 0);
 #endif
+#endif
+
 		/* Register the IDE interface with Linux ATA Interface */
 		memset(&ide_ctlr_info, 0, sizeof(ide_ctlr_info));
 
