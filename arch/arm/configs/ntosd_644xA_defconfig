@@ -1111,7 +1111,7 @@ CONFIG_MMC_BLOCK_BOUNCE=y
 #
 # MMC/SD Host Controller Drivers
 #
-# CONFIG_MMC_DAVINCI is not set
+CONFIG_MMC_DAVINCI=y
 CONFIG_RTC_LIB=y
 # CONFIG_RTC_CLASS is not set
 
