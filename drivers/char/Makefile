@@ -118,6 +118,8 @@ js-rtc-y = rtc.o
 davinci_previewer_driver-objs := davinci_previewer_hw.o davinci_previewer.o
 obj-$(CONFIG_PREVIEWER) += davinci_previewer_driver.o
 
+obj-$(CONFIG_THS7313)		+= davinci-ths7313.o
+
 # Files generated that shall be removed upon make clean
 clean-files := consolemap_deftbl.c defkeymap.c
 

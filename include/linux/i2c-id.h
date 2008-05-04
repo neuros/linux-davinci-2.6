@@ -122,7 +122,7 @@
 
 #define I2C_DRIVERID_MISC	99	/* Whatever until sorted out	*/
 #define I2C_DRIVERID_IRRTC      0xF9   /* Neuros IR & RTC */
-
+#define I2C_DRIVERID_THS7313  100    /* Texas Instrument THS7313 */
 
 #define I2C_DRIVERID_I2CDEV	900
 #define I2C_DRIVERID_ARP        902    /* SMBus ARP Client              */

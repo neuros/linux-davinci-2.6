@@ -1082,5 +1082,11 @@ config PREVIEWER
 	help
 		DaVinci Previewer Driver
 
+config THS7313
+	tristate "Enable SDTV Video Amplifier Support"
+	default n
+	help
+	  Say Yes to enable the SDTV Video Amplifier support.
+
 endmenu
 
