@@ -19,6 +19,14 @@ config VIDEO_OUTPUT_CONTROL
 	  This framework adds support for low-level control of the video 
 	  output switch.
 
+config THS8200
+        tristate "Enable THS8200 Video DAC Support"
+        default n
+        help
+          Say Yes to enable the THS8200 All-Format Oversampled Component
+          Video/PC Graphics D/A System With Three 11-Bit DACs,CGMS Data
+          Insertion.
+
 config FB
 	tristate "Support for frame buffer devices"
 	---help---
