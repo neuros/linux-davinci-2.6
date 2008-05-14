@@ -15,6 +15,11 @@
 
 #include <linux/fb.h>
 
+/* PINMUX0 register */
+#define PINMUX0                                 IO_ADDRESS(0x01c40000)
+#define PINMUX0_LOEEN                           (1 << 24)
+#define PINMUX0_LFLDEN                          (1 << 25)
+
 /* Base registers */
 #define	VPBE_REG_BASE				IO_ADDRESS(0x01c72780)
 #define	VENC_REG_BASE				IO_ADDRESS(0x01c72400)
@@ -22,8 +27,8 @@
 #define OSD_REG_SIZE				0x00000180
 
 /* VPBE Global Registers */
-#define	VPBE_PID				(VPBE_BASE + 0x0)
-#define	VPBE_PCR				(VPBE_BASE + 0x4)
+#define	VPBE_PID				(VPBE_REG_BASE + 0x0)
+#define	VPBE_PCR				(VPBE_REG_BASE + 0x4)
 
 /* VPSS Clock Control Register */
 #define	VPSS_CLKCTL				IO_ADDRESS(0x01c40044)
@@ -202,6 +207,15 @@
 #define VENC_VMOD_BLNK				(1 << 3)
 #define VENC_VMOD_VIE				(1 << 1)
 #define VENC_VMOD_VENC				(1 << 0)
+#define VENC_VIDCTL_VLCKP                       (1 << 14)
+#define VENC_VIDCTL_VLCKE                       (1 << 13)
+#define VENC_VIDCTL_VLCKZ                       (1 << 12)
+#define VENC_VDPRO_CBTYPE                       (1 << 9)
+#define VENC_VDPRO_CBMD                         (1 << 8)
+#define VENC_SYNCCTL_SYSW                       (1 << 5)
+#define VENC_SYNCCTL_SYEV                       (1 << 1)
+#define VENC_SYNCCTL_SYEH                       (1 << 0)
+#define VENC_DCKCTL_DCKEC                       (1 << 11)
 /* other VENC registers' bit positions not defined yet */
 
 #define	OSD_MODE_CS				(1 << 15)
@@ -420,6 +434,7 @@
 #define LCD             0
 #define NTSC            1
 #define PAL             2
+#define HD720P		3
 
 #define COMPOSITE       1
 #define SVIDEO          2

@@ -31,9 +31,14 @@
 
 #include <asm/irq.h>
 #include <asm/uaccess.h>
+#include <asm/arch/hardware.h>
 
 #include <video/davincifb.h>
 #include <asm/system.h>
+
+#ifdef CONFIG_THS8200
+#include <asm/arch/davinci-ths8200.h>
+#endif /* CONFIG_THS8200 */
 
 #define MODULE_NAME "davincifb"
 
@@ -129,6 +134,13 @@ static struct fb_ops davincifb_ops;
 #define DISP_XRES	720
 #define DISP_YRES	480
 #define DISP_MEMY	576
+
+#define BASEX720P 0x50
+#define BASEY720P 0x5
+
+#define DISP_XRES720P   1280
+#define DISP_YRES720P   720
+#define DISP_MEMY720P   720
 
 /* Random value chosen for now. Should be within the panel's supported range */
 #define LCD_PANEL_CLOCK	180000
@@ -1005,6 +1017,7 @@ int __init davincifb_setup(char *options)
 {
 	char *this_opt;
 	u32 xres, yres, xpos, ypos;
+	int format_xres = 720;
 	int format_yres = 480;
 
 	pr_debug("davincifb: Options \"%s\"\n", options);
@@ -1025,8 +1038,13 @@ int __init davincifb_setup(char *options)
 				dmparams.output = NTSC;
 			else if (!strncmp(this_opt + 7, "pal", 3))
 				dmparams.output = PAL;
+			else if (!strncmp(this_opt + 7, "720p", 4)) {
+				dmparams.output = HD720P;
+				dmparams.format = COMPONENT;
+			}
 		} else if (!strncmp(this_opt, "format=", 7)) {
-			if (dmparams.output == LCD)
+			if (dmparams.output == LCD ||
+				 dmparams.output == HD720P)
 				continue;
 			if (!strncmp(this_opt + 7, "composite", 9))
 				dmparams.format = COMPOSITE;
@@ -1085,6 +1103,7 @@ int __init davincifb_setup(char *options)
 	printk(KERN_INFO "DaVinci: "
 	       "Output on %s%s, Enabled windows: %s %s %s %s\n",
 	       (dmparams.output == LCD) ? "LCD" :
+		   (dmparams.output == HD720P) ? "HD720P":
 	       (dmparams.output == NTSC) ? "NTSC" :
 	       (dmparams.output == PAL) ? "PAL" : "unknown device!",
 	       (dmparams.format == 0) ? "" :
@@ -1100,19 +1119,40 @@ int __init davincifb_setup(char *options)
 		format_yres = 480;
 	} else if (dmparams.output == PAL) {
 		format_yres = 576;
+	} else if (dmparams.output == HD720P) {
+		format_xres = DISP_XRES720P;
+		format_yres = DISP_YRES720P;
 	} else {
 		printk(KERN_INFO
 		       "DaVinci:invalid format..defaulting width to 480\n");
 	}
+	dmparams.osd0_xres = osd0_default_var.xres = format_xres;
+	dmparams.osd1_xres = osd1_default_var.xres = format_xres;
+	dmparams.vid0_xres = vid0_default_var.xres = format_xres;
+	dmparams.vid1_xres = vid1_default_var.xres = format_xres;
+
 	dmparams.osd0_yres = osd0_default_var.yres = format_yres;
 	dmparams.osd1_yres = osd1_default_var.yres = format_yres;
 	dmparams.vid0_yres = vid0_default_var.yres = format_yres;
 	dmparams.vid1_yres = vid1_default_var.yres = format_yres;
 
+	osd0_default_var.xres_virtual = round_32((format_xres)*16/8) * 8/16;
+	osd1_default_var.xres_virtual = round_32((format_xres)*16/8) * 8/16;
+	vid0_default_var.xres_virtual = round_32((format_xres)*16/8) * 8/16;
+	vid1_default_var.xres_virtual = round_32((format_xres)*16/8) * 8/16;
+
 	osd0_default_var.yres_virtual = format_yres * DOUBLE_BUF;
 	osd1_default_var.yres_virtual = format_yres * DOUBLE_BUF;
 	vid0_default_var.yres_virtual = format_yres * TRIPLE_BUF;
 	vid1_default_var.yres_virtual = format_yres * TRIPLE_BUF;
+
+	dmparams.osd0_phys = DAVINCI_FB_RESERVE_MEM_BASE;
+	dmparams.osd1_phys = dmparams.osd0_phys +
+		fb_window_size(format_xres, format_yres, DOUBLE_BUF);
+	dmparams.vid0_phys = dmparams.osd1_phys +
+		fb_window_size(format_xres, format_yres, DOUBLE_BUF);
+	dmparams.vid1_phys = dmparams.vid0_phys +
+		fb_window_size(format_xres, format_yres, TRIPLE_BUF);
 
 	if (dmparams.windows & (1 << VID0))
 		printk(KERN_INFO "Setting Video0 size %dx%d, "
@@ -1255,6 +1295,259 @@ static struct fb_info *init_fb_info(struct dm_win_info *w,
 	w->sdram_address = 0;
 
 	return info;
+}
+
+static void enable_digital_output(bool on)
+{
+	if (on) {
+
+		/* Set PINMUX0 reg to enable LCD
+			(all other settings are kept per u-boot) */
+		dispc_reg_merge(PINMUX0, PINMUX0_LOEEN, PINMUX0_LOEEN);
+
+		/* Set PCR register for FULL clock */
+		dispc_reg_out(VPBE_PCR, 0);
+
+		/* Enable video clock output and inverse clock polarity */
+		dispc_reg_out(VENC_VIDCTL,
+				(VENC_VIDCTL_VLCKE | VENC_VIDCTL_VLCKP));
+
+		/* Setting DRGB Matrix registers back to default values */
+		dispc_reg_out(VENC_DRGBX0, 0x00000400);
+		dispc_reg_out(VENC_DRGBX1, 0x00000576);
+		dispc_reg_out(VENC_DRGBX2, 0x00000159);
+		dispc_reg_out(VENC_DRGBX3, 0x000002cb);
+		dispc_reg_out(VENC_DRGBX4, 0x000006ee);
+
+		/* Enable DCLOCK */
+		dispc_reg_out(VENC_DCLKCTL, VENC_DCKCTL_DCKEC);
+
+		/* Set DCLOCK pattern */
+		dispc_reg_out(VENC_DCLKPTN0, 1);
+		dispc_reg_out(VENC_DCLKPTN1, 0);
+		dispc_reg_out(VENC_DCLKPTN2, 0);
+		dispc_reg_out(VENC_DCLKPTN3, 0);
+		dispc_reg_out(VENC_DCLKPTN0A, 2);
+		dispc_reg_out(VENC_DCLKPTN1A, 0);
+		dispc_reg_out(VENC_DCLKPTN2A, 0);
+		dispc_reg_out(VENC_DCLKPTN3A, 0);
+		dispc_reg_out(VENC_DCLKHS, 0);
+		dispc_reg_out(VENC_DCLKHSA, 1);
+		dispc_reg_out(VENC_DCLKHR, 0);
+		dispc_reg_out(VENC_DCLKVS, 0);
+		dispc_reg_out(VENC_DCLKVR, 0);
+
+		/* Enable LCD output control (accepting default polarity) */
+		dispc_reg_out(VENC_LCDOUT, 0x1);
+
+		/* Set brightness start position and pulse width to zero */
+		dispc_reg_out(VENC_BRTS, 0);
+		dispc_reg_out(VENC_BRTW, 0);
+
+		/* Set LCD AC toggle interval and horizontal position to zero */
+		dispc_reg_out(VENC_ACCTL, 0);
+
+		/* Set PWM period and width to zero */
+		dispc_reg_out(VENC_PWMP, 0);
+		dispc_reg_out(VENC_PWMW, 0);
+
+		/* Clear component and composite mode
+			registers (applicable to Analog DACS) */
+		dispc_reg_out(VENC_CVBS, 0);
+		dispc_reg_out(VENC_CMPNT, 0);
+
+		/* turning on horizontal and vertical syncs */
+		dispc_reg_out(VENC_SYNCCTL,
+				(VENC_SYNCCTL_SYEV|VENC_SYNCCTL_SYEH));
+
+		/* Set OSD clock and OSD Sync Adavance registers */
+		dispc_reg_out(VENC_OSDCLK0, 0);
+		dispc_reg_out(VENC_OSDCLK1, 1);
+		dispc_reg_out(VENC_OSDHAD, 0);
+
+		/* Enable Video Window 0 / disable video window 1 */
+		dispc_reg_out(OSD_VIDWINMD, OSD_VIDWINMD_ACT0);
+
+		/* Clear OSD Field Inversion for VID0 Use */
+		dispc_reg_out(OSD_MODE, 0);
+
+		/* Disable OSD0 Window */
+		dispc_reg_out(OSD_OSDWIN0MD, 0x00002000);
+
+		/* Disable OSD1 Window */
+		dispc_reg_out(OSD_OSDWIN1MD, 0x00008000);
+
+		/* set VPSS clock */
+		dispc_reg_out(VPSS_CLKCTL, 0x0a);
+
+		} else {
+
+			/* Initialize the VPSS Clock Control register */
+			dispc_reg_out(VPSS_CLKCTL, 0x18);
+
+			/* Set PINMUX0 reg to enable LCD
+				(all other settings are kept per u-boot) */
+			dispc_reg_merge(PINMUX0, 0, PINMUX0_LOEEN);
+			dispc_reg_merge(PINMUX0, 0, PINMUX0_LFLDEN);
+
+			/* disable VCLK output pin enable */
+			dispc_reg_out(VENC_VIDCTL, 0x1101);
+
+			/* Disable output sync pins */
+			dispc_reg_out(VENC_SYNCCTL, 0);
+
+			/* Disable DCLOCK */
+			dispc_reg_out(VENC_DCLKCTL, 0);
+			dispc_reg_out(VENC_DRGBX1, 0x0000057C);
+
+			/* Disable LCD output control
+				(accepting default polarity) */
+			dispc_reg_out(VENC_LCDOUT, 0);
+			dispc_reg_out(VENC_CMPNT, 0x100);
+
+			/* Enable Video Window 1 / disable video window 0 */
+			dispc_reg_out(OSD_VIDWINMD, 0x302);
+
+			/* Enable OSD Field Inversion for VID1 Use */
+			dispc_reg_out(OSD_MODE, 0x200);
+
+			/* Disable OSD0 Window */
+			dispc_reg_out(OSD_OSDWIN0MD, 0x00002003);
+
+			/* Disable OSD1 Window */
+			dispc_reg_out(OSD_OSDWIN1MD, 0x00008002);
+
+			/* Set VID0 window  origin and size */
+			dispc_reg_out(OSD_VIDWIN0XP, 0);
+			dispc_reg_out(OSD_VIDWIN0YP, 0);
+			dispc_reg_out(OSD_VIDWIN0XL, 0x2d0);
+			dispc_reg_out(OSD_VIDWIN0YL, 0xf0);
+
+			/* Set VID1 window  origin and size */
+			dispc_reg_out(OSD_VIDWIN1XP, 0);
+			dispc_reg_out(OSD_VIDWIN1YP, 0);
+			dispc_reg_out(OSD_VIDWIN1XL, 0x2d0);
+			dispc_reg_out(OSD_VIDWIN1YL, 0xf0);
+
+			/* Set OSD0 window  origin and size */
+			dispc_reg_out(OSD_OSDWIN0XP, 0);
+			dispc_reg_out(OSD_OSDWIN0YP, 0);
+			dispc_reg_out(OSD_OSDWIN0XL, 0x2d0);
+			dispc_reg_out(OSD_OSDWIN0YL, 0xf0);
+
+			/* Set OSD1 window  origin and size */
+			dispc_reg_out(OSD_OSDWIN1XP, 0);
+			dispc_reg_out(OSD_OSDWIN1YP, 0);
+			dispc_reg_out(OSD_OSDWIN1XL, 0x2d0);
+			dispc_reg_out(OSD_OSDWIN1YL, 0xf0);
+
+			/* Set OSD1 window  origin and size */
+			dispc_reg_out(OSD_CURXP, 0);
+			dispc_reg_out(OSD_CURYP, 0);
+			dispc_reg_out(OSD_CURXL, 0x2d0);
+			dispc_reg_out(OSD_CURYL, 0xf0);
+
+
+			dispc_reg_out(VENC_HSPLS, 0);
+			dispc_reg_out(VENC_VSPLS, 0);
+			dispc_reg_out(VENC_HINT, 0);
+			dispc_reg_out(VENC_HSTART, 0);
+			dispc_reg_out(VENC_HVALID, 0);
+			dispc_reg_out(VENC_VINT, 0);
+			dispc_reg_out(VENC_VSTART, 0);
+			dispc_reg_out(VENC_VVALID, 0);
+			dispc_reg_out(VENC_HSDLY, 0);
+			dispc_reg_out(VENC_VSDLY, 0);
+			dispc_reg_out(VENC_YCCCTL, 0);
+			dispc_reg_out(VENC_VSTARTA, 0);
+
+			/* Set OSD clock and OSD Sync Adavance registers */
+			dispc_reg_out(VENC_OSDCLK0, 1);
+			dispc_reg_out(VENC_OSDCLK1, 2);
+		}
+}
+
+static void davincifb_720p_component_config(int on)
+{
+	if (on) {
+
+#ifdef CONFIG_THS8200
+		/* Enable the Ths8200 Video DAC to support 720p */
+		ths8200_set_720p_mode();
+#endif
+		/* Reset video encoder module */
+		dispc_reg_out(VENC_VMOD, 0);
+
+		/* Set new baseX and baseY */
+		dispc_reg_out(OSD_BASEPX, BASEX720P);
+		dispc_reg_out(OSD_BASEPY, BASEY720P);
+
+		/* Enable the digtal output */
+		enable_digital_output(true);
+
+		dispc_reg_merge(PINMUX0, 0, PINMUX0_LFLDEN);
+
+		/* Enable OSD0 Window */
+		dispc_reg_out(OSD_OSDWIN0MD, 0x00002001);
+
+		/* Enable OSD1 Window */
+		dispc_reg_out(OSD_OSDWIN1MD, 0x00008000);
+
+		/* Set Timing parameters for 720P frame
+			(must match what THS8200 expects) */
+		dispc_reg_out(VENC_HSPLS, BASEX720P);
+		dispc_reg_out(VENC_VSPLS, BASEY720P);
+		dispc_reg_out(VENC_HINT, 1649);
+		dispc_reg_out(VENC_HSTART, 300);
+		dispc_reg_out(VENC_HVALID, DISP_XRES720P);
+		dispc_reg_out(VENC_VINT, 749);
+		dispc_reg_out(VENC_VSTART, 26);
+		dispc_reg_out(VENC_VVALID, DISP_YRES720P);
+		dispc_reg_out(VENC_HSDLY, 0);
+		dispc_reg_out(VENC_VSDLY, 0);
+		dispc_reg_out(VENC_YCCCTL, 0);
+		dispc_reg_out(VENC_VSTARTA, 0);
+
+		/* Set VID0 window  origin and size */
+		dispc_reg_out(OSD_VIDWIN0XP, 220);
+		dispc_reg_out(OSD_VIDWIN0YP, 25);
+		dispc_reg_out(OSD_VIDWIN0XL, DISP_XRES720P);
+		dispc_reg_out(OSD_VIDWIN0YL, DISP_YRES720P);
+
+		/* Set VID1 window  origin and size */
+		dispc_reg_out(OSD_VIDWIN1XP, 220);
+		dispc_reg_out(OSD_VIDWIN1YP, 25);
+		dispc_reg_out(OSD_VIDWIN1XL, DISP_XRES720P);
+		dispc_reg_out(OSD_VIDWIN1YL, DISP_YRES720P);
+
+		/* Set OSD0 window  origin and size */
+		dispc_reg_out(OSD_OSDWIN0XP, 220);
+		dispc_reg_out(OSD_OSDWIN0YP, 25);
+		dispc_reg_out(OSD_OSDWIN0XL, DISP_XRES720P);
+		dispc_reg_out(OSD_OSDWIN0YL, DISP_YRES720P);
+
+		/* Set OSD1 window  origin and size */
+		dispc_reg_out(OSD_OSDWIN1XP, 220);
+		dispc_reg_out(OSD_OSDWIN1YP, 25);
+		dispc_reg_out(OSD_OSDWIN1XL, DISP_XRES720P);
+		dispc_reg_out(OSD_OSDWIN1YL, DISP_YRES720P);
+
+		/* Set OSD1 window  origin and size */
+		dispc_reg_out(OSD_CURXP, 220);
+		dispc_reg_out(OSD_CURYP, 25);
+		dispc_reg_out(OSD_CURXL, DISP_XRES720P);
+		dispc_reg_out(OSD_CURYL, DISP_YRES720P);
+
+		/* Enable all VENC, non-standard timing mode,
+			master timing, HD, progressive */
+		dispc_reg_out(VENC_VMOD,
+			(VENC_VMOD_VENC | VENC_VMOD_VMD | VENC_VMOD_HDMD));
+
+		printk(KERN_INFO "Davinci set Video Mode as 720p\n");
+	} else{
+		/* Reset video encoder module */
+		dispc_reg_out(VENC_VMOD, 0);
+	}
 }
 
 static void davincifb_ntsc_composite_config(int on)
@@ -1499,6 +1792,8 @@ static int davincifb_probe(struct platform_device *pdev)
 		dm->output_device_config = davincifb_pal_svideo_config;
 	else if ((dmparams.output == PAL) && (dmparams.format == COMPONENT))
 		dm->output_device_config = davincifb_pal_component_config;
+	else if ((dmparams.output == HD720P) && (dmparams.format == COMPONENT))
+		dm->output_device_config = davincifb_720p_component_config;
 	/* Add support for other displays here */
 	else {
 		printk(KERN_WARNING "Unsupported output device!\n");
