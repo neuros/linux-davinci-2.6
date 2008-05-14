@@ -145,6 +145,11 @@ static struct fb_ops davincifb_ops;
  * using the FBIOPUT_VSCREENINFO ioctl within the limits of the screen size.
  */
 #define round_32(width)	((((width) + 31) / 32) * 32 )
+/* get FB window buffer size */
+static inline int fb_window_size(int width, int height, int bufnum)
+{
+	return round_32(width * 16 / 8) * height * bufnum;
+}
 
 #define OSD0_XRES	round_32((DISP_XRES)*16/8) * 8/16	/* pixels */
 #define OSD0_YRES	DISP_YRES
@@ -270,6 +275,11 @@ static struct dmparams_t {
 	u32 osd1_yres;
 	u32 osd1_xpos;
 	u32 osd1_ypos;
+
+	u32 vid0_phys;
+	u32 vid1_phys;
+	u32 osd0_phys;
+	u32 osd1_phys;
 } dmparams = {
 	NTSC,		/* output */
 	    COMPOSITE,		/* format */
@@ -279,8 +289,11 @@ static struct dmparams_t {
 	    720, 480, 0, 0,	/* vid1 size and position */
 	    720, 480, 0, 0,	/* osd0 size and position */
 	    720, 480, 0, 0,	/* osd1 size and position */
+		VID0_FB_PHY,
+		VID1_FB_PHY,
+		OSD0_FB_PHY,
+		OSD1_FB_PHY,
 };
-
 /* Must do checks against the limits of the output device */
 static int davincifb_venc_check_mode(const struct dm_win_info *w,
 				     const struct fb_var_screeninfo *var)
@@ -1517,8 +1530,11 @@ static int davincifb_probe(struct platform_device *pdev)
 		       "because Video0 is disabled\n");
 		return 0;	/* background will still be shown */
 	}
+
 	/* Setup VID0 framebuffer */
-	if (!mem_alloc(&dm->vid0, VID0_FB_PHY, VID0_FB_SIZE, VID0_FBNAME)) {
+	if (!mem_alloc(&dm->vid0, dmparams.vid0_phys,
+				   fb_window_size(dmparams.vid0_xres, dmparams.vid0_yres, TRIPLE_BUF),
+				   VID0_FBNAME)) {
 		dm->vid0->dm = dm;
 		fix_default_var(dm->vid0,
 				dmparams.vid0_xres, dmparams.vid0_yres,
@@ -1535,7 +1551,9 @@ static int davincifb_probe(struct platform_device *pdev)
 
 	/* Setup OSD0 framebuffer */
 	if ((dmparams.windows & (1 << OSD0)) &&
-	    (!mem_alloc(&dm->osd0, OSD0_FB_PHY, OSD0_FB_SIZE, OSD0_FBNAME))) {
+	    (!mem_alloc(&dm->osd0, dmparams.osd0_phys,
+					fb_window_size(dmparams.osd0_xres, dmparams.osd0_yres, DOUBLE_BUF),
+					OSD0_FBNAME))) {
 		dm->osd0->dm = dm;
 		fix_default_var(dm->osd0,
 				dmparams.osd0_xres, dmparams.osd0_yres,
@@ -1551,7 +1569,9 @@ static int davincifb_probe(struct platform_device *pdev)
 
 	/* Setup OSD1 framebuffer */
 	if ((dmparams.windows & (1 << OSD1)) &&
-	    (!mem_alloc(&dm->osd1, OSD1_FB_PHY, OSD1_FB_SIZE, OSD1_FBNAME))) {
+	    (!mem_alloc(&dm->osd1, dmparams.osd1_phys,
+					fb_window_size(dmparams.osd1_xres, dmparams.osd1_yres, DOUBLE_BUF),
+					OSD1_FBNAME))) {
 		dm->osd1->dm = dm;
 		fix_default_var(dm->osd1,
 				dmparams.osd1_xres, dmparams.osd1_yres,
@@ -1569,7 +1589,9 @@ static int davincifb_probe(struct platform_device *pdev)
 
 	/* Setup VID1 framebuffer */
 	if ((dmparams.windows & (1 << VID1)) &&
-	    (!mem_alloc(&dm->vid1, VID1_FB_PHY, VID1_FB_SIZE, VID1_FBNAME))) {
+	    (!mem_alloc(&dm->vid1, dmparams.vid1_phys,
+					fb_window_size(dmparams.vid1_xres, dmparams.vid1_yres, TRIPLE_BUF),
+					VID1_FBNAME))) {
 		dm->vid1->dm = dm;
 		fix_default_var(dm->vid1,
 				dmparams.vid1_xres, dmparams.vid1_yres,
