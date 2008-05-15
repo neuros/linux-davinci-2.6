@@ -142,6 +142,12 @@ static struct fb_ops davincifb_ops;
 #define DISP_YRES720P   720
 #define DISP_MEMY720P   720
 
+#define BASEX1080I   0x58
+#define BASEY1080I   0x5
+#define DISP_XRES1080I   1920
+#define DISP_YRES1080I   1080
+#define DISP_MEMY1080I   1080
+
 /* Random value chosen for now. Should be within the panel's supported range */
 #define LCD_PANEL_CLOCK	180000
 
@@ -1041,10 +1047,14 @@ int __init davincifb_setup(char *options)
 			else if (!strncmp(this_opt + 7, "720p", 4)) {
 				dmparams.output = HD720P;
 				dmparams.format = COMPONENT;
+			} else if (!strncmp(this_opt + 7, "1080i", 5)) {
+				dmparams.output = HD1080I;
+				dmparams.format = COMPONENT;
 			}
 		} else if (!strncmp(this_opt, "format=", 7)) {
 			if (dmparams.output == LCD ||
-				 dmparams.output == HD720P)
+				 dmparams.output == HD720P ||
+				 dmparams.output == HD1080I)
 				continue;
 			if (!strncmp(this_opt + 7, "composite", 9))
 				dmparams.format = COMPOSITE;
@@ -1104,6 +1114,7 @@ int __init davincifb_setup(char *options)
 	       "Output on %s%s, Enabled windows: %s %s %s %s\n",
 	       (dmparams.output == LCD) ? "LCD" :
 		   (dmparams.output == HD720P) ? "HD720P":
+		   (dmparams.output == HD1080I) ? "HD1080I":
 	       (dmparams.output == NTSC) ? "NTSC" :
 	       (dmparams.output == PAL) ? "PAL" : "unknown device!",
 	       (dmparams.format == 0) ? "" :
@@ -1122,6 +1133,9 @@ int __init davincifb_setup(char *options)
 	} else if (dmparams.output == HD720P) {
 		format_xres = DISP_XRES720P;
 		format_yres = DISP_YRES720P;
+	} else if (dmparams.output == HD1080I) {
+		format_xres = DISP_XRES1080I;
+		format_yres = DISP_YRES1080I;
 	} else {
 		printk(KERN_INFO
 		       "DaVinci:invalid format..defaulting width to 480\n");
@@ -1467,6 +1481,91 @@ static void enable_digital_output(bool on)
 		}
 }
 
+static void davincifb_1080i_component_config(int on)
+{
+	if (on) {
+
+#ifdef CONFIG_THS8200
+		/* Enable THS8200 DAC output mode as 1080I */
+		ths8200_set_1080i_mode();
+#endif/* CONFIG_THS8200 */
+
+		/* Reset video encoder module */
+		dispc_reg_out(VENC_VMOD, 0);
+
+		/* Set new baseX and baseY */
+		dispc_reg_out(OSD_BASEPX, BASEX1080I);
+		dispc_reg_out(OSD_BASEPY, BASEY1080I);
+
+		enable_digital_output(true);
+
+		dispc_reg_merge(PINMUX0, PINMUX0_LFLDEN, PINMUX0_LFLDEN);
+
+		/* Enable OSD0 Window */
+		dispc_reg_out(OSD_OSDWIN0MD, 0x00002003);
+
+		/* Enable OSD1 Window */
+		dispc_reg_out(OSD_OSDWIN1MD, 0x00008002);
+
+		/* Set Timing parameters for 720P frame (must match what THS8200 expects) */
+		dispc_reg_out(VENC_HSPLS, BASEX1080I);
+		dispc_reg_out(VENC_VSPLS, BASEY1080I);
+		dispc_reg_out(VENC_HINT, 2200-1);
+		dispc_reg_out(VENC_HSTART, 200);
+		dispc_reg_out(VENC_HVALID, DISP_XRES1080I);
+		dispc_reg_out(VENC_VINT, 1125-1);
+		dispc_reg_out(VENC_VSTART, 13);
+		dispc_reg_out(VENC_VVALID, DISP_YRES1080I/2);
+		dispc_reg_out(VENC_HSDLY, 0);
+		dispc_reg_out(VENC_VSDLY, 0);
+		dispc_reg_out(VENC_YCCCTL, 0);
+		dispc_reg_out(VENC_VSTARTA, 13);
+
+		dispc_reg_out(OSD_VIDWINMD, 0x203);
+
+		/* Set VID0 window  origin and size */
+		dispc_reg_out(OSD_VIDWIN0XP, 200 - BASEX1080I);
+		dispc_reg_out(OSD_VIDWIN0YP, 13);
+		dispc_reg_out(OSD_VIDWIN0XL, DISP_XRES1080I);
+		dispc_reg_out(OSD_VIDWIN0YL, DISP_YRES1080I/2);
+
+		/* Set VID1 window  origin and size */
+		dispc_reg_out(OSD_VIDWIN1XP, 200 - BASEX1080I);
+		dispc_reg_out(OSD_VIDWIN1YP, 13);
+		dispc_reg_out(OSD_VIDWIN1XL, DISP_XRES1080I);
+		dispc_reg_out(OSD_VIDWIN1YL, DISP_YRES1080I/2);
+
+		/* Set OSD0 window  origin and size */
+		dispc_reg_out(OSD_OSDWIN0XP, 200 - BASEX1080I);
+		dispc_reg_out(OSD_OSDWIN0YP, 13);
+		dispc_reg_out(OSD_OSDWIN0XL, DISP_XRES1080I);
+		dispc_reg_out(OSD_OSDWIN0YL, DISP_YRES1080I/2);
+
+		/* Set OSD1 window  origin and size */
+		dispc_reg_out(OSD_OSDWIN1XP, 200 - BASEX1080I);
+		dispc_reg_out(OSD_OSDWIN1YP, 13);
+		dispc_reg_out(OSD_OSDWIN1XL, DISP_XRES1080I);
+		dispc_reg_out(OSD_OSDWIN1YL, DISP_YRES1080I/2);
+
+		/* Set OSD1 window  origin and size */
+		dispc_reg_out(OSD_CURXP, 200 - BASEX1080I);
+		dispc_reg_out(OSD_CURYP, 13);
+		dispc_reg_out(OSD_CURXL, DISP_XRES1080I);
+		dispc_reg_out(OSD_CURYL, DISP_YRES1080I/2);
+
+		/* Enable all VENC, non-standard timing mode, master timing, HD, interlaced */
+		dispc_reg_out(VENC_VMOD,
+					  (VENC_VMOD_VENC | VENC_VMOD_VMD |
+					   VENC_VMOD_HDMD | VENC_VMOD_NSIT));
+
+		printk(KERN_INFO "Davinci set video mode as 1080i\n");
+
+	} else {
+		/* Reset video encoder module */
+		dispc_reg_out(VENC_VMOD, 0);
+	}
+}
+
 static void davincifb_720p_component_config(int on)
 {
 	if (on) {
@@ -1543,7 +1642,7 @@ static void davincifb_720p_component_config(int on)
 		dispc_reg_out(VENC_VMOD,
 			(VENC_VMOD_VENC | VENC_VMOD_VMD | VENC_VMOD_HDMD));
 
-		printk(KERN_INFO "Davinci set Video Mode as 720p\n");
+		printk(KERN_INFO "Davinci set video mode as 720p\n");
 	} else{
 		/* Reset video encoder module */
 		dispc_reg_out(VENC_VMOD, 0);
@@ -1794,6 +1893,8 @@ static int davincifb_probe(struct platform_device *pdev)
 		dm->output_device_config = davincifb_pal_component_config;
 	else if ((dmparams.output == HD720P) && (dmparams.format == COMPONENT))
 		dm->output_device_config = davincifb_720p_component_config;
+	else if ((dmparams.output == HD1080I) && (dmparams.format == COMPONENT))
+		dm->output_device_config = davincifb_1080i_component_config;
 	/* Add support for other displays here */
 	else {
 		printk(KERN_WARNING "Unsupported output device!\n");

@@ -435,6 +435,7 @@
 #define NTSC            1
 #define PAL             2
 #define HD720P		3
+#define HD1080I		4
 
 #define COMPOSITE       1
 #define SVIDEO          2
