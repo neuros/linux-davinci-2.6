@@ -100,11 +100,40 @@ static struct platform_device ntosd_644xa_norflash_device = {
 };
 
 #if defined(CONFIG_MTD_NAND_DAVINCI) || defined(CONFIG_MTD_NAND_DAVINCI_MODULE)
+#define UBOOT_START 0x18000
 struct mtd_partition ntosd_644xa_nandflash_partition[] = {
-	/* 5 MB space at the beginning for bootloader and kernel */
+	/* uboot parameter */
+	{
+		.name		= "u-boot-parameter",
+		.offset		= 0,
+		.size		= 1 * SZ_16K,
+		.mask_flags	= 0,
+	},
+	/* ubl */
+	{
+		.name		= "ubl",
+		.offset		= 1 * SZ_16K,
+		.size		= 5 * SZ_16K,
+		.mask_flags	= 0,
+	},
+	/* 1 MB space from bootloader start for bootloader */
+	{
+		.name		= "u-boot",
+		.offset		= UBOOT_START,
+		.size		= 1 * SZ_1M,
+		.mask_flags	= 0,
+	},
+	/* 5 MB space for kernel */
+	{
+		.name		= "kernel",
+		.offset		= 1 * SZ_1M + UBOOT_START,
+		.size		= 5 * SZ_1M,
+		.mask_flags	= 0,
+	},
+	/* the rest for rootfs */
 	{
 		.name		= "NAND filesystem",
-		.offset		= 5 * SZ_1M,
+		.offset		= 6 * SZ_1M + UBOOT_START,
 		.size		= MTDPART_SIZ_FULL,
 		.mask_flags	= 0,
 	}
