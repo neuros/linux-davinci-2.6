@@ -189,6 +189,7 @@ static int nand_davinci_calculate_ecc(struct mtd_info *mtd,
 
 	/* invert so that erased block ecc is correct */
 	tmp = ecc_val;
+	if(tmp == 0) tmp = ~tmp;
 	ecc_code[0] = (u_char)(tmp >> 24);
 	ecc_code[1] = (u_char)(tmp >> 16);
 	ecc_code[2] = (u_char)(tmp >> 8);
@@ -206,8 +207,6 @@ static int nand_davinci_correct_data(struct mtd_info *mtd, u_char *dat,
 			    (calc_ecc[2] << 8)  | (calc_ecc[3]);
 	u_int32_t diff;
 
-	if(eccCalc == 0) eccCalc = ~eccCalc;
-	if(eccNand == 0) eccNand = ~eccNand;
 	diff = eccCalc ^ eccNand;
 	if (diff) {
 		if ((((diff>>16)^diff) & 0xffff) == 0xffff) {
