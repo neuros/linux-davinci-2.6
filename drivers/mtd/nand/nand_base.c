@@ -52,6 +52,11 @@
 #include <linux/mtd/partitions.h>
 #endif
 
+#ifdef CONFIG_MACH_NTOSD_644XA
+#define DM6446_NAND_ECC_SIZE	512
+#define DM6446_NAND_ECC_BYTES	4
+#endif
+
 /* Define default oob placement schemes for large and small page devices */
 static struct nand_ecclayout nand_oob_8 = {
 	.eccbytes = 3,
@@ -808,9 +813,16 @@ static int nand_read_page_swecc(struct mtd_info *mtd, struct nand_chip *chip,
 static int nand_read_page_hwecc(struct mtd_info *mtd, struct nand_chip *chip,
 				uint8_t *buf)
 {
+#ifdef CONFIG_MACH_NTOSD_644XA
+	/* every 512 bytes generate 4 bytes ecc */
+	int i, eccsize = DM6446_NAND_ECC_SIZE;
+	int eccbytes = DM6446_NAND_ECC_BYTES;
+	int eccsteps = chip->ecc.size / eccsize;
+#else
 	int i, eccsize = chip->ecc.size;
 	int eccbytes = chip->ecc.bytes;
 	int eccsteps = chip->ecc.steps;
+#endif
 	uint8_t *p = buf;
 	uint8_t *ecc_calc = chip->buffers->ecccalc;
 	uint8_t *ecc_code = chip->buffers->ecccode;
@@ -1441,9 +1453,16 @@ static void nand_write_page_swecc(struct mtd_info *mtd, struct nand_chip *chip,
 static void nand_write_page_hwecc(struct mtd_info *mtd, struct nand_chip *chip,
 				  const uint8_t *buf)
 {
+#ifdef CONFIG_MACH_NTOSD_644XA
+	/* every 512 bytes generate 4 bytes ecc */
+	int i, eccsize = DM6446_NAND_ECC_SIZE;
+	int eccbytes = DM6446_NAND_ECC_BYTES;
+	int eccsteps = chip->ecc.size / eccsize;
+#else
 	int i, eccsize = chip->ecc.size;
 	int eccbytes = chip->ecc.bytes;
 	int eccsteps = chip->ecc.steps;
+#endif
 	uint8_t *ecc_calc = chip->buffers->ecccalc;
 	const uint8_t *p = buf;
 	uint32_t *eccpos = chip->ecc.layout->eccpos;
