@@ -336,15 +336,15 @@ void davinci_watchdog_reset(void) {
 	u32 tgcr, wdtcr, base = DAVINCI_WDOG_BASE;
 
 	/* disable, internal clock source */
-	davinci_writel(0, base + TCR);
+	davinci_writel(0, base + TGCR);
 
 	/* reset timer, set mode to 64-bit watchdog, and unreset */
 	tgcr = 0;
-	davinci_writel(tgcr, base + TCR);
+	davinci_writel(tgcr, base + TGCR);
 	tgcr = TGCR_TIMMODE_64BIT_WDOG << TGCR_TIMMODE_SHIFT;
 	tgcr |= (TGCR_UNRESET << TGCR_TIM12RS_SHIFT) |
 		(TGCR_UNRESET << TGCR_TIM34RS_SHIFT);
-	davinci_writel(tgcr, base + TCR);
+	davinci_writel(tgcr, base + TGCR);
 
 	/* clear counter and period regs */
 	davinci_writel(0, base + TIM12);
