@@ -53,7 +53,13 @@
 #include <asm/mach/flash.h>
 
 #ifdef CONFIG_NAND_FLASH_HW_ECC
+
+#ifdef CONFIG_MACH_NTOSD_644XA
+#define DAVINCI_NAND_ECC_MODE NAND_ECC_HW16_2048
+#else
 #define DAVINCI_NAND_ECC_MODE NAND_ECC_HW3_512
+#endif
+
 #else
 #define DAVINCI_NAND_ECC_MODE NAND_ECC_SOFT
 #endif
@@ -89,6 +95,24 @@ static struct nand_bbt_descr davinci_memorybased_large = {
 	.len = 2,
 	.pattern = scan_ff_pattern
 };
+
+#ifdef CONFIG_MACH_NTOSD_644XA
+static struct nand_ecclayout davinci_nand_oob_16 = {
+	.eccbytes = 4,
+	.eccpos = {0, 1, 2, 3},
+	.oobfree = { {.offset = 8, .length = 8} }
+};
+
+static struct nand_ecclayout davinci_nand_oob_64 = {
+	.eccbytes = 16,
+	.eccpos = {8, 9, 10, 11, 24, 25, 26, 27, 40, 41, 42, 43, 56, 57, 58, 59},
+	.oobfree = { {.offset =  2, .length = 6},
+		     {.offset = 12, .length = 12},
+		     {.offset = 28, .length = 12},
+		     {.offset = 44, .length = 12},
+		     {.offset = 60, .length =  4} }
+};
+#endif
 
 inline unsigned int davinci_nand_readl(int offset)
 {
@@ -153,6 +177,58 @@ static u32 nand_davinci_readecc(struct mtd_info *mtd)
 	return davinci_nand_readl(NANDF1ECC_OFFSET);
 }
 
+#ifdef CONFIG_MACH_NTOSD_644XA
+/*
+ * Read DaVinci ECC registers and rework into MTD format
+ */
+static int nand_davinci_calculate_ecc(struct mtd_info *mtd,
+				      const u_char *dat, u_char *ecc_code)
+{
+	unsigned int ecc_val = nand_davinci_readecc(mtd);
+	unsigned int tmp;
+
+	/* invert so that erased block ecc is correct */
+	tmp = ecc_val;
+	if(tmp == 0) tmp = ~tmp;
+	ecc_code[0] = (u_char)(tmp >> 24);
+	ecc_code[1] = (u_char)(tmp >> 16);
+	ecc_code[2] = (u_char)(tmp >> 8);
+	ecc_code[3] = (u_char)(tmp);
+	return 0;
+}
+
+static int nand_davinci_correct_data(struct mtd_info *mtd, u_char *dat,
+				     u_char *read_ecc, u_char *calc_ecc)
+{
+	struct nand_chip *chip = mtd->priv;
+	u_int32_t eccNand = (read_ecc[0] << 24) | (read_ecc[1] << 16) |
+			    (read_ecc[2] << 8)  | (read_ecc[3]);
+	u_int32_t eccCalc = (calc_ecc[0] << 24) | (calc_ecc[1] << 16) |
+			    (calc_ecc[2] << 8)  | (calc_ecc[3]);
+	u_int32_t diff;
+
+	diff = eccCalc ^ eccNand;
+	if (diff) {
+		if ((((diff>>16)^diff) & 0xffff) == 0xffff) {
+			/* Correctable error */
+			if ((diff>>(16+4)) < chip->ecc.size) {
+				dat[diff>>(16+4)] ^= (1 << ((diff>>16)&7));
+				return 1;
+			} else {
+				return -1;
+			}
+		} else if (!(diff & (diff-1))) {
+			/* Single bit ECC error in the ECC itself,
+			   nothing to fix */
+			return 1;
+		} else {
+			/* Uncorrectable error */
+			return -1;
+		}
+	}
+	return 0;
+}
+#else /* not NTOSD_644XA */
 /*
  * Read DaVinci ECC registers and rework into MTD format
  */
@@ -202,6 +278,7 @@ static int nand_davinci_correct_data(struct mtd_info *mtd, u_char *dat,
 	}
 	return 0;
 }
+#endif /* CONFIG_MACH_NTOSD_644XA */
 #endif
 
 /*
@@ -369,10 +446,12 @@ static void nand_davinci_set_eccsize(struct nand_chip *chip)
 #ifdef CONFIG_NAND_FLASH_HW_ECC
 	switch (chip->ecc.mode) {
 	case NAND_ECC_HW12_2048:
+	case NAND_ECC_HW16_2048:
 		chip->ecc.size = 2048;
 		break;
 
 	case NAND_ECC_HW3_512:
+	case NAND_ECC_HW4_512:
 	case NAND_ECC_HW6_512:
 	case NAND_ECC_HW8_512:
 	chip->ecc.size = 512;
@@ -392,12 +471,16 @@ static void nand_davinci_set_eccbytes(struct nand_chip *chip)
 
 #ifdef CONFIG_NAND_FLASH_HW_ECC
 	switch (chip->ecc.mode) {
+	case NAND_ECC_HW16_2048:
+		chip->ecc.bytes += 4;
 	case NAND_ECC_HW12_2048:
 		chip->ecc.bytes += 4;
 	case NAND_ECC_HW8_512:
 		chip->ecc.bytes += 2;
 	case NAND_ECC_HW6_512:
-		chip->ecc.bytes += 3;
+		chip->ecc.bytes += 2;
+	case NAND_ECC_HW4_512:
+		chip->ecc.bytes += 1;	     
 	case NAND_ECC_HW3_512:
 	case NAND_ECC_HW3_256:
 	default:
@@ -544,6 +627,12 @@ int __devinit nand_davinci_probe(struct platform_device *pdev)
 	chip->dev_ready = nand_davinci_dev_ready;
 
 #ifdef CONFIG_NAND_FLASH_HW_ECC
+#ifdef CONFIG_MACH_NTOSD_644XA
+	if(chip->ecc.size > 512)
+	     chip->ecc.layout = &davinci_nand_oob_64;
+	else 
+	     chip->ecc.layout = &davinci_nand_oob_16;
+#endif
 	chip->ecc.calculate = nand_davinci_calculate_ecc;
 	chip->ecc.correct   = nand_davinci_correct_data;
 	chip->ecc.hwctl     = nand_davinci_enable_hwecc;
