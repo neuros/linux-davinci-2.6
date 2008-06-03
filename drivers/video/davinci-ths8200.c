@@ -150,6 +150,147 @@ static int ths8200_detect_client(struct i2c_adapter *adapter,
 	return 0;
 }
 
+int ths8200_set_480p_mode(void)
+{
+    /* place ths8200 in reset state */
+	ths8200_write_value(CHIP_CTL_REG, CHIP_SOFTWARE_RESET);
+
+    /* take ths8200 out of reset and in normal operation mode */
+	ths8200_write_value(CHIP_CTL_REG, CHIP_SOFTWARE_OUT_OF_RESET |
+						CHIP_LOW_FREQUENCY);
+
+    /* place color space conversion control in reset state */
+	ths8200_write_value(CSC_R11_REG, 0x00);
+	ths8200_write_value(CSC_R21_REG, 0x00);
+	ths8200_write_value(CSC_R31_REG, 0x00);
+	ths8200_write_value(CSC_G11_REG, 0x00);
+	ths8200_write_value(CSC_G21_REG, 0x00);
+	ths8200_write_value(CSC_G31_REG, 0x00);
+	ths8200_write_value(CSC_B11_REG, 0x00);
+	ths8200_write_value(CSC_B21_REG, 0x00);
+	ths8200_write_value(CSC_B31_REG, 0x00);
+	ths8200_write_value(CSC_OFFS1_REG, 0x00);
+	ths8200_write_value(CSC_OFFS12_REG, 0x00);
+	ths8200_write_value(CSC_OFFS23_REG, 0x00);
+	ths8200_write_value(CSC_OFFS3_REG,
+						CSC_BYPASSED |
+						CSC_PROTECTION_ON);
+
+    /* set YCx20 External Sync */
+	ths8200_write_value(DTG2_CNTL_REG, HS_IN_POSITIVE_POLARITY |
+						VS_IN_POSITIVE_POLARITY |
+						HS_OUT_POSITIVE_POLARITY |
+						VS_OUT_POSITIVE_POLARITY);
+
+	/* select the format for the input data manager */
+	ths8200_write_value(DATA_CNTL_REG, DATA_20BIT_YCBCR_MODE);
+
+	/* set the amplitude of the blanking level for the Y channel */
+	ths8200_write_value(DTG1_Y_SYNC1_LSB_REG, 0xFF);
+
+	/* set the amplitude of the negative sync and
+		equalization/serration/broad pulses for the Y channel */
+	ths8200_write_value(DTG1_Y_SYNC2_LSB_REG, 0x49);
+
+	/* set the amplitude of the positive sync for the Y channel */
+	ths8200_write_value(DTG1_Y_SYNC3_LSB_REG, 0xFF);
+
+	/* set msb for sync1 sync2 and sync3 */
+	ths8200_write_value(DTG1_Y_SYNC_MSB_REG, 0x13);
+
+	/* set the amplitude of the blanking level for the Cb and Cr channels */
+	ths8200_write_value(DTG1_CBCR_SYNC1_LSB_REG, 0xFF);
+
+	/* set the amplitude of the negative sync and
+		equalization/serration/broad pulses for the
+		Cb and Cr channels */
+	ths8200_write_value(DTG1_CBCR_SYNC2_LSB_REG, 0xFF);
+
+	/* set the amplitude of the positive sync for the Cb and Cr channels */
+	ths8200_write_value(DTG1_CBCR_SYNC3_LSB_REG, 0xFF);
+
+	/* set msb for sync1 sync2 and sync3 */
+	ths8200_write_value(DTG1_CBCR_SYNC_MSB_REG, 0x15);
+
+    /* set negative hsync width (half of total width) */
+	ths8200_write_value(DTG1_SPEC_A_REG, 0x28);
+
+    /* set end of active video to start of negative sync */
+	ths8200_write_value(DTG1_SPEC_B_REG, 0x10);
+
+    /* set positive hsync width (half of total width) */
+	ths8200_write_value(DTG1_SPEC_C_REG, 0x28);
+
+	/* set LSBs of sync to broad pulse */
+	ths8200_write_value(DTG1_SPEC_D_LSB_REG, 0x7A);
+
+	/* set LSBs of sync to active video */
+	ths8200_write_value(DTG1_SPEC_E_LSB_REG, 0x7A);
+
+    /* set MSB bit of sync to active video width[6]/sync to broad pulse [7] */
+	ths8200_write_value(DTG1_SPEC_DEH_MSB_REG, 0x00);
+
+	/* set broad pulse duration for SDTV (NA) */
+	ths8200_write_value(DTG1_SPEC_H_LSB_REG, 0x00);
+
+    /* set end of active video to sync LSBs [7:0] */
+	ths8200_write_value(DTG1_SPEC_K_LSB_REG, 0x10);
+
+	/* set end of active video to sync MSBs [2:0] */
+	ths8200_write_value(DTG1_SPEC_K_MSB_REG, 0x00);
+
+	/* set MSB bit of total number of pixels per line */
+	ths8200_write_value(DTG1_TOTAL_PIXELS_MSB_REG, 0x03);
+
+	/* set LSB bit of total number of pixels per line */
+	ths8200_write_value(DTG1_TOTAL_PIXELS_LSB_REG, 0x5A);
+
+	/* set MSB and LSB bit of the starting line number
+		for the DTG when Vsync input or V-bit is
+		asserted(vertical display control) */
+	ths8200_write_value(DTG1_FIELDFLIP_LINECNT_MSB_REG, 0x00);
+	ths8200_write_value(DTG1_FIELDFLIP_LINECNT_LSB_REG, 0x01);
+
+	/* set DTG on and set DTG operation mode to
+		ATSC mode 720P(SMPTE296M progressive)*/
+	ths8200_write_value(DTG1_MODE_REG, DTG_ON | ATSC_MODE_480P);
+
+	/* set MSB bit of number of lines per frame and
+		number of lines in field 1when in generic mode */
+	ths8200_write_value(DTG1_FRAME_FILED_SIZE_MSB_REG, 0x27);
+
+	/* set LSB bit of number of lines per frame when in generic mode */
+	ths8200_write_value(DTG1_FRAMESIZE_LSB_REG, 0x0D);
+
+	/* set LSB bit of number of lines in field 1 when in generic mode */
+	ths8200_write_value(DTG1_FIELDSIZE_LSB_REG, 0xFF);
+
+	/* set MSB and LSB bit of the number of pixels that the DTG
+		startup is horizontally delayed with respect to HS input for
+		dedicated timing modes or EAV input for embedded
+		timing modes. */
+	ths8200_write_value(DTG2_HS_IN_DLY_MSB_REG, 0x00);
+	ths8200_write_value(DTG2_HS_IN_DLY_LSB_REG, 0x40);
+
+	/* set MSB and LSB bit of the number of lines that the DTG
+		startup is vertically delayed with respect to VS input for
+		dedicated timing modes or the line counter value for
+		embedded timing.*/
+	ths8200_write_value(DTG2_VS_IN_DLY_MSB_REG, 0x00);
+	ths8200_write_value(DTG2_VS_IN_DLY_LSB_REG, 0x00);
+
+   /* place ths8200 in reset state */
+	ths8200_write_value(CHIP_CTL_REG, CHIP_SOFTWARE_RESET);
+
+	/* take ths8200 out of reset and in normal operation mode */
+	ths8200_write_value(CHIP_CTL_REG, CHIP_SOFTWARE_OUT_OF_RESET |
+						CHIP_LOW_FREQUENCY);
+
+	printk(KERN_INFO "THS8200 set video mode as 480p\n");
+
+	return 0;
+}
+
 int ths8200_set_720p_mode(void)
 {
 	FN_IN;
@@ -515,6 +656,7 @@ module_exit(ths8200_exit);
 
 EXPORT_SYMBOL(ths8200_set_720p_mode);
 EXPORT_SYMBOL(ths8200_set_1080i_mode);
+EXPORT_SYMBOL(ths8200_set_480p_mode);
 
 MODULE_DESCRIPTION("THS8200 Video DAC Convert Driver");
 MODULE_AUTHOR("Neuros Technology International LLC");

@@ -135,6 +135,11 @@ static struct fb_ops davincifb_ops;
 #define DISP_YRES	480
 #define DISP_MEMY	576
 
+#define BASEX480P 0x50
+#define BASEY480P 0x5
+#define DISP_XRES480P  720
+#define DISP_YRES480P  480
+
 #define BASEX720P 0x50
 #define BASEY720P 0x5
 
@@ -1050,11 +1055,15 @@ int __init davincifb_setup(char *options)
 			} else if (!strncmp(this_opt + 7, "1080i", 5)) {
 				dmparams.output = HD1080I;
 				dmparams.format = COMPONENT;
+			} else if (!strncmp(this_opt + 7, "480p", 4)) {
+				dmparams.output = HD480P;
+				dmparams.format = COMPONENT;
 			}
 		} else if (!strncmp(this_opt, "format=", 7)) {
 			if (dmparams.output == LCD ||
 				 dmparams.output == HD720P ||
-				 dmparams.output == HD1080I)
+				 dmparams.output == HD1080I ||
+				 dmparams.output == HD480P)
 				continue;
 			if (!strncmp(this_opt + 7, "composite", 9))
 				dmparams.format = COMPOSITE;
@@ -1115,6 +1124,7 @@ int __init davincifb_setup(char *options)
 	       (dmparams.output == LCD) ? "LCD" :
 		   (dmparams.output == HD720P) ? "HD720P":
 		   (dmparams.output == HD1080I) ? "HD1080I":
+		   (dmparams.output == HD480P) ? "HD480P":
 	       (dmparams.output == NTSC) ? "NTSC" :
 	       (dmparams.output == PAL) ? "PAL" : "unknown device!",
 	       (dmparams.format == 0) ? "" :
@@ -1136,6 +1146,9 @@ int __init davincifb_setup(char *options)
 	} else if (dmparams.output == HD1080I) {
 		format_xres = DISP_XRES1080I;
 		format_yres = DISP_YRES1080I;
+	} else if (dmparams.output == HD480P) {
+		format_xres = DISP_XRES480P;
+		format_yres = DISP_YRES480P;
 	} else {
 		printk(KERN_INFO
 		       "DaVinci:invalid format..defaulting width to 480\n");
@@ -1479,6 +1492,106 @@ static void enable_digital_output(bool on)
 			dispc_reg_out(VENC_OSDCLK0, 1);
 			dispc_reg_out(VENC_OSDCLK1, 2);
 		}
+}
+
+/* slow down the VCLK to 27MHZ from
+  * 74MHZ */
+static inline void slow_down_vclk(void)
+{
+	/* set DCLKPTN works as the clock enable for ENC
+	 * clock. */
+	outl(VENC_DCKCTL_DCKEC, VENC_DCLKCTL);
+
+	/* DCLK pattern. The specified bit pattern is output in
+	  * resolution of ENC clock units.*/
+	outl(0x01, VENC_DCLKPTN0);
+
+	/* select MXI mode. Use 27 MHz (from MXI27)
+	 * (DAC clock = 27 MHz).VPBE/Video encoder clock
+	 * is enabled*/
+	outl(VPSS_CLKCTL_ENABLE_VPBE_CLK,
+		 VPSS_CLKCTL);
+}
+
+static void davincifb_480p_component_config(int on)
+{
+#ifdef CONFIG_THS8200
+	/* Enable THS8200 DAC output mode as 480P */
+	ths8200_set_480p_mode();
+#endif/* CONFIG_THS8200 */
+
+	dispc_reg_out(VENC_VMOD, 0);
+
+	/* Set new baseX and baseY */
+	dispc_reg_out(OSD_BASEPX, BASEX480P);
+	dispc_reg_out(OSD_BASEPY, BASEY480P);
+
+	/* Enable the digtal output */
+	enable_digital_output(true);
+
+	/* slow down the vclk as 27MHZ */
+	slow_down_vclk();
+
+	dispc_reg_merge(PINMUX0, 0, PINMUX0_LFLDEN);
+
+	/* Enable OSD0 Window */
+	dispc_reg_out(OSD_OSDWIN0MD, 0x00002001);
+
+	/* Enable OSD1 Window */
+	dispc_reg_out(OSD_OSDWIN1MD, 0x00008000);
+
+	/* Set Timing parameters for 480P frame
+		(must match what THS8200 expects) */
+	dispc_reg_out(VENC_HSPLS, BASEX480P);
+	dispc_reg_out(VENC_VSPLS, BASEY480P);
+	dispc_reg_out(VENC_HINT, 858 - 1);
+	dispc_reg_out(VENC_HSTART, 122);
+	dispc_reg_out(VENC_HVALID, DISP_XRES480P);
+	dispc_reg_out(VENC_VINT, 525 - 1);
+	dispc_reg_out(VENC_VSTART, 36);
+	dispc_reg_out(VENC_VVALID, DISP_YRES480P);
+	dispc_reg_out(VENC_HSDLY, 0);
+	dispc_reg_out(VENC_VSDLY, 0);
+	dispc_reg_out(VENC_YCCCTL, 0);
+	dispc_reg_out(VENC_VSTARTA, 0);
+
+	/* Set VID0 window  origin and size */
+	dispc_reg_out(OSD_VIDWIN0XP, 20);
+	dispc_reg_out(OSD_VIDWIN0YP, 25);
+	dispc_reg_out(OSD_VIDWIN0XL, DISP_XRES480P);
+	dispc_reg_out(OSD_VIDWIN0YL, DISP_YRES480P);
+
+	/* Set VID1 window  origin and size */
+	dispc_reg_out(OSD_VIDWIN1XP, 20);
+	dispc_reg_out(OSD_VIDWIN1YP, 25);
+	dispc_reg_out(OSD_VIDWIN1XL, DISP_XRES480P);
+	dispc_reg_out(OSD_VIDWIN1YL, DISP_YRES480P);
+
+	/* Set OSD0 window  origin and size */
+	dispc_reg_out(OSD_OSDWIN0XP, 20);
+	dispc_reg_out(OSD_OSDWIN0YP, 25);
+	dispc_reg_out(OSD_OSDWIN0XL, DISP_XRES480P);
+	dispc_reg_out(OSD_OSDWIN0YL, DISP_YRES480P);
+
+	/* Set OSD1 window  origin and size */
+	dispc_reg_out(OSD_OSDWIN1XP, 20);
+	dispc_reg_out(OSD_OSDWIN1YP, 25);
+	dispc_reg_out(OSD_OSDWIN1XL, DISP_XRES480P);
+	dispc_reg_out(OSD_OSDWIN1YL, DISP_YRES480P);
+
+	/* Set OSD1 window  origin and size */
+	dispc_reg_out(OSD_CURXP, 20);
+	dispc_reg_out(OSD_CURYP, 25);
+	dispc_reg_out(OSD_CURXL, DISP_XRES480P);
+	dispc_reg_out(OSD_CURYL, DISP_YRES480P);
+
+	/* Enable all VENC, non-standard timing mode,
+		master timing, HD, progressive */
+	dispc_reg_out(VENC_VMOD,
+		(VENC_VMOD_VENC | VENC_VMOD_VMD | VENC_VMOD_HDMD));
+
+	printk(KERN_INFO "Davinci set video mode as 480p\n");
+
 }
 
 static void davincifb_1080i_component_config(int on)
@@ -1895,6 +2008,8 @@ static int davincifb_probe(struct platform_device *pdev)
 		dm->output_device_config = davincifb_720p_component_config;
 	else if ((dmparams.output == HD1080I) && (dmparams.format == COMPONENT))
 		dm->output_device_config = davincifb_1080i_component_config;
+	else if ((dmparams.output == HD480P) && (dmparams.format == COMPONENT))
+		dm->output_device_config = davincifb_480p_component_config;
 	/* Add support for other displays here */
 	else {
 		printk(KERN_WARNING "Unsupported output device!\n");

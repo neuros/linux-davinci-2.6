@@ -158,4 +158,11 @@ int ths8200_set_720p_mode(void);
  */
 int ths8200_set_1080i_mode(void);
 
+/**
+ * set THS8200 DAC mode as 480p
+ *
+ * @return int
+ * 0: success, other error.
+ */
+int ths8200_set_480p_mode(void);
 #endif /* End of DAVINCI_THS8200 */
