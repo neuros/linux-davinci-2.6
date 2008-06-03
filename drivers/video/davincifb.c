@@ -1515,83 +1515,88 @@ static inline void slow_down_vclk(void)
 
 static void davincifb_480p_component_config(int on)
 {
+	if (on) {
+
 #ifdef CONFIG_THS8200
-	/* Enable THS8200 DAC output mode as 480P */
-	ths8200_set_480p_mode();
+		/* Enable THS8200 DAC output mode as 480P */
+		ths8200_set_480p_mode();
 #endif/* CONFIG_THS8200 */
 
-	dispc_reg_out(VENC_VMOD, 0);
+		dispc_reg_out(VENC_VMOD, 0);
 
-	/* Set new baseX and baseY */
-	dispc_reg_out(OSD_BASEPX, BASEX480P);
-	dispc_reg_out(OSD_BASEPY, BASEY480P);
+		/* Set new baseX and baseY */
+		dispc_reg_out(OSD_BASEPX, BASEX480P);
+		dispc_reg_out(OSD_BASEPY, BASEY480P);
 
-	/* Enable the digtal output */
-	enable_digital_output(true);
+		/* Enable the digtal output */
+		enable_digital_output(true);
 
-	/* slow down the vclk as 27MHZ */
-	slow_down_vclk();
+		/* slow down the vclk as 27MHZ */
+		slow_down_vclk();
 
-	dispc_reg_merge(PINMUX0, 0, PINMUX0_LFLDEN);
+		dispc_reg_merge(PINMUX0, 0, PINMUX0_LFLDEN);
 
-	/* Enable OSD0 Window */
-	dispc_reg_out(OSD_OSDWIN0MD, 0x00002001);
+		/* Enable OSD0 Window */
+		dispc_reg_out(OSD_OSDWIN0MD, 0x00002001);
 
-	/* Enable OSD1 Window */
-	dispc_reg_out(OSD_OSDWIN1MD, 0x00008000);
+		/* Enable OSD1 Window */
+		dispc_reg_out(OSD_OSDWIN1MD, 0x00008000);
 
-	/* Set Timing parameters for 480P frame
-		(must match what THS8200 expects) */
-	dispc_reg_out(VENC_HSPLS, BASEX480P);
-	dispc_reg_out(VENC_VSPLS, BASEY480P);
-	dispc_reg_out(VENC_HINT, 858 - 1);
-	dispc_reg_out(VENC_HSTART, 122);
-	dispc_reg_out(VENC_HVALID, DISP_XRES480P);
-	dispc_reg_out(VENC_VINT, 525 - 1);
-	dispc_reg_out(VENC_VSTART, 36);
-	dispc_reg_out(VENC_VVALID, DISP_YRES480P);
-	dispc_reg_out(VENC_HSDLY, 0);
-	dispc_reg_out(VENC_VSDLY, 0);
-	dispc_reg_out(VENC_YCCCTL, 0);
-	dispc_reg_out(VENC_VSTARTA, 0);
+		/* Set Timing parameters for 480P frame
+			(must match what THS8200 expects) */
+		dispc_reg_out(VENC_HSPLS, BASEX480P);
+		dispc_reg_out(VENC_VSPLS, BASEY480P);
+		dispc_reg_out(VENC_HINT, 858 - 1);
+		dispc_reg_out(VENC_HSTART, 122);
+		dispc_reg_out(VENC_HVALID, DISP_XRES480P);
+		dispc_reg_out(VENC_VINT, 525 - 1);
+		dispc_reg_out(VENC_VSTART, 36);
+		dispc_reg_out(VENC_VVALID, DISP_YRES480P);
+		dispc_reg_out(VENC_HSDLY, 0);
+		dispc_reg_out(VENC_VSDLY, 0);
+		dispc_reg_out(VENC_YCCCTL, 0);
+		dispc_reg_out(VENC_VSTARTA, 0);
 
-	/* Set VID0 window  origin and size */
-	dispc_reg_out(OSD_VIDWIN0XP, 20);
-	dispc_reg_out(OSD_VIDWIN0YP, 25);
-	dispc_reg_out(OSD_VIDWIN0XL, DISP_XRES480P);
-	dispc_reg_out(OSD_VIDWIN0YL, DISP_YRES480P);
+		/* Set VID0 window  origin and size */
+		dispc_reg_out(OSD_VIDWIN0XP, 20);
+		dispc_reg_out(OSD_VIDWIN0YP, 25);
+		dispc_reg_out(OSD_VIDWIN0XL, DISP_XRES480P);
+		dispc_reg_out(OSD_VIDWIN0YL, DISP_YRES480P);
 
-	/* Set VID1 window  origin and size */
-	dispc_reg_out(OSD_VIDWIN1XP, 20);
-	dispc_reg_out(OSD_VIDWIN1YP, 25);
-	dispc_reg_out(OSD_VIDWIN1XL, DISP_XRES480P);
-	dispc_reg_out(OSD_VIDWIN1YL, DISP_YRES480P);
+		/* Set VID1 window  origin and size */
+		dispc_reg_out(OSD_VIDWIN1XP, 20);
+		dispc_reg_out(OSD_VIDWIN1YP, 25);
+		dispc_reg_out(OSD_VIDWIN1XL, DISP_XRES480P);
+		dispc_reg_out(OSD_VIDWIN1YL, DISP_YRES480P);
 
-	/* Set OSD0 window  origin and size */
-	dispc_reg_out(OSD_OSDWIN0XP, 20);
-	dispc_reg_out(OSD_OSDWIN0YP, 25);
-	dispc_reg_out(OSD_OSDWIN0XL, DISP_XRES480P);
-	dispc_reg_out(OSD_OSDWIN0YL, DISP_YRES480P);
+		/* Set OSD0 window  origin and size */
+		dispc_reg_out(OSD_OSDWIN0XP, 20);
+		dispc_reg_out(OSD_OSDWIN0YP, 25);
+		dispc_reg_out(OSD_OSDWIN0XL, DISP_XRES480P);
+		dispc_reg_out(OSD_OSDWIN0YL, DISP_YRES480P);
 
-	/* Set OSD1 window  origin and size */
-	dispc_reg_out(OSD_OSDWIN1XP, 20);
-	dispc_reg_out(OSD_OSDWIN1YP, 25);
-	dispc_reg_out(OSD_OSDWIN1XL, DISP_XRES480P);
-	dispc_reg_out(OSD_OSDWIN1YL, DISP_YRES480P);
+		/* Set OSD1 window  origin and size */
+		dispc_reg_out(OSD_OSDWIN1XP, 20);
+		dispc_reg_out(OSD_OSDWIN1YP, 25);
+		dispc_reg_out(OSD_OSDWIN1XL, DISP_XRES480P);
+		dispc_reg_out(OSD_OSDWIN1YL, DISP_YRES480P);
 
-	/* Set OSD1 window  origin and size */
-	dispc_reg_out(OSD_CURXP, 20);
-	dispc_reg_out(OSD_CURYP, 25);
-	dispc_reg_out(OSD_CURXL, DISP_XRES480P);
-	dispc_reg_out(OSD_CURYL, DISP_YRES480P);
+		/* Set OSD1 window  origin and size */
+		dispc_reg_out(OSD_CURXP, 20);
+		dispc_reg_out(OSD_CURYP, 25);
+		dispc_reg_out(OSD_CURXL, DISP_XRES480P);
+		dispc_reg_out(OSD_CURYL, DISP_YRES480P);
 
-	/* Enable all VENC, non-standard timing mode,
-		master timing, HD, progressive */
-	dispc_reg_out(VENC_VMOD,
-		(VENC_VMOD_VENC | VENC_VMOD_VMD | VENC_VMOD_HDMD));
+		/* Enable all VENC, non-standard timing mode,
+			master timing, HD, progressive */
+		dispc_reg_out(VENC_VMOD,
+			(VENC_VMOD_VENC | VENC_VMOD_VMD | VENC_VMOD_HDMD));
 
-	printk(KERN_INFO "Davinci set video mode as 480p\n");
-
+		printk(KERN_INFO "Davinci set video mode as 480p\n");
+	} else {
+		/* Reset video encoder module */
+		dispc_reg_out(VENC_VMOD, 0);
+	}
 }
 
 static void davincifb_1080i_component_config(int on)
