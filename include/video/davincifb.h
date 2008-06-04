@@ -216,6 +216,7 @@
 #define VENC_SYNCCTL_SYEV                       (1 << 1)
 #define VENC_SYNCCTL_SYEH                       (1 << 0)
 #define VENC_DCKCTL_DCKEC                       (1 << 11)
+#define VPSS_CLKCTL_ENABLE_VPBE_CLK   (1 << 3)
 /* other VENC registers' bit positions not defined yet */
 
 #define	OSD_MODE_CS				(1 << 15)
@@ -436,6 +437,7 @@
 #define PAL             2
 #define HD720P		3
 #define HD1080I		4
+#define HD480P		5
 
 #define COMPOSITE       1
 #define SVIDEO          2
