@@ -49,6 +49,8 @@ mkyaffsimage: $(COMMONOBJS) $(MKYAFFSIMAGEOBJS)
 mkyaffs2image: $(COMMONOBJS) $(MKYAFFS2IMAGEOBJS)
 	$(CC) -o $@ $(COMMONOBJS) $(MKYAFFS2IMAGEOBJS)
 
+install: mkyaffs2image
+	@install -p mkyaffs2image ${PRJROOT}/images/ > /dev/null
 
 clean:
 	rm -f $(COMMONOBJS) $(MKYAFFSIMAGEOBJS) $(MKYAFFS2IMAGEOBJS) $(COMMONLINKS) $(MKYAFFSLINKS) $(MKYAFFS2LINKS) mkyaffsimage mkyaffs2image core
