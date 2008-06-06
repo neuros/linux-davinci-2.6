@@ -60,23 +60,23 @@
  *    includes DaVinci EVM in a common non-OTG mode.
  *
  *      * Control and bulk use dedicated endpoints, and there's as
- *        yet no mechanism to either (a) reclaim the hardware when
- *        peripherals are NAKing, which gets complicated with bulk
- *        endpoints, or (b) use more than a single bulk endpoint in
- *        each direction.
+ *	yet no mechanism to either (a) reclaim the hardware when
+ *	peripherals are NAKing, which gets complicated with bulk
+ *	endpoints, or (b) use more than a single bulk endpoint in
+ *	each direction.
  *
- *        RESULT:  one device may be perceived as blocking another one.
+ *	RESULT:  one device may be perceived as blocking another one.
  *
  *      * Interrupt and isochronous will dynamically allocate endpoint
- *        hardware, but (a) there's no record keeping for bandwidth;
- *        (b) in the common case that few endpoints are available, there
- *        is no mechanism to reuse endpoints to talk to multiple devices.
+ *	hardware, but (a) there's no record keeping for bandwidth;
+ *	(b) in the common case that few endpoints are available, there
+ *	is no mechanism to reuse endpoints to talk to multiple devices.
  *
- *        RESULT:  At one extreme, bandwidth can be overcommitted in
- *        some hardware configurations, no faults will be reported.
- *        At the other extreme, the bandwidth capabilities which do
- *        exist tend to be severely undercommitted.  You can't yet hook
- *        up both a keyboard and a mouse to an external USB hub.
+ *	RESULT:  At one extreme, bandwidth can be overcommitted in
+ *	some hardware configurations, no faults will be reported.
+ *	At the other extreme, the bandwidth capabilities which do
+ *	exist tend to be severely undercommitted.  You can't yet hook
+ *	up both a keyboard and a mouse to an external USB hub.
  */
 
 /*
@@ -2028,6 +2028,11 @@ musb_init_controller(struct device *dev, int nIrq, void __iomem *ctrl)
 		musb->xceiv.host = &hcd->self;
 		hcd->power_budget = 2 * (plat->power ? : 250);
 	}
+
+#ifdef CONFIG_ARCH_DAVINCI
+	tasklet_init (&musb->fifo_check, musb_fifo_check_tasklet,
+			(unsigned long)musb);
+#endif
 #endif				/* CONFIG_USB_MUSB_HDRC_HCD */
 
 	/* For the host-only role, we can activate right away.

@@ -239,6 +239,12 @@ enum musb_g_ep0_state {
 	(musb_readb((_x)->mregs, MUSB_DEVCTL)&MUSB_DEVCTL_HM)
 
 #define MUSB_MODE(musb) ((musb)->is_host ? "Host" : "Peripheral")
+struct musb_iso_desc {
+	u32     offset;
+	u32     length;
+	u32     status;
+};
+
 
 /******************************** TYPES *************************************/
 
@@ -285,6 +291,9 @@ struct musb_hw_ep {
 
 	u8			rx_reinit;
 	u8			tx_reinit;
+#ifdef CONFIG_ARCH_DAVINCI
+	u8			fifo_flush_check;	 /* Check FIFO empty */
+#endif
 #endif
 
 #ifdef CONFIG_USB_GADGET_MUSB_HDRC
@@ -292,6 +301,9 @@ struct musb_hw_ep {
 	struct musb_ep		ep_in;			/* TX */
 	struct musb_ep		ep_out;			/* RX */
 #endif
+	struct musb_iso_desc *iso_desc;
+	u32     num_iso_desc;
+	u8 zero;
 };
 
 static inline struct usb_request *next_in_request(struct musb_hw_ep *hw_ep)
@@ -343,6 +355,11 @@ struct musb {
 	struct list_head	in_bulk;	/* of musb_qh */
 	struct list_head	out_bulk;	/* of musb_qh */
 	struct musb_qh		*periodic[32];	/* tree of interrupt+iso */
+#ifdef CONFIG_ARCH_DAVINCI
+	struct tasklet_struct	 fifo_check;	/* tasklet for FIFO empty
+						 * status check
+						 */
+#endif
 #endif
 
 	/* called with IRQs blocked; ON/nonzero implies starting a session,

@@ -88,7 +88,9 @@ extern int musb_hub_status_data(struct usb_hcd *hcd, char *buf);
 extern int musb_hub_control(struct usb_hcd *hcd,
 			u16 typeReq, u16 wValue, u16 wIndex,
 			char *buf, u16 wLength);
-
+#ifdef CONFIG_ARCH_DAVINCI
+extern void musb_fifo_check_tasklet (unsigned long data);
+#endif
 extern const struct hc_driver musb_hc_driver;
 
 static inline struct urb *next_urb(struct musb_qh *qh)
@@ -108,3 +110,4 @@ static inline struct urb *next_urb(struct musb_qh *qh)
 }
 
 #endif				/* _MUSB_HOST_H */
+
