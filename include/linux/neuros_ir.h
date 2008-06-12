@@ -32,7 +32,7 @@
     #include <stdint.h>
 #endif
    
-#define regIR                   0x40  // IR receiver register.
+#define regIR                   0xB0  // IR receiver register.
 #define NEUROS_IR_MAJOR 110
 #define NEUROS_IR_IOC_MAGIC 'i'
 #define NULL_KEY 0xff
