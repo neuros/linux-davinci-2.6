@@ -22,6 +22,7 @@ obj-$(CONFIG_TWL4030_GPIO)	+= twl4030_gpio.o
 obj-$(CONFIG_RTC_X1205_I2C)	+= x1205.o
 obj-$(CONFIG_GPIOEXPANDER_DAVINCI) += gpio_expander_davinci.o
 obj-$(CONFIG_I2C_NEUROS_MSP430) += i2c-neuros-msp430.o
+obj-$(CONFIG_I2C_NEUROS_SIL9034HDMI) += i2c-neuros-sil9034hdmi.o
 
 ifeq ($(CONFIG_I2C_DEBUG_CHIP),y)
 EXTRA_CFLAGS += -DDEBUG
