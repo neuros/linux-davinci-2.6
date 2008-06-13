@@ -825,8 +825,6 @@ static void sil9034_timer(unsigned long data)
 	int status;
 	davinci6446_sil9034 *priv = (void *)data ;
 
-	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
-
 	if(priv)
 	{
 #if SIL9034_SCHED
