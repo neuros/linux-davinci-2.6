@@ -54,7 +54,6 @@
     #define sil9034_dbg(fmt, arg...)
 #endif
 
-//TODO: the sleep time should be tweaked to some value between 100 and 200 ms. 200ms sure works, but maybe it's too much. 100 doesn't work well. --nerochiaro
 #define I2C_RETRY_SLEEP 200 
 #define I2C_RETRY_COUNT 3
 
