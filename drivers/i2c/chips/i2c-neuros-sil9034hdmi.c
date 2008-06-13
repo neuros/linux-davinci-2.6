@@ -84,7 +84,7 @@ I2C_CLIENT_INSMOD;
 /* i2c private data */
 typedef struct davinci6446_sil9034
 {
-	struct i2c_client* sil9034_client[SLAVE_SIZE] ;
+       	struct i2c_client* sil9034_client[SLAVE_SIZE] ;
 #ifdef SIL9034_SCHED
 	struct work_struct      work;
 #endif
@@ -96,64 +96,63 @@ typedef struct davinci6446_sil9034
 static davinci6446_sil9034 ds ;
 
 static struct i2c_driver sil9034_driver = {
-    .driver	    = {
-    .owner          = THIS_MODULE,
-    .name           = "SIL9034 HDMI Driver",
-    //.flags          = I2C_DF_NOTIFY,
-    },
-    .id             = I2C_DRIVERID_SIL9034, /*define in i2c-id.h */
-    .attach_adapter = &sil9034_attach_adapter,
-    .detach_client  = &sil9034_detach_client,
+       	.driver	    = {
+	       	.owner          = THIS_MODULE,
+	       	.name           = "SIL9034 HDMI Driver",
+	       	//.flags          = I2C_DF_NOTIFY,
+		},
+       	.id             = I2C_DRIVERID_SIL9034, /*define in i2c-id.h */
+       	.attach_adapter = &sil9034_attach_adapter,
+       	.detach_client  = &sil9034_detach_client,
 };
 
 static const char * pname = "SIL9034 HDMI Driver" ;
 
 static int sil9034_detect_client(struct i2c_adapter * adapter, int address, int kind)
 {
-    int ret = 0;
-    struct i2c_client* client = NULL;
+       	int ret = 0;
+       	struct i2c_client* client = NULL;
 
-    /* Jchen: i use a little trick here to make it register 2 i2c in 1 driver */
-    if (!i2c_check_functionality(adapter, I2C_FUNC_SMBUS_WRITE_BYTE))
-    {
-        sil9034_dbg("ERROR returned from i2c_check_functionality");
-        ret = -1;
-        goto out;
-    }
+	/* Jchen: i use a little trick here to make it register 2 i2c in 1 driver */
+       	if (!i2c_check_functionality(adapter, I2C_FUNC_SMBUS_WRITE_BYTE))
+       	{
+	       	sil9034_dbg("ERROR returned from i2c_check_functionality");
+	       	ret = -1;
+	       	goto out;
+       	} 
 
-    if (!(client = kmalloc(sizeof(*client), GFP_KERNEL)))
-    {
-        sil9034_dbg("ERROR error returned from kmalloc");
-        ret = -ENOMEM;
-        goto out;
-    }
+	if (!(client = kmalloc(sizeof(*client), GFP_KERNEL)))
+       	{
+	       	sil9034_dbg("ERROR error returned from kmalloc");
+	       	ret = -ENOMEM;
+	       	goto out;
+       	}
 
-    memset(client, 0, sizeof(struct i2c_client));
+	memset(client, 0, sizeof(struct i2c_client));
 
-    client->addr = address;
-    client->adapter = adapter;
-    client->driver = &sil9034_driver;
-    /* Jchen: it seem like ten bit probe doesn't support here, but we don't need
-     * it, since we know that the i2c address is fix in embedded.
-    client->flags = I2C_M_IGNORE_NAK|I2C_M_TEN;
-    */
-    client->flags = I2C_M_IGNORE_NAK;
+	client->addr = address;
+       	client->adapter = adapter;
+       	client->driver = &sil9034_driver;
+       	/* Jchen: it seem like ten bit probe doesn't support here, but we don't need
+	 * it, since we know that the i2c address is fix in embedded.
+	 * client->flags = I2C_M_IGNORE_NAK|I2C_M_TEN;
+	 */
+       	client->flags = I2C_M_IGNORE_NAK;
 
-    strcpy(client->name, "sil9034");
+	strcpy(client->name, "sil9034");
 
-/*	JChen: i use force mode, no need this */
-    if ((ret = i2c_attach_client(client)) != 0)
-    {
-        sil9034_dbg("%s Unable to attach client.\n", pname);
-        kfree(client);
-        ret = -1;
-        goto out;
-    }
-
-    ds.sil9034_client[slave_num++] = client;
+	/* JChen: i use force mode, no need this */
+       	if ((ret = i2c_attach_client(client)) != 0)
+       	{
+	       	sil9034_dbg("%s Unable to attach client.\n", pname);
+	       	kfree(client);
+	       	ret = -1;
+	       	goto out;
+       	} 
+	ds.sil9034_client[slave_num++] = client;
 
 out:
-    return ret;
+       	return ret;
 }
 
 static int sil9034_attach_adapter(struct i2c_adapter * adapter)
@@ -163,49 +162,49 @@ static int sil9034_attach_adapter(struct i2c_adapter * adapter)
 	sil9034_detect_client(adapter,TX_SLV0,I2C_DRIVERID_SIL9034) ;
 	sil9034_detect_client(adapter,TX_SLV1,I2C_DRIVERID_SIL9034) ;
 	 */
-    return(i2c_probe(adapter, &addr_data, &sil9034_detect_client));
+       	return(i2c_probe(adapter, &addr_data, &sil9034_detect_client));
 }
 
 static int sil9034_detach_client(struct i2c_client * client)
 {
-    int ret = 0;
+       	int ret = 0;
 
-    if ((ret = i2c_detach_client(client)) != 0)
-    {
-        sil9034_dbg("%s Unable to detach client.\n", pname);
-        goto out;
-    }
+	if ((ret = i2c_detach_client(client)) != 0)
+       	{
+	       	sil9034_dbg("%s Unable to detach client.\n", pname);
+	       	goto out;
+       	}
 
 #if SIL9034_TIMER
-    del_timer_sync(&ds.timer);
+       	del_timer_sync(&ds.timer);
 #endif
 #if SIL9034_SCHED
-    flush_scheduled_work();
+       	flush_scheduled_work();
 #endif
-    kfree(client);
+       	kfree(client);
 
 out:
-    return ret;
+       	return ret;
 }
 
 static int sil9034_write(davinci6446_sil9034 *priv,u8 slave,u8 reg, u16 value)
 {
-    int retry = I2C_RETRY_COUNT;
-    int ret = -1;
+       	int retry = I2C_RETRY_COUNT;
+       	int ret = -1;
 
-    if(priv->sil9034_client[slave])
-    {
-        while(retry--)
-        {
-            ret = i2c_smbus_write_byte_data(priv->sil9034_client[slave], reg, value);
-            if (-1 != ret) break;
-            printk("sil9034_write retry [%d]\n", retry);
-            mdelay(I2C_RETRY_SLEEP);
-        }
-        return ret;
-    }
-    else
-        return 0xff;
+	if(priv->sil9034_client[slave])
+       	{
+	       	while(retry--)
+	       	{
+		       	ret = i2c_smbus_write_byte_data(priv->sil9034_client[slave], reg, value);
+		       	if (-1 != ret) break;
+		       	printk("sil9034_write retry [%d]\n", retry);
+		       	mdelay(I2C_RETRY_SLEEP);
+	       	}
+	       	return ret;
+       	}
+       	else
+	       	return 0xff;
 }
 /* JChen: this should be call by others driver or 
  * create new char dev to ioctl the control.
@@ -214,29 +213,29 @@ EXPORT_SYMBOL(sil9034_write);
 
 static int sil9034_read(davinci6446_sil9034 *priv,u8 slave,u8 reg)
 {
-    int retry = I2C_RETRY_COUNT;
-    int dat;
+	int retry = I2C_RETRY_COUNT;
+	int dat;
 
-    if(priv->sil9034_client[slave])
-    {
-        while(retry--)
-        {
-            dat = i2c_smbus_read_byte_data(priv->sil9034_client[slave], reg);
-            if (-1 != dat) break;
-            printk("(sil9034_read) retry [%d]\n", retry);
-            mdelay(I2C_RETRY_SLEEP);
-        }
-        return dat;
-    }
-    else
-        return 0xff;
+	if(priv->sil9034_client[slave])
+       	{
+		while(retry--)
+		{
+			dat = i2c_smbus_read_byte_data(priv->sil9034_client[slave], reg);
+		       	if (-1 != dat) break;
+			printk("(sil9034_read) retry [%d]\n", retry);
+		       	mdelay(I2C_RETRY_SLEEP);
+	       	}
+	       	return dat;
+       	}
+       	else
+	       	return 0xff;
 }
 EXPORT_SYMBOL(sil9034_read);
 
 //--------------------------  INIT / EXIT ---------------------------------------------------------
 static int sil9034_chipInfo(davinci6446_sil9034 *priv)
 {
- 	u8 device_info[3] = {255,255,255} ;
+	u8 device_info[3] = {255,255,255} ;
 
 	device_info[1] = sil9034_read(priv,SLAVE0,DEV_IDL) ;
 	device_info[0] = sil9034_read(priv,SLAVE0,DEV_IDH) ;
@@ -294,6 +293,7 @@ static int sil9034_cea861InfoFrameControl1(davinci6446_sil9034 *priv,u8 enable)
 {
 	u8 reg_value ;
 
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
 	/* enable the avi repeat transmission */
 	reg_value = sil9034_read(priv,SLAVE1,INF_CTRL1) ;
 	if(enable)
@@ -311,6 +311,7 @@ static int sil9034_cea861InfoFrameControl2(davinci6446_sil9034 *priv,u8 enable)
 {
 	u8 reg_value ;
 
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
 	/* Generic packet transmittion & repeat mode enable */
 	reg_value = sil9034_read(priv,SLAVE1,INF_CTRL2) ;
 	if(enable)
@@ -330,6 +331,7 @@ static int sil9034_cea861InfoFrameControl2(davinci6446_sil9034 *priv,u8 enable)
 
 static int sil9034_switchClock2M48X1(davinci6446_sil9034 *priv,u8 enable)
 {
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
 #if 0
 	outw((inw(IO_CLK_MOD2) & (~(0x1000))), IO_CLK_MOD2); /* disable I2C clock first */
 	outw((inw(IO_CLK_DIV4) | 0x01F | 0x0C00), IO_CLK_DIV4);
@@ -386,6 +388,7 @@ static int sil9034_cea861InfoFrameSetting(davinci6446_sil9034 *priv)
 
 static int sil9034_ddcSetting(davinci6446_sil9034 *priv)
 {
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
 	return 0 ;
 }
 
@@ -503,6 +506,7 @@ static int sil9034_hdmiTmdsConfig(davinci6446_sil9034 *priv)
 {
 	u8 reg_value ;
 
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
 	/* TMDS control register
 	 * FPLL is 1.0*IDCK.
 	 * Internal source termination enabled.
@@ -708,6 +712,7 @@ int sil9034_unmaskInterruptStatus(davinci6446_sil9034 *priv)
 int sil9034_clearInterruptStatus(davinci6446_sil9034 *priv)
 {
 
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
 	/*
 	u8 reg_value ;
 
@@ -728,6 +733,7 @@ int sil9034_dumpInterruptSourceStatus(davinci6446_sil9034 *priv)
 {
 	u8 reg_value ;
 
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
 	reg_value = sil9034_read(priv,SLAVE0,INT_SOURCE1_ADDR) ;
 	sil9034_dbg("Interrupt source 1 register 0x%x = 0x%x\n",INT_SOURCE1_ADDR,reg_value) ;
 	reg_value = sil9034_read(priv,SLAVE0,INT_SOURCE2_ADDR) ;
@@ -744,6 +750,7 @@ int sil9034_dumpVideoConfigureStatus(davinci6446_sil9034 *priv)
 {
 	u8 reg_value ;
 
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
 	reg_value = sil9034_read(priv,SLAVE0,HRES_L_ADDR) ;
 	sil9034_dbg("H resolution low register 0x%x = 0x%x\n",HRES_L_ADDR,reg_value) ;
 
@@ -802,6 +809,7 @@ int sil9034_dumpInterruptStateStatus(davinci6446_sil9034 *priv)
 {
 	u8 reg_value ;
 
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
 	reg_value = sil9034_read(priv,SLAVE0,INT_STATE_ADDR) ;
 	sil9034_dbg("Interrupt state register 0x%x = 0x%x\n",INT_STATE_ADDR,reg_value) ;
 	if(reg_value & INT_ENABLE)
@@ -817,7 +825,7 @@ static void sil9034_timer(unsigned long data)
 	int status;
 	davinci6446_sil9034 *priv = (void *)data ;
 
-	printk(KERN_ERR "%s,%d\n",__FUNCTION__,__LINE__) ;
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
 
 	if(priv)
 	{
@@ -836,13 +844,13 @@ static void sil9034_sched(void *data)
 {
 	/* This is important, get out of the interrupt context switch trouble */
 	davinci6446_sil9034 *priv = container_of(data, davinci6446_sil9034, work);
-
+	
 	//printk(KERN_ERR "%s, %d\n",__FUNCTION__,__LINE__) ;
-
-       	//sil9034_dumpSystemStatus(priv) ;
-       	//sil9034_dumpDataCtrlStatus(priv) ;
-       	//sil9034_dumpInterruptStateStatus(priv) ;
-       	//sil9034_dumpVideoConfigureStatus(priv) ;
+	
+	//sil9034_dumpSystemStatus(priv) ;
+	//sil9034_dumpDataCtrlStatus(priv) ;
+	//sil9034_dumpInterruptStateStatus(priv) ;
+	//sil9034_dumpVideoConfigureStatus(priv) ;
 #if SIL9034_TIMER
 	mod_timer(&ds.timer, jiffies + TIMER_JIFFIES);
 #endif
@@ -853,21 +861,21 @@ static void sil9034_sched(void *data)
 
 static int __init sil9034_init(void)
 {
-    int status = 0 ;
+	int status = 0 ;
+	
+	printk(KERN_INFO "\t" MOD_DESC "\n");
 
-    printk(KERN_INFO "\t" MOD_DESC "\n");
-
-    if ((status = i2c_add_driver(&sil9034_driver)) < 0)
-    {
-        printk(KERN_INFO "%s Couldn't register SIL9034 I2C driver.\n", pname);
-        goto out;
-    } 
-
-    /* read chip id & revision */
-    sil9034_chipInfo(&ds) ;
-    /* power down occilator */
-    sil9034_powerDown(&ds,ENABLE) ;
-
+	if ((status = i2c_add_driver(&sil9034_driver)) < 0)
+	{
+	    printk(KERN_INFO "%s Couldn't register SIL9034 I2C driver.\n", pname);
+	    goto out;
+	} 
+	
+	/* read chip id & revision */
+	sil9034_chipInfo(&ds) ;
+	/* power down occilator */
+	sil9034_powerDown(&ds,ENABLE) ;
+	
 #if 0
     /* Tune the video input table according to DM320 hardware spec */
     sil9034_videoInputConfig() ;
@@ -907,24 +915,25 @@ static int __init sil9034_init(void)
     sil9034_audioInfoFrameSetting() ;
 #endif
 #if SIL9034_SCHED
-    INIT_WORK(&ds.work, sil9034_sched);
+	INIT_WORK(&ds.work, sil9034_sched);
 #endif
 
 #if SIL9034_TIMER
-    init_timer(&ds.timer);
-    ds.timer.data = (unsigned long)&ds;
-    ds.timer.function = sil9034_timer;
-    ds.timer.expires = jiffies + TIMER_JIFFIES;
-    add_timer(&ds.timer);
+	init_timer(&ds.timer);
+	ds.timer.data = (unsigned long)&ds;
+	ds.timer.function = sil9034_timer;
+	ds.timer.expires = jiffies + TIMER_JIFFIES;
+	add_timer(&ds.timer);
 #endif
 
 out:
-    return status;
+	return status;
 }
 
 static void __exit sil9034_exit(void)
 {
-    i2c_del_driver(&sil9034_driver);
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
+	i2c_del_driver(&sil9034_driver);
 }
 
 MODULE_AUTHOR("Neuros");
