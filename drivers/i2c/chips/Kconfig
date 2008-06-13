@@ -215,4 +215,16 @@ config I2C_NEUROS_MSP430
 
 	  If unsure and targeting the Neuros OSD, say M.
 
+config I2C_NEUROS_SIL9034HDMI
+        tristate "Silicon Image 9034 HDMI Transmitter"
+	depends on I2C && ARCH_DAVINCI
+        help
+          Supports the I2C interface found on the Neuros OSD (primarily used
+          for communicating with the silicon image hdmi transmitter chip).
+
+          To compile this driver as a module (recommended), choose M here: the
+          module will be called i2c-algo-neuros-sil9034hdmi.ko
+
+          If unsure and targeting the Neuros OSD, say M.
+
 endmenu
