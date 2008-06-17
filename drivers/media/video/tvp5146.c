@@ -244,12 +244,13 @@ static int queryctrl(void *arg)
 {
 	struct v4l2_queryctrl *queryctrl = arg;
 	int ret = 0;
-	int id = queryctrl->id;
+	__u32 id = queryctrl->id;
 
 	memset(queryctrl, 0, sizeof(*queryctrl));
-	queryctrl->id = id;
 	switch (id) {
+	case V4L2_CTRL_FLAG_NEXT_CTRL:
 	case V4L2_CID_BRIGHTNESS:
+		queryctrl->id = V4L2_CID_BRIGHTNESS;
 		strcpy(queryctrl->name, "BRIGHTNESS");
 		queryctrl->type = V4L2_CTRL_TYPE_INTEGER;
 		queryctrl->minimum = 0;
@@ -257,7 +258,10 @@ static int queryctrl(void *arg)
 		queryctrl->step = 1;
 		queryctrl->default_value = 128;
 		break;
+
+	case V4L2_CID_BRIGHTNESS|V4L2_CTRL_FLAG_NEXT_CTRL:
 	case V4L2_CID_CONTRAST:
+		queryctrl->id = V4L2_CID_CONTRAST;
 		strcpy(queryctrl->name, "CONTRAST");
 		queryctrl->type = V4L2_CTRL_TYPE_INTEGER;
 		queryctrl->minimum = 0;
@@ -266,7 +270,9 @@ static int queryctrl(void *arg)
 		queryctrl->default_value = 128;
 		break;
 
+	case V4L2_CID_CONTRAST|V4L2_CTRL_FLAG_NEXT_CTRL:
 	case V4L2_CID_SATURATION:
+		queryctrl->id = V4L2_CID_SATURATION;
 		strcpy(queryctrl->name, "SATURATION");
 		queryctrl->type = V4L2_CTRL_TYPE_INTEGER;
 		queryctrl->minimum = 0;
@@ -274,7 +280,10 @@ static int queryctrl(void *arg)
 		queryctrl->step = 1;
 		queryctrl->default_value = 128;
 		break;
+
+	case V4L2_CID_SATURATION|V4L2_CTRL_FLAG_NEXT_CTRL:
 	case V4L2_CID_HUE:
+		queryctrl->id = V4L2_CID_HUE;
 		strcpy(queryctrl->name, "HUE");
 		queryctrl->type = V4L2_CTRL_TYPE_INTEGER;
 		queryctrl->minimum = -128;	/* -180 DEGREE */
@@ -283,7 +292,9 @@ static int queryctrl(void *arg)
 		queryctrl->default_value = 0;	/* 0 DEGREE */
 		break;
 
+	case V4L2_CID_HUE|V4L2_CTRL_FLAG_NEXT_CTRL:
 	case V4L2_CID_AUTOGAIN:
+		queryctrl->id = V4L2_CID_AUTOGAIN;
 		strcpy(queryctrl->name, "Automatic Gain Control");
 		queryctrl->type = V4L2_CTRL_TYPE_BOOLEAN;
 		queryctrl->minimum = 0;
@@ -291,11 +302,15 @@ static int queryctrl(void *arg)
 		queryctrl->step = 1;
 		queryctrl->default_value = 1;
 		break;
+
 	default:
 		if (id < V4L2_CID_LASTP1)
+		{
 			queryctrl->flags = V4L2_CTRL_FLAG_DISABLED;
-		else
-			ret = -EINVAL;
+			break;
+		}
+	case V4L2_CID_AUTOGAIN|V4L2_CTRL_FLAG_NEXT_CTRL:
+		ret = -EINVAL;
 		break;
 	}			/* end switch (id) */
 	return ret;
