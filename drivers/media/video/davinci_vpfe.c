@@ -500,7 +500,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 			mode = TVP5146_MODE_SECAM;
 		}
 		vpfe->tvp5146_params.mode = mode | (sqp << 3);
-		tvp5146_ctrl(TVP5146_CONFIG, &vpfe->tvp5146_params);
+		ret = tvp5146_ctrl(TVP5146_CONFIG, &vpfe->tvp5146_params);
 
 		up(&vpfe->lock);
 		break;
@@ -586,7 +586,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 			ret = -EINVAL;
 		}
 		vpfe->tvp5146_params.amuxmode = *index;
-		tvp5146_ctrl(TVP5146_SET_AMUXMODE, index);
+		ret = tvp5146_ctrl(TVP5146_SET_AMUXMODE, index);
 		break;
 	}
 	case VIDIOC_CROPCAP:
@@ -627,17 +627,17 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 	}
 	case VIDIOC_G_CTRL:
 		down_interruptible(&vpfe->lock);
-		tvp5146_ctrl(VIDIOC_G_CTRL, arg);
+		ret = tvp5146_ctrl(VIDIOC_G_CTRL, arg);
 		up(&vpfe->lock);
 		break;
 	case VIDIOC_S_CTRL:
 		down_interruptible(&vpfe->lock);
-		tvp5146_ctrl(VIDIOC_S_CTRL, arg);
+		ret = tvp5146_ctrl(VIDIOC_S_CTRL, arg);
 		up(&vpfe->lock);
 		break;
 	case VIDIOC_QUERYCTRL:
 		down_interruptible(&vpfe->lock);
-		tvp5146_ctrl(VIDIOC_QUERYCTRL, arg);
+		ret = tvp5146_ctrl(VIDIOC_QUERYCTRL, arg);
 		up(&vpfe->lock);
 		break;
 	case VIDIOC_G_CROP:
@@ -761,7 +761,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		vpfe->curFrm->state = STATE_ACTIVE;
 
 		/* sense the current video input standard */
-		tvp5146_ctrl(TVP5146_CONFIG, &vpfe->tvp5146_params);
+		ret = tvp5146_ctrl(TVP5146_CONFIG, &vpfe->tvp5146_params);
 		/* configure the ccdc and resizer as needed   */
 		/* start capture by enabling CCDC and resizer */
 		ccdc_config_ycbcr(&vpfe->ccdc_params);
@@ -882,7 +882,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 			vpfe->pixelaspect = sp_aspect;
 		}
 		vpfe->std = std;
-		tvp5146_ctrl(TVP5146_CONFIG, params);
+		ret = tvp5146_ctrl(TVP5146_CONFIG, params);
 		vpfe->tvp5146_params = *params;
 		up(&vpfe->lock);
 		break;
