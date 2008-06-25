@@ -45,6 +45,44 @@
 
 MODULE_LICENSE("GPL");
 
+/* These routines must be called after device
+	 lock is obtained. */
+#define ACTIVE_DEVICE() (vpfe_device.active_device)
+#define SET_ACTIVE_DEVICE(x) (vpfe_device.active_device = (x))
+#define IS_ACTIVE(x) \
+	((x) && ACTIVE_DEVICE() && ((x)->id == ACTIVE_DEVICE()->id))
+#define DEVICE_DEACTIVATE(x) do { \
+    if ((x) && (x)->capture_device_deactive && \
+		(x)->capture_device_deactive()) \
+					debug_print(KERN_ERR\
+				"capture device %s deactivate failed\n", \
+					(x)->name); \
+} while (0)
+#define DEVICE_ACTIVATE(x) do { \
+	if ((x) && (x)->capture_device_active && \
+		(x)->capture_device_active()) \
+					debug_print(KERN_ERR \
+					"capture device %s activate failed\n", \
+					(x)->name); \
+} while (0)
+#define DEVICE_INIT(x, params) do { \
+	if ((x) && (x)->capture_device_init && \
+		(x)->capture_device_init(params)) \
+					debug_print(KERN_ERR \
+					"capture device %s init failed\n", \
+					(x)->name); \
+} while (0)
+#define DEVICE_CLEANUP(x) do { \
+	if ((x) && (x)->capture_device_cleanup && \
+		(x)->capture_device_cleanup()) \
+					debug_print(KERN_ERR \
+					"capture device %s cleanup failed\n", \
+					(x)->name); \
+} while (0)
+#define DEVICE_CMD(dev, cmd, arg) \
+		((dev) && (dev)->capture_device_cmd && \
+		(dev)->capture_device_cmd(cmd, arg));
+
 static struct v4l2_rect ntsc_bounds = VPFE_WIN_NTSC;
 static struct v4l2_rect pal_bounds = VPFE_WIN_PAL;
 static struct v4l2_fract ntsc_aspect = VPFE_PIXELASPECT_NTSC;
@@ -74,10 +112,11 @@ static vpfe_obj vpfe_device = {	/* the default format is NTSC */
 		.pix_order = CCDC_PIXORDER_CBYCRY,
 		.buf_type = CCDC_BUFTYPE_FLD_INTERLEAVED
 	},
-	.tvp5146_params = {
-		.mode = TVP5146_MODE_AUTO,
-		.amuxmode = TVP5146_AMUX_COMPOSITE,
-		.enablebt656sync = TRUE
+	.capture_params = {
+		.mode = VPFE_STD_AUTO,
+		.amuxmode = VPFE_AMUX_COMPOSITE,
+		.enablebt656sync = TRUE,
+		.squarepixel = FALSE,
 	},
         .irqlock = SPIN_LOCK_UNLOCKED
 };
@@ -89,48 +128,6 @@ struct v4l2_capability vpfe_drvcap = {
 	.version = VPFE_VERSION_CODE,
 	.capabilities = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING
 };
-
-static int sense_std(v4l2_std_id* std_id)
-{
-	v4l2_std_id id = 0;
-	tvp5146_mode mode;
-	int ret;
-	ret = tvp5146_ctrl(TVP5146_GET_STD, &mode);
-	if(ret < 0)
-		return ret;
-	switch (mode & 0x7) {
-	case TVP5146_MODE_NTSC:
-		id = V4L2_STD_NTSC;
-		break;
-	case TVP5146_MODE_PAL:
-		id = V4L2_STD_PAL;
-		break;
-	case TVP5146_MODE_PAL_M:
-		id = V4L2_STD_PAL_M;
-		break;
-	case TVP5146_MODE_PAL_CN:
-		id = V4L2_STD_PAL_N;
-		break;
-	case TVP5146_MODE_SECAM:
-		id = V4L2_STD_SECAM;
-		break;
-	case TVP5146_MODE_PAL_60:
-		id = V4L2_STD_PAL_60;
-		break;
-	}
-	if (mode & 0x8) {	/* square pixel mode */
-		id <<= 32;
-	}
-	if (mode == TVP5146_MODE_AUTO) {
-		id = VPFE_STD_AUTO;	/* auto-detection for all other modes */
-	} else if (mode == TVP5146_MODE_AUTO_SQP) {
-		id = VPFE_STD_AUTO_SQP;
-	}
-	if(id == 0)
-		return -EINVAL;
-	*std_id =  id;
-	return 0;
-}
 
 static irqreturn_t vpfe_isr(int irq, void *dev_id)
 {
@@ -282,14 +279,52 @@ static struct videobuf_queue_ops video_qops = {
 	.buf_config   = buffer_config,
 };
 
+static int vpfe_capture_device_active(struct vpfe_capture_device *device)
+{
+	int ret = 0;
 
+	if (device == NULL)
+		return -EINVAL;
 
+	down_interruptible(&vpfe_device.lock);
+
+	/* deactivate the activated device */
+	DEVICE_DEACTIVATE(ACTIVE_DEVICE());
+
+	/* set device state as active */
+	SET_ACTIVE_DEVICE(device);
+
+	/* call device specific routine to do the active job. */
+	DEVICE_ACTIVATE(device);
+	up(&vpfe_device.lock);
+
+	return ret;
+}
+
+static int vpfe_select_capture_device(int id)
+{
+	int err = 0;
+	struct vpfe_capture_device *device;
+	down_interruptible(&vpfe_device.device_list_lock);
+	list_for_each_entry(device, &vpfe_device.capture_device_list,
+						device_list){
+		if (device->id == id) {
+			err = vpfe_capture_device_active(device);
+			up(&vpfe_device.device_list_lock);
+			return err;
+		}
+	}
+	up(&vpfe_device.device_list_lock);
+
+	return -ENODEV;
+}
 
 static int vpfe_doioctl(struct inode *inode, struct file *file,
 			unsigned int cmd, void *arg)
 {
 	vpfe_obj *vpfe = &vpfe_device;
 	vpfe_fh *fh = file->private_data;
+
 	int ret = 0;
 	switch (cmd) {
 	case VIDIOC_S_CTRL:
@@ -407,6 +442,9 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		} else {
 			ret = -EINVAL;
 		}
+
+		ret |= DEVICE_CMD(ACTIVE_DEVICE(), VIDIOC_S_FMT, arg);
+
 		up(&vpfe->lock);
 		break;
 	}
@@ -436,7 +474,6 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 	case VIDIOC_S_STD:
 	{
 		v4l2_std_id id = *(v4l2_std_id *) arg;
-		tvp5146_mode mode = TVP5146_MODE_INV;
 		int sqp = 0;
 
 		if (vpfe->started) {	/* make sure streaming is not started */
@@ -470,7 +507,6 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 			vpfe->pixelaspect = sp_aspect;
 			vpfe->ccdc_params.win = ntscsp_bounds;
 		} else if (id & VPFE_STD_AUTO) {
-			mode = TVP5146_MODE_AUTO;
 			vpfe->bounds = vpfe->vwin = pal_bounds;
 			vpfe->pixelaspect = pal_aspect;
 			vpfe->ccdc_params.win = pal_bounds;
@@ -480,27 +516,17 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 			vpfe->bounds = vpfe->vwin = palsp_bounds;
 			vpfe->pixelaspect = sp_aspect;
 			sqp = 1;
-			mode = TVP5146_MODE_AUTO_SQP;
 			vpfe->pixelaspect = sp_aspect;
 		} else {
 			ret = -EINVAL;
 		}
-		if (id == V4L2_STD_PAL_60) {
-			mode = TVP5146_MODE_PAL_60;
-		} else if (id == V4L2_STD_PAL_M) {
-			mode = TVP5146_MODE_PAL_M;
-		} else if (id == V4L2_STD_PAL_Nc
-			   || id == V4L2_STD_PAL_N) {
-			mode = TVP5146_MODE_PAL_CN;
-		} else if (id & V4L2_STD_PAL) {
-			mode = TVP5146_MODE_PAL;
-		} else if (id & V4L2_STD_NTSC) {
-			mode = TVP5146_MODE_NTSC;
-		} else if (id & V4L2_STD_SECAM) {
-			mode = TVP5146_MODE_SECAM;
-		}
-		vpfe->tvp5146_params.mode = mode | (sqp << 3);
-		ret = tvp5146_ctrl(TVP5146_CONFIG, &vpfe->tvp5146_params);
+
+		vpfe->capture_params.mode = id;
+		vpfe->capture_params.squarepixel = sqp;
+
+		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
+						  VPFE_CMD_CONFIG_CAPTURE,
+						  &vpfe->capture_params);
 
 		up(&vpfe->lock);
 		break;
@@ -576,7 +602,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 	case VIDIOC_G_INPUT:
 	{
 		int *index = (int *)arg;
-		*index = vpfe->tvp5146_params.amuxmode;
+		*index = vpfe->capture_params.amuxmode;
 		break;
 	}
 	case VIDIOC_S_INPUT:
@@ -585,8 +611,10 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		if (*index > 1 || *index < 0) {
 			ret = -EINVAL;
 		}
-		vpfe->tvp5146_params.amuxmode = *index;
-		ret = tvp5146_ctrl(TVP5146_SET_AMUXMODE, index);
+		vpfe->capture_params.amuxmode = *index;
+
+		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
+						  VIDIOC_S_INPUT, index);
 		break;
 	}
 	case VIDIOC_CROPCAP:
@@ -627,17 +655,26 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 	}
 	case VIDIOC_G_CTRL:
 		down_interruptible(&vpfe->lock);
-		ret = tvp5146_ctrl(VIDIOC_G_CTRL, arg);
+
+		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
+						  VIDIOC_G_CTRL, arg);
+
 		up(&vpfe->lock);
 		break;
 	case VIDIOC_S_CTRL:
 		down_interruptible(&vpfe->lock);
-		ret = tvp5146_ctrl(VIDIOC_S_CTRL, arg);
+
+		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
+						  VIDIOC_S_CTRL, arg);
+
 		up(&vpfe->lock);
 		break;
 	case VIDIOC_QUERYCTRL:
 		down_interruptible(&vpfe->lock);
-		ret = tvp5146_ctrl(VIDIOC_QUERYCTRL, arg);
+
+		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
+						  VIDIOC_QUERYCTRL, arg);
+
 		up(&vpfe->lock);
 		break;
 	case VIDIOC_G_CROP:
@@ -681,7 +718,10 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 	{
 		v4l2_std_id *id = (v4l2_std_id *) arg;
 		down_interruptible(&vpfe->lock);
-		ret = sense_std(id);
+
+		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
+						  VIDIOC_QUERYSTD, id);
+
 		up(&vpfe->lock);
 		break;
 	}
@@ -761,7 +801,9 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		vpfe->curFrm->state = STATE_ACTIVE;
 
 		/* sense the current video input standard */
-		ret = tvp5146_ctrl(TVP5146_CONFIG, &vpfe->tvp5146_params);
+		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
+						  VPFE_CMD_CONFIG_CAPTURE,
+						  &vpfe->capture_params);
 		/* configure the ccdc and resizer as needed   */
 		/* start capture by enabling CCDC and resizer */
 		ccdc_config_ycbcr(&vpfe->ccdc_params);
@@ -823,12 +865,13 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		up(&vpfe->lock);
 		break;
 	}
-	case VPFE_CMD_CONFIG_TVP5146:
+	case VPFE_CMD_CONFIG_CAPTURE:
 	/* this can be used directly and bypass the V4L2 APIs */
 	{
 		/* the settings here must be consistant with that of the CCDC's,
 		   driver does not check the consistancy */
-		tvp5146_params *params = (tvp5146_params *) arg;
+		struct vpfe_capture_params *params =
+			(struct vpfe_capture_param *) arg;
 		v4l2_std_id std = 0;
 		if(vpfe->started){
 		/* only allowed if streaming is not started */
@@ -836,36 +879,10 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 			break;
 		}
 		down_interruptible(&vpfe->lock);
-		/*make sure the other v4l2 related fields have consistant settings */
-		switch (params->mode & 0x7) {
-		case TVP5146_MODE_NTSC:
-			std = V4L2_STD_NTSC;
-			break;
-		case TVP5146_MODE_PAL:
-			std = V4L2_STD_PAL;
-			break;
-		case TVP5146_MODE_PAL_M:
-			std = V4L2_STD_PAL_M;
-			break;
-		case TVP5146_MODE_PAL_CN:
-			std = V4L2_STD_PAL_N;
-			break;
-		case TVP5146_MODE_SECAM:
-			std = V4L2_STD_SECAM;
-			break;
-		case TVP5146_MODE_PAL_60:
-			std = V4L2_STD_PAL_60;
-			break;
-		}
 
-		if (params->mode & 0x8) {	/* square pixel mode */
+		std = params->mode;
+		if (params->squarepixel) {	/* square pixel mode */
 			std <<= 32;
-		}
-
-		if (params->mode == TVP5146_MODE_AUTO) {	/* auto-detection modes */
-			std = VPFE_STD_AUTO;
-		} else if (params->mode == TVP5146_MODE_AUTO_SQP) {
-			std = VPFE_STD_AUTO_SQP;
 		}
 
 		if (std & V4L2_STD_625_50) {
@@ -882,9 +899,17 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 			vpfe->pixelaspect = sp_aspect;
 		}
 		vpfe->std = std;
-		ret = tvp5146_ctrl(TVP5146_CONFIG, params);
-		vpfe->tvp5146_params = *params;
+		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
+						  VPFE_CMD_CONFIG_CAPTURE,
+						  params);
+		vpfe->capture_params = *params;
 		up(&vpfe->lock);
+		break;
+	}
+	case VPFE_CMD_CAPTURE_ACTIVE:
+	{
+		int device_id = *((int *)arg);
+		ret = vpfe_select_capture_device(device_id);
 		break;
 	}
 	default:
@@ -1007,6 +1032,10 @@ static int __init vpfe_probe(struct device *device)
 
 	v4l2_prio_init(&vpfe->prio);
 	init_MUTEX(&vpfe->lock);
+	init_MUTEX(&vpfe->device_list_lock);
+	INIT_LIST_HEAD(&vpfe->capture_device_list);
+	SET_ACTIVE_DEVICE(NULL);
+
 	/* register video device */
 	debug_print(KERN_INFO "trying to register vpfe device.\n");
 	debug_print(KERN_INFO "vpfe=%x,vpfe->video_dev=%x\n", (int)vpfe,
@@ -1027,6 +1056,69 @@ static int __init vpfe_probe(struct device *device)
 
 	/* all done */
 	return 0;
+}
+
+int vpfe_capture_device_register(struct vpfe_capture_device *device)
+{
+	if (device == NULL)
+		return -EINVAL;
+
+	/* register capture device to vpfe. */
+	down_interruptible(&vpfe_device.device_list_lock);
+	list_add_tail(&device->device_list, &vpfe_device.capture_device_list);
+	up(&vpfe_device.device_list_lock);
+
+	/* call capture device specific init routine */
+	down_interruptible(&vpfe_device.lock);
+    DEVICE_INIT(device, &vpfe_device.capture_params);
+	up(&vpfe_device.lock);
+
+	debug_print(KERN_INFO "VPFE Capture device %s registered, id = %d.\n",
+				device->name, device->id);
+	return 0;
+}
+EXPORT_SYMBOL(vpfe_capture_device_register);
+
+int vpfe_capture_device_unregister(struct vpfe_capture_device *device)
+{
+	if (device == NULL)
+		return -EINVAL;
+
+	/* unregister it from vpfe. */
+	down_interruptible(&vpfe_device.device_list_lock);
+	list_del(&device->device_list);
+	up(&vpfe_device.device_list_lock);
+
+	down_interruptible(&vpfe_device.lock);
+	/* if the device to be unregistered is active,
+		deactivate it! */
+	if (IS_ACTIVE(device)) {
+		DEVICE_DEACTIVATE(device);
+		SET_ACTIVE_DEVICE(NULL);
+	}
+	/* call device specific routine to do the clean up. */
+	DEVICE_CLEANUP(device);
+    up(&vpfe_device.lock);
+
+	debug_print(KERN_INFO "VPFE Capture device %s unregistered, id = %d\n",
+		   device->name, device->id);
+	return 0;
+}
+EXPORT_SYMBOL(vpfe_capture_device_unregister);
+
+static int capture_device_all_unrigister(void)
+{
+	int ret = 0;
+	struct vpfe_capture_device *device;
+
+	down_interruptible(&vpfe_device.lock);
+	list_for_each_entry(device, &vpfe_device.capture_device_list,
+						device_list){
+		ret |= vpfe_capture_device_unregister(device);
+	}
+	up(&vpfe_device.lock);
+
+	return ret;
 }
 
 static int vpfe_remove(struct device *device)
@@ -1106,9 +1198,6 @@ static int vpfe_init(void)
 	}
 
 	ccdc_reset();
-	tvp5146_ctrl(TVP5146_RESET, NULL);
-	/* configure the tvp5146 to default parameters */
-	tvp5146_ctrl(TVP5146_CONFIG, &vpfe_device.tvp5146_params);
 	/* setup interrupt handling */
 	request_irq(IRQ_VDINT0, vpfe_isr, SA_INTERRUPT,
 		    "dm644xv4l2", (void *)&vpfe_device);
@@ -1122,6 +1211,9 @@ static void vpfe_cleanup(void)
 	int i = vpfe_device.numbuffers;
 	platform_device_unregister(&_vpfe_device);
 	driver_unregister(&vpfe_driver);
+
+	capture_device_all_unrigister();
+
 	/* disable interrupt */
 	free_irq(IRQ_VDINT0, &vpfe_device);
 

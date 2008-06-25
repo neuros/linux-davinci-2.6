@@ -24,7 +24,6 @@
 #endif
 
 #include <media/ccdc_davinci.h>
-#include <media/tvp5146.h>
 
 #define TRUE 1
 #define FALSE 0
@@ -37,7 +36,12 @@
 
 #define VPFE_CMD_CONFIG_CCDC _IOW('V',BASE_VIDIOC_PRIVATE + 1,ccdc_params_ycbcr)
 #define VPFE_CMD_LATEST_FRM_ONLY   _IOW('V',BASE_VIDIOC_PRIVATE + 2,int)
-#define VPFE_CMD_CONFIG_TVP5146 _IOW('V',BASE_VIDIOC_PRIVATE + 3,tvp5146_params)
+#define VPFE_CMD_CONFIG_CAPTURE _IOW('V', BASE_VIDIOC_PRIVATE + 3,\
+		struct vpfe_capture_params)
+#define VPFE_CMD_CAPTURE_ACTIVE _IOW('V', BASE_VIDIOC_PRIVATE + 4, long int)
+
+#define    VPFE_AMUX_COMPOSITE  0
+#define    VPFE_AMUX_SVIDEO     1
 
 /* settings for commonly used video formats */
 #define VPFE_WIN_NTSC    {0,0,720,480}
@@ -48,6 +52,9 @@
 #define VPFE_WIN_QCIF    {0,0,176,144}
 #define VPFE_WIN_QVGA    {0,0,320,240}
 #define VPFE_WIN_SIF     {0,0,352,240}
+
+#define VPFE_CAPTURE_ID_TVP5146		0
+#define VPFE_CAPTURE_ID_TVP5150		1
 
 
 #ifdef __KERNEL__
@@ -80,6 +87,26 @@
 #define VPFE_MAX_FBUF_ORDER \
    get_order(roundup_pow_of_two(VPFE_MAX_FBUF_SIZE))
 
+struct vpfe_capture_params{
+	v4l2_std_id mode;
+	int amuxmode;
+	int enablebt656sync;
+	int squarepixel;
+};
+
+struct vpfe_capture_device
+{
+	const char *name;
+	int id;
+	struct list_head	device_list;
+	int (*capture_device_init)(struct vpfe_capture_params *param);
+	int (*capture_device_active)(void);
+	int (*capture_device_deactive)(void);
+	int (*capture_device_cmd)(u32 cmd, void *arg);
+	int (*capture_device_cleanup)(void);
+};
+
+
 /* device object */
 typedef struct vpfe_obj {
 	struct video_device *video_dev;
@@ -106,7 +133,10 @@ typedef struct vpfe_obj {
 	int mode_changed;
 	int started;
 	int field_offset;
-	tvp5146_params tvp5146_params;
+	struct semaphore device_list_lock;
+	struct vpfe_capture_params capture_params;
+	struct list_head capture_device_list;
+	struct vpfe_capture_device *active_device;
 	ccdc_params_ycbcr ccdc_params;
 } vpfe_obj;
 
@@ -116,6 +146,24 @@ typedef struct vpfe_fh {
 	int io_allowed;
 	enum v4l2_priority prio;
 } vpfe_fh;
+
+/**
+ *  register the capture device
+ * @param device
+ * 		device that to be registered.
+ * @return int
+ * 		0:sucess, otherwise, failed.
+ */
+int vpfe_capture_device_register(struct vpfe_capture_device *device);
+
+/**
+ * 	unregister the capture device
+ * @param device
+ * 		device that to be unregistered.
+ * @return int
+ * 	0:sucess, otherwise, failed.
+ */
+int vpfe_capture_device_unregister(struct vpfe_capture_device *device);
 #endif
 
 #endif /* DAVINCI_VPFE_H */
