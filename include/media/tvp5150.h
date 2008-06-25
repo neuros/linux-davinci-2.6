@@ -20,6 +20,8 @@
 
 #ifndef _TVP5150_H_
 #define _TVP5150_H_
+/* VPFE driver */
+#include <media/davinci_vpfe.h>
 
 /* TVP5150 HW inputs */
 #define TVP5150_COMPOSITE0 0
