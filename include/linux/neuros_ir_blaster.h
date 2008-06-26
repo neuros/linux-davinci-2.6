@@ -32,8 +32,6 @@
     #include <stdint.h>
 #endif
 
-#define BLASTER_THROUGH_ARM
-#define GIO3 0x0008
 #define KEY_MASK 0xff
 #define NEUROS_IR_BLASTER_MAJOR 111
 #define NEUROS_IR_BLASTER_IOC_MAGIC 'b'
@@ -53,7 +51,6 @@
 #define CAPTRUE_PRECISION3 17 /*averaged off x% difference.*/
 #define the_same3(x,y) the_same(x,y,CAPTRUE_PRECISION3)
 
-#ifdef BLASTER_THROUGH_ARM
 #define BLS_START 0
 #define BLS_COMPLETE 1
 #define BLS_ERROR -1
@@ -71,47 +68,6 @@ struct blaster_data_type {
 
     uint32_t bits[BLASTER_MAX_CHANGE];  	/*each bit length*/
 };
-
-#else
-
-// I2C command definitions.
-#define cmdBLASTER_SEND         0x18
-/* RRB registers definitions. */
-#define regCMND                 0     // command register.
-#define regBLASTER_DBITS        (0x80+24)  // used to put blaster data(part7)
-#define regBLASTER_MBITS        0x80  // used to put blaster data(part6)
-#define regFLASH_DATA           0x06  // used to put blaster data(part5)
-#define regBLASTER_BIT2         (regBLASTER_DATA+6)  // used to put blaster data(part4)
-#define regBLASTER_BIT1         (regBLASTER_DATA+4)  // used to put blaster data(part3)
-#define regBLASTER_BIT0         (regBLASTER_DATA+2)  // used to put blaster data(part2)
-#define regBLASTER_DATA         0x1C  // used to put blaster data(part1)
-
-#define BLASTER_MAX_CHANGE	(8*24)  /* maximum edge changes. */
-#define BLASTER_MAX_SBITS       8       /*special edge number min is 6*/
-#define BLASTER_MAX_BITS	(8*24)  /*maximum edge changes, use for uncompacted data structure*/
-#define END_COUNT               8       /*number of edges for end bit. */
-#define BITS_COUNT_START        7       /*bits count start. */
-#define END_FLAG_START          6       /*end flag mask. */
-#define BITS_COUNT_MASK         (0xFF<<BITS_COUNT_START)  /*bits count mask. */
-#define END_FLAG_MASK           (1<<END_FLAG_START)       /*end flag mask. */
-#define MAX_REPEAT_TIMES        7       /*bits count start. */
-#define BITS_TIMES_MASK         0xFFF8  /*bits times mask. */
-#define FIRST_LEVEL_BIT_START   15      /*bits count start. */
-#define FIRST_LEVEL_BIT_MASK    (1<<FIRST_LEVEL_BIT_START)    /*end flag mask. */
-
-struct blaster_data_type {
-    uint16_t bitstimes;     /*first[15] 1 bit 1=high level  0=low level; 
-                                [8+BITS_COUNT_START-BITS_COUNT_START]8 bit =how many bits;
-                                [END_FLAG_START] 1=have end bits 0=not have end bits
-                                [2-0]3 bit=how many repeat times*/
-    uint16_t start1;        /*start mark first length */
-    uint16_t start2;        /*start mark second length*/
-    uint16_t interval;      /*interval for each times */
-
-    uint16_t bits[BLASTER_MAX_BITS];  	/*each bit length*/
-    uint16_t end[END_COUNT];
-};
-#endif
 
 struct blaster_data_pack {
     uint16_t bitstimes;       /*first[15] 1 bit 1=high level  0=low level; 

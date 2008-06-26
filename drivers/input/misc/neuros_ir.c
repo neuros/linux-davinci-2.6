@@ -39,6 +39,7 @@
 #include <asm/uaccess.h>
 #include <asm/io.h>
 #include <asm/irq.h>
+#include <linux/interrupt.h>
 
 #include <asm/arch/hardware.h>
 
@@ -54,9 +55,6 @@
 #else
     #define dbg(fmt, arg...)
 #endif
-
-#define GPIO01_DIR	__REG(0x01C67010)
-#define GPIO01_RIS_INT	__REG(0x01C67024)
 
 #define USE_WORKQUEUE 1
 #define READ_ONLY_ONE_KEY 1
@@ -190,8 +188,10 @@ static void irrtc_do_wq(struct work_struct *work)
 
 	if (is_learning == 1)
 	{
-		//disable_irq(IRQ_TIMER1);
-		//outw( inw( IO_GIO_IRQPORT) & (~GIO3), IO_GIO_IRQPORT); // gio 3 external IRQ disable;
+		disable_irq(IRQ_TINT1_TINT34);
+        TIMER1_TCR &= ~(3<<22); //disable timer1 34
+        CLR_GPIO01_RIS_INT |= (1<<7); // gpio 7 rising edge IRQ disable
+        CLR_GPIO01_FAL_INT |= (1<<7); // gpio 7 falling edge IRQ disable
 		lock_data_protect();
 		set_osd_key(1);
         set_is_learning(0);
@@ -233,10 +233,7 @@ static irqreturn_t handle_irrtc_irqs(int irq, void * dev_id)
 static void irqs_irrtc_init( void )
 {
     GPIO01_DIR |= 0x04;  //gio 2 direction input
-    GPIO01_RIS_INT |= 0x04; // gio 2 rising edge IRQ enable
-    //outw( inw( IO_GIO_DIR0 ) | 0x0001, IO_GIO_DIR0 );  //gio 0 direction input
-    //outw( inw( IO_GIO_INV0 ) | 0x0001, IO_GIO_INV0 );  //gio 0 inv
-    //outw( inw( IO_GIO_IRQPORT) | 0x0001, IO_GIO_IRQPORT);  // gio 0 external IRQ enable
+    SET_GPIO01_RIS_INT |= 0x04; // gio 2 rising edge IRQ enable
     request_irq(IRQ_GPIO2, handle_irrtc_irqs, 0, "irrtc", &device); 
 }
 
