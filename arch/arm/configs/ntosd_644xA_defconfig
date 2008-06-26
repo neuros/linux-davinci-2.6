@@ -830,6 +830,7 @@ CONFIG_HWMON=y
 # CONFIG_HWMON_DEBUG_CHIP is not set
 CONFIG_MISC_DEVICES=y
 # CONFIG_EEPROM_93CX6 is not set
+CONFIG_NEUROS_IR_BLASTER=m
 
 #
 # Multifunction device drivers
