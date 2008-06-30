@@ -1022,6 +1022,7 @@ static int probe(struct usb_interface *intf, const struct usb_device_id *id)
 		goto error;
 	}
 
+	strcpy(netdev->name, "wlan%d");
 	r = register_netdev(netdev);
 	if (r) {
 		dev_dbg_f(&intf->dev,
