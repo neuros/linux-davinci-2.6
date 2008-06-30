@@ -1,0 +1,19 @@
+config RT73
+	tristate "Ralink RT73 chipset USB-wireless support"
+	depends on USB && IEEE80211_SOFTMAC && MAC80211 && WLAN_80211 && EXPERIMENTAL
+	select WIRELESS_EXT
+	select FW_LOADER
+	---help---
+	  This is an experimental driver for the Ralink RT73 wireless
+	  chip, present in many USB-wireless adapters.
+
+	  Device firmware is required inside this driver: rt73.bin
+
+config RT73_DEBUG
+	bool "Ralink RT73 debugging"
+	depends on RT73
+	---help---
+	  RT73 debugging messages. Choosing Y will result in additional debug
+	  messages being saved to your kernel logs, which may help debug any
+	  problems.
+
