@@ -1,0 +1,81 @@
+/***************************************************************************
+ * RT2x00 SourceForge Project - http://rt2400.sourceforge.net              *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program; if not, write to the                         *
+ *   Free Software Foundation, Inc.,                                       *
+ *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
+ *                                                                         *
+ *   Licensed under the GNU GPL                                            *
+ *   Original code supplied under license from RaLink Inc, 2003.           *
+ ***************************************************************************/
+
+ Changelog for 802.11g rt73 driver
+
+ Version: CVS
+	* Detect ARM big endian compile mode.
+	* Port suspend/resume from Ralink version of driver.
+	* More scheduling while atomic fixes: remove superfluous spin locks.
+	* Fix open-after-close problems.
+	* Reduce leaks and Oops when handling exceptions.
+	* "raw" debug message fixups.
+	* Tag all (ok, most) log messages with module name.
+	* Provide pre-up configuration. Do periodic functions in process
+	  context. Fix "SIOSSIFFLAGS: Invalid argument" on kernel 2.6.24.
+	* Move Bulk input handling to process context. Fix thread signal
+	  handling. More debug message routing fixes.
+	* Fix ARM alignment requirements for USB control input with help
+	  from daniel_matthes.
+	* Debug message routing fixes.
+	* Handle private ioctls ok when more than one adapter attached.
+	* Handle 64 character keys on pre-up.
+	* 2.6 kernels now use /etc/modprobe.d/ralink for module alias.
+	* Fix 'make arm' target compile error.
+	* Fix big endian compiler variable propagation. Thanks to Adam Sjøgren.
+	* Forward compatibility for 2.6.24. Thanks to Adam Baker.
+	* Fix incomplete queue element, multi-context service drop fix.
+	* Provide interface name module option parameter.
+	* Load firmware for 2.4 kernels. Patch by Graham Gower.
+	  Back out problem queue element, multi-context changes till fixed.
+	* Propagate incomplete queue element, multi- context service drop fixes.
+	  Patch by Ben Hutchings.
+	* Fix vendor and product endian conversion in probe. Patch by chris_ppc
+	  extended to 2.4 conditional compile path.
+	* Fix 2.6 compile problem w/prev patch. Discovery/diagnosis/resolution
+	  by xqterry.
+	* Fix Bug #1763773 - does not build on 2.6.5. Needed for early 2.6
+	  series kernels.
+	* Change debug handling to conform with rt2500/rt2570 drivers.
+	* Forward compatibility with kernel 2.6.22-rc4 xxx_net_device macros.
+	* msleep & co. for selected pre- 2.4.29 kernels (InsaneBoarder234 problem).
+	* Forward compatibility with kernel 2.6.22-rc4 skbuff changes. Put all
+	  version compatibility macros in rt_config.h.
+	* Remove cruft (again).
+	* Fix default Makefile target.
+	* Fixes for iwlist freq output
+	* Integration into kernel firmware loading framework
+	* Removal of hardcoded backup firmware
+	* Compatibility fixes for kernels >= 2.6.20
+	* Rtutilt support
+	* 64-bit support
+	* ARM fixes
+	* SMP/PREEMPT Support
+	* Compatibility fixes for kernels >= 2.6.19
+	* Jiffies fix for connection stability
+	* Packet injection support
+	* Prism header in RFMON
+	* RFMON support
+	* Ethtool support
+	* Initial baseline code from Ralink (1.0.3.6)
+
+
