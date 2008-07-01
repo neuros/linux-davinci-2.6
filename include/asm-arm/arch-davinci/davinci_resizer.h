@@ -362,7 +362,7 @@ int delete_from_array(channel_config_t * rsz_configuration_channel);
 int rsz_set_params(rsz_params_t *, channel_config_t *);
 int rsz_get_params(rsz_params_t *, channel_config_t *);
 int free_buff(channel_config_t * rsz_configuration_channel);
-irqreturn_t rsz_isr(int, void *, struct pt_regs *);
+irqreturn_t rsz_isr(int, void *);
 void rsz_calculate_crop(channel_config_t * rsz_conf_chan,
 			rsz_cropsize_t * cropsize);
 #endif				/* end of #ifdef __KERNEL__ */

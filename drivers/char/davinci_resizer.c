@@ -99,7 +99,7 @@ int malloc_buff(rsz_reqbufs_t * reqbuff, channel_config_t * rsz_conf_chan)
 	unsigned long adr;
 	unsigned long size;
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	/* assigning the buf_ptr to input buffer which is array of void
 	   pointer */
@@ -239,7 +239,7 @@ int malloc_buff(rsz_reqbufs_t * reqbuff, channel_config_t * rsz_conf_chan)
 	/* this will be useful only when numbuffers = 0 */
 	*buf_size = reqbuff->size;
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	return SUCESS;
 }				/*     end     of function     Main_buff */
@@ -251,7 +251,7 @@ int get_buf_address(rsz_buffer_t * buffer, channel_config_t * rsz_conf_chan)
 {
 	int buffer_index = 0;
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	if (buffer == NULL)
 		return -EINVAL;
@@ -318,7 +318,7 @@ int get_buf_address(rsz_buffer_t * buffer, channel_config_t * rsz_conf_chan)
 	dev_dbg(rsz_device, "the physical offset returned after query \
 						is %x", buffer->offset);
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	return SUCESS;
 
@@ -349,7 +349,7 @@ int rsz_start(rsz_resize_t * resize, channel_config_t * rsz_conf_chan)
 	/* For calculating the number of output buffers allocated */
 	int buffer_out_index = ZERO;
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 	/* checking     the     configuartion status */
 	if (rsz_conf_chan->config_state) {
 		dev_dbg(rsz_device, "State not configured \n");
@@ -476,7 +476,7 @@ int rsz_start(rsz_resize_t * resize, channel_config_t * rsz_conf_chan)
 
 	delete_from_array(rsz_conf_chan);
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	return ret;
 }				/*End of function Start_Resize */
@@ -490,7 +490,7 @@ int add_to_array(channel_config_t * rsz_conf_chan)
 {
 	int array_index, device_index;
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	/* locking the configuartion aaray */
 	down_interruptible(&device_config.array_sem);
@@ -545,7 +545,7 @@ int add_to_array(channel_config_t * rsz_conf_chan)
 		up(&device_config.array_sem);
 	}
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	return SUCESS;
 }				/*  end of function addToarray */
@@ -558,7 +558,7 @@ int delete_from_array(channel_config_t * rsz_conf_chan)
 {
 	int array_index = FIRSTENTRY, device_index;
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	down_interruptible(&(device_config.array_sem));
 
@@ -605,7 +605,7 @@ int delete_from_array(channel_config_t * rsz_conf_chan)
 		up(&(device_config.array_sem));
 	}
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	return SUCESS;
 }				/*     end     of function     deleteFromarray */
@@ -619,7 +619,7 @@ int rsz_set_params(rsz_params_t * params, channel_config_t * rsz_conf_chan)
 	int hsize;
 	int vsize;
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	/* calculating the horizontal and vertical ratio */
 	vrsz = (params->in_vsize - NUM_D2TAPS) * RATIO_MULTIPLIER /
@@ -907,7 +907,7 @@ int rsz_set_params(rsz_params_t * params, channel_config_t * rsz_conf_chan)
 	dev_dbg(rsz_device, "Resizer State configured \n");
 	rsz_conf_chan->config_state = STATE_CONFIGURED;
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	return SUCESS;
 }				/*End of rsz_Set_Params */
@@ -921,7 +921,7 @@ int rsz_get_params(rsz_params_t * params, channel_config_t * rsz_conf_chan)
 {
 	int coeffcounter;
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	if (rsz_conf_chan->config_state) {
 		dev_dbg(rsz_device, "	state not configured \n");
@@ -1040,7 +1040,7 @@ int rsz_get_params(rsz_params_t * params, channel_config_t * rsz_conf_chan)
 	else
 		params->pix_fmt = RSZ_PIX_FMT_YUYV;
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 	return SUCESS;
 }
 
@@ -1048,7 +1048,7 @@ void rsz_calculate_crop(channel_config_t * rsz_conf_chan,
 			rsz_cropsize_t * cropsize)
 {
 	int luma_enable;
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	cropsize->hcrop = ZERO;
 	cropsize->vcrop = ZERO;
@@ -1062,7 +1062,7 @@ void rsz_calculate_crop(channel_config_t * rsz_conf_chan,
 		cropsize->hcrop += 2;
 	}
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 }
 
 /*
@@ -1073,7 +1073,7 @@ int free_buff(channel_config_t * rsz_conf_chan)
 {
 	int buffercounter = ZERO;
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	/* Free all     the     input buffers */
 	while (rsz_conf_chan->input_buffer[buffercounter] != NULL
@@ -1097,7 +1097,7 @@ int free_buff(channel_config_t * rsz_conf_chan)
 		buffercounter++;
 	}
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	return SUCESS;
 }
@@ -1111,7 +1111,7 @@ static int rsz_open(struct inode *inode, struct file *filp)
 	channel_config_t *rsz_conf_chan;
 	int buffercounter;
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	if (filp->f_flags == O_NONBLOCK)
 		return -1;
@@ -1178,7 +1178,7 @@ static int rsz_open(struct inode *inode, struct file *filp)
 	/* taking the configuartion     structure in private data */
 	filp->private_data = rsz_conf_chan;
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	return SUCESS;
 
@@ -1198,12 +1198,12 @@ static int rsz_release(struct inode *inode, struct file *filp)
 	channel_config_t *rsz_conf_chan =
 	    (channel_config_t *) filp->private_data;
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	ret = down_trylock(&(rsz_conf_chan->chanprotection_sem));
 	if (ret != 0) {
 
-		dev_dbg(rsz_device, "Channel in use", ret);
+		dev_dbg(rsz_device, "Channel in use %d", ret);
 		return -EBUSY;
 	}
 
@@ -1218,7 +1218,7 @@ static int rsz_release(struct inode *inode, struct file *filp)
 
 	kfree(rsz_conf_chan);
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	up(&(rsz_conf_chan->chanprotection_sem));
 
@@ -1247,7 +1247,7 @@ Function to map device memory into user	space
 	channel_config_t *rsz_conf_chan =
 	    (channel_config_t *) filp->private_data;
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	/* Count the number of input buffers allocated */
 	while ((rsz_conf_chan->input_buffer[buffercounter]) != NULL) {
@@ -1297,7 +1297,7 @@ Function to map device memory into user	space
 		return -EAGAIN;
 	}
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	return SUCESS;
 
@@ -1324,7 +1324,7 @@ static int rsz_ioctl(struct inode *inode, struct file *file,
 	rsz_status_t *status;
 	rsz_resize_t *resize;
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	ret = down_trylock(&(rsz_conf_chan->chanprotection_sem));
 	if (ret != 0) {
@@ -1461,45 +1461,35 @@ static int rsz_ioctl(struct inode *inode, struct file *file,
 		ret = -EINVAL;
 	}
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 	up(&(rsz_conf_chan->chanprotection_sem));
 
 	return ret;
 }				/*End of function IOCTL */
 
 static struct file_operations rsz_fops = {
-	.owner = THIS_MODULE,.open = rsz_open,.release =
-	    rsz_release,.mmap = rsz_mmap,.ioctl = rsz_ioctl,
+	.owner = THIS_MODULE,
+	.open = rsz_open,
+	.release = rsz_release,
+	.mmap = rsz_mmap,
+	.ioctl = rsz_ioctl,
 };
 
 /*
 =====================rsz_isr===========================
 Function to register the Resizer character device	driver
 */
-irqreturn_t rsz_isr(int irq, void *dev_id, struct pt_regs *regs)
+irqreturn_t rsz_isr(int irq, void *dev_id)
 {
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	/* to suggest that resizing     has     been completed */
 	complete(&(device_config.sem_isr));
 
-	dev_dbg(rsz_device, __FUNCTION__);
+	dev_dbg(rsz_device, "%s\n", __FUNCTION__);
 
 	return IRQ_HANDLED;
-}
-static void resizer_platform_release(struct device *device)
-{
-	/* This is called when the reference count goes to zero */
-}
-static int __init resizer_probe(struct device *device)
-{
-	rsz_device = device;
-	return 0;
-}
-static int resizer_remove(struct device *device)
-{
-	return 0;
 }
 static struct class *rsz_class = NULL;
 
@@ -1574,13 +1564,14 @@ static int __init rsz_init(void)
 
 	/* Set up the Interrupt handler for     resizer interrupt */
 
-	result = request_irq(IRQ_RSZINT, rsz_isr, SA_INTERRUPT,
+	result = request_irq(IRQ_RSZINT, rsz_isr, IRQF_DISABLED,
 			     "dm644xresizer", (void *)NULL);
 	if (result < ZERO) {
 		printk("Cannot initialize IRQ \n");
 		return result;
 	}
 	rsz_set_exp(0xe);
+	rsz_device = resizer_device.this_device;
 
 	return SUCESS;
 }				/* End   of function  resizer_init */
@@ -1613,4 +1604,5 @@ void __exit rsz_cleanup(void)
 
 }				/* End  of function   resizer_cleanup */
 
-module_init(rsz_init) module_exit(rsz_cleanup)
+module_init(rsz_init)
+module_exit(rsz_cleanup)
