@@ -1159,6 +1159,7 @@ static struct platform_device _vpfe_device = {
 static int vpfe_init(void)
 {
 	int i = 0;
+	int result = 0;
 	void *mem;
 	/* allocate memory at initialization time to guarentee availability */
 	for (i = 0; i < VPFE_DEFNUM_FBUFS; i++) {
@@ -1199,8 +1200,12 @@ static int vpfe_init(void)
 
 	ccdc_reset();
 	/* setup interrupt handling */
-	request_irq(IRQ_VDINT0, vpfe_isr, SA_INTERRUPT,
-		    "dm644xv4l2", (void *)&vpfe_device);
+	result = request_irq(IRQ_VDINT0, vpfe_isr, IRQF_DISABLED,
+					 "dm644xv4l2", (void *)&vpfe_device);
+	if (result < 0) {
+		printk(KERN_ERR "DaVinci v4l2 capture driver: cannot initialize IRQ\n");
+		return result;
+	}
 
 	printk(KERN_INFO "DaVinci v4l2 capture driver V1.0 loaded\n");
 	return 0;
