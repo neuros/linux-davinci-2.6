@@ -372,24 +372,40 @@ config VIDEO_VIVI
 	  Say Y here if you want to test video apps or debug V4L devices.
 	  In doubt, say N.
 
-config VIDEO_TVP5146
-	tristate "TVP5146 video decoder"
-	depends on I2C && ARCH_DAVINCI
-	help
-	  Support for I2C bus based TVP5146 configuration.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called tvp5146.
 
 config VIDEO_DAVINCI
 	tristate "Davinci Video Capture"
-	depends on VIDEO_DEV && VIDEO_TVP5146 && ARCH_DAVINCI
+	depends on VIDEO_DEV && ARCH_DAVINCI
 	select VIDEO_BUF
 	help
 	  Support for Davinci based frame grabber through CCDC.
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called vpfe.
+
+choice
+	prompt "Video Capture Decoder"
+	optional
+	depends on VIDEO_DAVINCI
+
+config VIDEO_TVP5146
+        tristate "TVP5146 video decoder"
+        depends on I2C && ARCH_DAVINCI
+        help
+          Support for I2C bus based TVP5146 configuration.
+
+          To compile this driver as a module, choose M here: the
+          module will be called tvp5146.
+
+config VIDEO_TVP5150
+        tristate "TVP5150 video decoder"
+        depends on I2C && ARCH_DAVINCI
+        help
+          Support for I2C bus based TVP5150 configuration.
+
+          To compile this driver as a module, choose M here: the
+          module will be called tvp5150.
+endchoice
 
 source "drivers/media/video/bt8xx/Kconfig"
 

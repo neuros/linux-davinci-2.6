@@ -11,6 +11,7 @@
 #include <linux/video_decoder.h>
 #include <media/v4l2-common.h>
 #include <media/tvp5150.h>
+#include <asm/arch/gpio.h>
 
 #include "tvp5150_reg.h"
 
@@ -45,6 +46,7 @@ MODULE_PARM_DESC(debug, "Debug level (0-1)");
 				i2c_adapter_id(c->adapter), \
 				c->addr , ## arg); } while (0)
 
+#define SD_CAP_GPIO  GPIO(37)
 /* supported controls */
 static struct v4l2_queryctrl tvp5150_qctrl[] = {
 	{
@@ -97,6 +99,8 @@ struct tvp5150 {
 	int hue;
 	int sat;
 };
+
+static struct i2c_client *tvp5150_client;
 
 static int tvp5150_read(struct i2c_client *c, unsigned char addr)
 {
@@ -296,7 +300,7 @@ static inline void tvp5150_selmux(struct i2c_client *c)
 
 	switch (decoder->route.input) {
 	case TVP5150_COMPOSITE1:
-		input |= 2;
+		input |= 0;
 		/* fall through */
 	case TVP5150_COMPOSITE0:
 		opmode=0x30;		/* TV Mode */
@@ -828,6 +832,39 @@ static int tvp5150_get_ctrl(struct i2c_client *c, struct v4l2_control *ctrl)
 	return -EINVAL;
 }
 
+static int tvp5150_get_std(struct i2c_client *c, v4l2_std_id *id)
+{
+	int fmt = tvp5150_read(c, TVP5150_VIDEO_STD);
+	fmt &= 0x0F;
+	switch (fmt) {
+	case 0x00:
+		*id = V4L2_STD_ALL;
+		break;
+	case 0x02:
+		*id = V4L2_STD_NTSC;
+		break;
+	case 0x04:
+		*id = V4L2_STD_PAL;
+		break;
+	case 0x06:
+		*id = V4L2_STD_PAL_M;
+		break;
+	case 0x08:
+		*id = V4L2_STD_PAL_N | V4L2_STD_PAL_Nc;
+		break;
+	case 0x0A:
+		*id = V4L2_STD_NTSC_443;
+		break;
+	case 0x0C:
+		*id = V4L2_STD_SECAM;
+		break;
+	default:
+		*id = V4L2_STD_UNKNOWN;
+		break;
+	}
+	return 0;
+}
+
 static int tvp5150_set_ctrl(struct i2c_client *c, struct v4l2_control *ctrl)
 {
 /*	struct tvp5150 *decoder = i2c_get_clientdata(c); */
@@ -875,6 +912,16 @@ static int tvp5150_command(struct i2c_client *c,
 		struct v4l2_routing *route = arg;
 
 		decoder->route = *route;
+		tvp5150_selmux(c);
+		break;
+	}
+	case VIDIOC_S_INPUT:
+	{
+		int input = *(int *)arg;
+		if (input == 0)
+			decoder->route.input = TVP5150_COMPOSITE1;
+		else
+			decoder->route.input = TVP5150_SVIDEO;
 		tvp5150_selmux(c);
 		break;
 	}
@@ -1021,6 +1068,27 @@ static int tvp5150_command(struct i2c_client *c,
 				}
 			return -EINVAL;
 		}
+	case VIDIOC_QUERYSTD:
+		{
+			v4l2_std_id *id = (v4l2_std_id *)arg;
+			tvp5150_get_std(c, id);
+			break;
+		}
+	case VPFE_CMD_CONFIG_CAPTURE:
+		{
+			struct vpfe_capture_params *params =
+				(struct vpfe_capture_params *)arg;
+
+			if (params->amuxmode == VPFE_AMUX_COMPOSITE) {
+				decoder->route.input = TVP5150_COMPOSITE1;
+				} else {
+					decoder->route.input = TVP5150_SVIDEO;
+				}
+			tvp5150_selmux(c);
+			tvp5150_set_std(c, params->mode);
+			decoder->norm = params->mode;
+			break;
+		}
 
 	default:
 		return -EINVAL;
@@ -1042,7 +1110,6 @@ static struct i2c_client client_template = {
 static int tvp5150_detect_client(struct i2c_adapter *adapter,
 				 int address, int kind)
 {
-	struct i2c_client *c;
 	struct tvp5150 *core;
 	int rv;
 
@@ -1060,19 +1127,19 @@ static int tvp5150_detect_client(struct i2c_adapter *adapter,
 	     I2C_FUNC_SMBUS_READ_BYTE | I2C_FUNC_SMBUS_WRITE_BYTE_DATA))
 		return 0;
 
-	c = kmalloc(sizeof(struct i2c_client), GFP_KERNEL);
-	if (c == 0)
+	tvp5150_client = kmalloc(sizeof(struct i2c_client), GFP_KERNEL);
+	if (tvp5150_client == 0)
 		return -ENOMEM;
-	memcpy(c, &client_template, sizeof(struct i2c_client));
+	memcpy(tvp5150_client, &client_template, sizeof(struct i2c_client));
 
 	core = kzalloc(sizeof(struct tvp5150), GFP_KERNEL);
 	if (core == 0) {
-		kfree(c);
+		kfree(tvp5150_client);
 		return -ENOMEM;
 	}
-	i2c_set_clientdata(c, core);
+	i2c_set_clientdata(tvp5150_client, core);
 
-	rv = i2c_attach_client(c);
+	rv = i2c_attach_client(tvp5150_client);
 
 	core->norm = V4L2_STD_ALL;	/* Default is autodetect */
 	core->route.input = TVP5150_COMPOSITE1;
@@ -1083,13 +1150,13 @@ static int tvp5150_detect_client(struct i2c_adapter *adapter,
 	core->sat = 32768;
 
 	if (rv) {
-		kfree(c);
+		kfree(tvp5150_client);
 		kfree(core);
 		return rv;
 	}
 
 	if (debug > 1)
-		dump_reg(c);
+		dump_reg(tvp5150_client);
 	return 0;
 }
 
@@ -1122,6 +1189,45 @@ static int tvp5150_detach_client(struct i2c_client *c)
 	return 0;
 }
 
+static inline int tvp5150_device_init(struct vpfe_capture_params *params)
+{
+	return tvp5150_command(tvp5150_client, VIDIOC_INT_RESET, NULL);
+}
+
+static inline int tvp5150_device_cmd(u32 cmd, void *arg)
+{
+	return tvp5150_command(tvp5150_client, cmd, arg);
+}
+
+static inline void davinci_enable_sdclk(bool on)
+{
+	s8 enable = (on == true ? 0 : 1);
+
+	gpio_direction_output(SD_CAP_GPIO, enable);
+	gpio_set_value(SD_CAP_GPIO, enable);
+}
+
+static inline int tvp5150_device_active(void)
+{
+	/* enable the SD_PCLK */
+	davinci_enable_sdclk(true);
+	return 0;
+}
+
+static inline int tvp5150_device_deactive(void)
+{
+	/* disable the SD_PCLK */
+	davinci_enable_sdclk(false);
+	return 0;
+}
+
+static inline int tvp5150_device_cleanup(void)
+{
+	/* do nothing */
+	return 0;
+}
+
+
 /* ----------------------------------------------------------------------- */
 
 static struct i2c_driver driver = {
@@ -1136,13 +1242,28 @@ static struct i2c_driver driver = {
 	.command = tvp5150_command,
 };
 
+static struct vpfe_capture_device tvp5150_device = {
+	.name = "TVP5150",
+	.id = VPFE_CAPTURE_ID_TVP5150,
+	.capture_device_init = tvp5150_device_init,
+	.capture_device_cmd = tvp5150_device_cmd,
+	.capture_device_active = tvp5150_device_active,
+	.capture_device_deactive = tvp5150_device_deactive,
+	.capture_device_cleanup = tvp5150_device_cleanup,
+};
+
 static int __init tvp5150_init(void)
 {
-	return i2c_add_driver(&driver);
+	i2c_add_driver(&driver);
+    return vpfe_capture_device_register(&tvp5150_device);
 }
 
 static void __exit tvp5150_exit(void)
 {
+	/* disable the SD_PCLK */
+	davinci_enable_sdclk(false);
+
+	vpfe_capture_device_unregister(&tvp5150_device);
 	i2c_del_driver(&driver);
 }
 
