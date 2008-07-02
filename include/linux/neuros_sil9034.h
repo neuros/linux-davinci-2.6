@@ -23,7 +23,8 @@
  *
  * REVISION:
  * 
- * 1) Initial creation. ----------------------------------- 2007-11-13 JChen
+ * 1) Initial creation. ----------------------------------- 2008-06-10 JChen
+ * 2) Add support for HDMI user interface . --------------- 2008-06-23 JChen
  *
  */
 
@@ -234,6 +235,8 @@
 
 #define		AUDIO_IFOFRAMES_EN_RPT				(0x30)
 
+
+/*******************************HDMI Interface *********************/
 
 
 #endif /* NEUROS_SIL9034__H */
