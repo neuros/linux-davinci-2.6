@@ -723,6 +723,8 @@ static void probe_hwif(ide_hwif_t *hwif, void (*fixup)(ide_hwif_t *hwif))
 	unsigned long flags;
 	unsigned int irqd;
 
+    if(!hwif->present)
+        return;
 	if (hwif->noprobe)
 		return;
 
