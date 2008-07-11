@@ -52,32 +52,32 @@ MODULE_LICENSE("GPL");
 #define IS_ACTIVE(x) \
 	((x) && ACTIVE_DEVICE() && ((x)->id == ACTIVE_DEVICE()->id))
 #define DEVICE_DEACTIVATE(x) do { \
-    if ((x) && (x)->capture_device_deactive && \
-		(x)->capture_device_deactive()) \
-					debug_print(KERN_ERR\
-				"capture device %s deactivate failed\n", \
-					(x)->name); \
+	if ((x) && (x)->capture_device_deactive &&			\
+	    (x)->capture_device_deactive())				\
+	     debug_print(KERN_ERR					\
+			 "capture device %s deactivate failed\n",	\
+			 (x)->name);					\
 } while (0)
 #define DEVICE_ACTIVATE(x) do { \
-	if ((x) && (x)->capture_device_active && \
-		(x)->capture_device_active()) \
-					debug_print(KERN_ERR \
-					"capture device %s activate failed\n", \
-					(x)->name); \
+	if ((x) && (x)->capture_device_active &&			\
+	    (x)->capture_device_active())				\
+	     debug_print(KERN_ERR					\
+			 "capture device %s activate failed\n",		\
+			 (x)->name);					\
 } while (0)
 #define DEVICE_INIT(x, params) do { \
-	if ((x) && (x)->capture_device_init && \
-		(x)->capture_device_init(params)) \
-					debug_print(KERN_ERR \
-					"capture device %s init failed\n", \
-					(x)->name); \
+	if ((x) && (x)->capture_device_init &&				\
+	    (x)->capture_device_init(params))				\
+	     debug_print(KERN_ERR					\
+			 "capture device %s init failed\n",		\
+			 (x)->name);					\
 } while (0)
 #define DEVICE_CLEANUP(x) do { \
-	if ((x) && (x)->capture_device_cleanup && \
-		(x)->capture_device_cleanup()) \
-					debug_print(KERN_ERR \
-					"capture device %s cleanup failed\n", \
-					(x)->name); \
+	if ((x) && (x)->capture_device_cleanup &&			\
+	    (x)->capture_device_cleanup())				\
+	     debug_print(KERN_ERR					\
+			 "capture device %s cleanup failed\n",		\
+			 (x)->name);					\
 } while (0)
 #define DEVICE_CMD(dev, cmd, arg) \
 		((dev) && (dev)->capture_device_cmd && \
@@ -154,7 +154,7 @@ static irqreturn_t vpfe_isr(int irq, void *dev_id)
 				    vpfe->curFrm->boff + vpfe->field_offset;
 				ccdc_setfbaddr((unsigned long)addr);
 			}
-	} else if (fid == 1) {
+		} else if (fid == 1) {
 			/* if one field is just being captured */
 			/* configure the next frame */
 			/* get the next frame from the empty queue */
@@ -196,7 +196,6 @@ static int buffer_prepare(struct videobuf_queue *q,
 {
 	vpfe_obj *vpfe = &vpfe_device;
 
-
 	if (vb->state == STATE_NEEDS_INIT) {
 		vb->width  = vpfe->vwin.width;
 		vb->height = vpfe->vwin.height;
@@ -208,11 +207,13 @@ static int buffer_prepare(struct videobuf_queue *q,
 	return 0;
 
 }
+
 static void
 buffer_config(struct videobuf_queue *q, unsigned int count)
 {
 	vpfe_obj *vpfe = &vpfe_device;
 	int i;
+
 	for(i = 0; i < count; i++) {
 		q->bufs[i]->boff = virt_to_phys(vpfe->fbuffers[i]);
 		debug_print(KERN_INFO "buffer address: %x\n", q->bufs[i]->boff);
@@ -225,7 +226,6 @@ buffer_setup(struct videobuf_queue *q, unsigned int *count, unsigned int *size)
 	vpfe_obj *vpfe = &vpfe_device;
 	int i;
 	*size = VPFE_MAX_FBUF_SIZE;
-
 
 	for (i = VPFE_DEFNUM_FBUFS; i < *count; i++) {
 		u32 size = PAGE_SIZE << VPFE_MAX_FBUF_ORDER;
@@ -253,6 +253,7 @@ buffer_setup(struct videobuf_queue *q, unsigned int *count, unsigned int *size)
 static void buffer_queue(struct videobuf_queue *q, struct videobuf_buffer *vb)
 {
 	vpfe_obj *vpfe = &vpfe_device;
+
         /* add the buffer to the DMA queue */
 	list_add_tail(&vb->queue, &vpfe->dma_queue);
 	vb->state = STATE_QUEUED;
@@ -262,14 +263,13 @@ static void buffer_release(struct videobuf_queue *q, struct videobuf_buffer *vb)
 {
 	/* free the buffer if it is not one of the 3 allocated at initializaiton time */
 	if(vb->i < vpfe_device.numbuffers
-	 && vb->i >= VPFE_DEFNUM_FBUFS
-	 && vpfe_device.fbuffers[vb->i]){
+	   && vb->i >= VPFE_DEFNUM_FBUFS
+	   && vpfe_device.fbuffers[vb->i]){
 		free_pages((unsigned long)vpfe_device.fbuffers[vb->i],
 			   VPFE_MAX_FBUF_ORDER);
 		vpfe_device.fbuffers[vb->i] = NULL;
 	}
 }
-
 
 static struct videobuf_queue_ops video_qops = {
 	.buf_setup    = buffer_setup,
@@ -305,9 +305,10 @@ static int vpfe_select_capture_device(int id)
 {
 	int err = 0;
 	struct vpfe_capture_device *device;
+
 	down_interruptible(&vpfe_device.device_list_lock);
 	list_for_each_entry(device, &vpfe_device.capture_device_list,
-						device_list){
+			    device_list){
 		if (device->id == id) {
 			err = vpfe_capture_device_active(device);
 			up(&vpfe_device.device_list_lock);
@@ -342,7 +343,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 	case VIDIOC_QUERYCAP:
 	{
 		struct v4l2_capability *cap =
-		    (struct v4l2_capability *)arg;
+			(struct v4l2_capability *)arg;
 		memset(cap, 0, sizeof(*cap));
 		*cap = vpfe_drvcap;
 		break;
@@ -383,7 +384,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 			pixfmt->pixelformat = vpfe->pixelfmt;
 			pixfmt->bytesperline = pixfmt->width * 2;
 			pixfmt->sizeimage =
-			    pixfmt->bytesperline * pixfmt->height;
+				pixfmt->bytesperline * pixfmt->height;
 			pixfmt->colorspace = V4L2_COLORSPACE_SMPTE170M;
 			up(&vpfe->lock);
 		}
@@ -525,8 +526,8 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		vpfe->capture_params.squarepixel = sqp;
 
 		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
-						  VPFE_CMD_CONFIG_CAPTURE,
-						  &vpfe->capture_params);
+				  VPFE_CMD_CONFIG_CAPTURE,
+				  &vpfe->capture_params);
 
 		up(&vpfe->lock);
 		break;
@@ -614,13 +615,13 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		vpfe->capture_params.amuxmode = *index;
 
 		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
-						  VIDIOC_S_INPUT, index);
+				  VIDIOC_S_INPUT, index);
 		break;
 	}
 	case VIDIOC_CROPCAP:
 	{
 		struct v4l2_cropcap *cropcap =
-		    (struct v4l2_cropcap *)arg;
+			(struct v4l2_cropcap *)arg;
 		cropcap->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 		down_interruptible(&vpfe->lock);
 		cropcap->bounds = cropcap->defrect = vpfe->vwin;
@@ -637,7 +638,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 			ret = -EINVAL;
 		} else {
 			struct v4l2_captureparm *capparm =
-			    &parm->parm.capture;
+				&parm->parm.capture;
 			memset(capparm, 0,
 			       sizeof(struct v4l2_captureparm));
 			down_interruptible(&vpfe->lock);
@@ -657,7 +658,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		down_interruptible(&vpfe->lock);
 
 		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
-						  VIDIOC_G_CTRL, arg);
+				  VIDIOC_G_CTRL, arg);
 
 		up(&vpfe->lock);
 		break;
@@ -665,7 +666,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		down_interruptible(&vpfe->lock);
 
 		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
-						  VIDIOC_S_CTRL, arg);
+				  VIDIOC_S_CTRL, arg);
 
 		up(&vpfe->lock);
 		break;
@@ -673,7 +674,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		down_interruptible(&vpfe->lock);
 
 		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
-						  VIDIOC_QUERYCTRL, arg);
+				  VIDIOC_QUERYCTRL, arg);
 
 		up(&vpfe->lock);
 		break;
@@ -720,7 +721,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		down_interruptible(&vpfe->lock);
 
 		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
-						  VIDIOC_QUERYSTD, id);
+				  VIDIOC_QUERYSTD, id);
 
 		up(&vpfe->lock);
 		break;
@@ -794,16 +795,16 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		debug_print(KERN_INFO "cur frame %x.\n",
 			    vpfe->dma_queue.next);
 		vpfe->nextFrm = vpfe->curFrm =
-		    list_entry(vpfe->dma_queue.next,
-			       struct videobuf_buffer, queue);
+			list_entry(vpfe->dma_queue.next,
+				   struct videobuf_buffer, queue);
 		/* remove the buffer from the queue */
 		list_del(&vpfe->curFrm->queue);
 		vpfe->curFrm->state = STATE_ACTIVE;
 
 		/* sense the current video input standard */
 		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
-						  VPFE_CMD_CONFIG_CAPTURE,
-						  &vpfe->capture_params);
+				  VPFE_CMD_CONFIG_CAPTURE,
+				  &vpfe->capture_params);
 		/* configure the ccdc and resizer as needed   */
 		/* start capture by enabling CCDC and resizer */
 		ccdc_config_ycbcr(&vpfe->ccdc_params);
@@ -814,7 +815,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		vpfe->started = TRUE;
 		vpfe->mode_changed = FALSE;
 		vpfe->field_offset =
-		    (vpfe->vwin.height - 2) * vpfe->vwin.width;
+			(vpfe->vwin.height - 2) * vpfe->vwin.width;
 		ccdc_enable(TRUE);
 		up(&vpfe->lock);
 		debug_print(KERN_INFO "started video streaming.\n");
@@ -854,7 +855,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		if (params->buf_type == CCDC_BUFTYPE_FLD_INTERLEAVED) {
 			vpfe->field = V4L2_FIELD_INTERLACED;
 		} else if (params->buf_type ==
-		   CCDC_BUFTYPE_FLD_SEPARATED) {
+			   CCDC_BUFTYPE_FLD_SEPARATED) {
 			vpfe->field = V4L2_FIELD_SEQ_TB;
 		}
 		if (params->pix_order == CCDC_PIXORDER_YCBYCR) {
@@ -900,8 +901,8 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		}
 		vpfe->std = std;
 		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
-						  VPFE_CMD_CONFIG_CAPTURE,
-						  params);
+				  VPFE_CMD_CONFIG_CAPTURE,
+				  params);
 		vpfe->capture_params = *params;
 		up(&vpfe->lock);
 		break;
@@ -926,7 +927,7 @@ static int vpfe_ioctl(struct inode *inode, struct file *file,
 	ret =  video_usercopy(inode, file, cmd, arg, vpfe_doioctl);
 	if( cmd == VIDIOC_S_FMT || cmd == VIDIOC_TRY_FMT ){
 		ret = video_usercopy(inode, file, VIDIOC_G_FMT,
-			arg, vpfe_doioctl);
+				     arg, vpfe_doioctl);
 	}
 	return ret;
 }
@@ -1070,11 +1071,11 @@ int vpfe_capture_device_register(struct vpfe_capture_device *device)
 
 	/* call capture device specific init routine */
 	down_interruptible(&vpfe_device.lock);
-    DEVICE_INIT(device, &vpfe_device.capture_params);
+	DEVICE_INIT(device, &vpfe_device.capture_params);
 	up(&vpfe_device.lock);
 
 	debug_print(KERN_INFO "VPFE Capture device %s registered, id = %d.\n",
-				device->name, device->id);
+		    device->name, device->id);
 	return 0;
 }
 EXPORT_SYMBOL(vpfe_capture_device_register);
@@ -1098,22 +1099,22 @@ int vpfe_capture_device_unregister(struct vpfe_capture_device *device)
 	}
 	/* call device specific routine to do the clean up. */
 	DEVICE_CLEANUP(device);
-    up(&vpfe_device.lock);
+	up(&vpfe_device.lock);
 
 	debug_print(KERN_INFO "VPFE Capture device %s unregistered, id = %d\n",
-		   device->name, device->id);
+		    device->name, device->id);
 	return 0;
 }
 EXPORT_SYMBOL(vpfe_capture_device_unregister);
 
-static int capture_device_all_unrigister(void)
+static int capture_device_all_unregister(void)
 {
 	int ret = 0;
 	struct vpfe_capture_device *device;
 
 	down_interruptible(&vpfe_device.lock);
 	list_for_each_entry(device, &vpfe_device.capture_device_list,
-						device_list){
+			    device_list){
 		ret |= vpfe_capture_device_unregister(device);
 	}
 	up(&vpfe_device.lock);
@@ -1153,7 +1154,7 @@ static struct platform_device _vpfe_device = {
 	.id = 1,
 	.dev = {
 		.release = vpfe_platform_release,
-		}
+	}
 };
 
 static int vpfe_init(void)
@@ -1201,7 +1202,7 @@ static int vpfe_init(void)
 	ccdc_reset();
 	/* setup interrupt handling */
 	result = request_irq(IRQ_VDINT0, vpfe_isr, IRQF_DISABLED,
-					 "dm644xv4l2", (void *)&vpfe_device);
+			     "dm644xv4l2", (void *)&vpfe_device);
 	if (result < 0) {
 		printk(KERN_ERR "DaVinci v4l2 capture driver: cannot initialize IRQ\n");
 		return result;
@@ -1217,7 +1218,7 @@ static void vpfe_cleanup(void)
 	platform_device_unregister(&_vpfe_device);
 	driver_unregister(&vpfe_driver);
 
-	capture_device_all_unrigister();
+	capture_device_all_unregister();
 
 	/* disable interrupt */
 	free_irq(IRQ_VDINT0, &vpfe_device);
