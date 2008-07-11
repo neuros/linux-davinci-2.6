@@ -61,7 +61,8 @@
 #define IR_RETRY_COUNT 3
 #define FACTORY_TEST_DELAY 6
 
-struct irrtc_device {
+struct irrtc_device
+{
     int    key;
 };
 static struct irrtc_device device;
@@ -71,18 +72,18 @@ static wait_queue_head_t poll_queue;
 
 static char *devname = "neuros_ir";
 static struct input_dev *ir_input_dev;
-static int factory_test=0;
-static int osd_key=0;
-static int is_learning=0;
+static int factory_test = 0;
+static int osd_key = 0;
+static int is_learning = 0;
 
 #if USE_WORKQUEUE
 #define KEYBUF_SIZE 2
 static int keybuf[KEYBUF_SIZE];
-static int roffset=0;
-static int woffset=0;
-static int numOfKeys=0;
+static int roffset = 0;
+static int woffset = 0;
+static int numOfKeys = 0;
 #else
-static int keyin=0;
+static int keyin = 0;
 #endif
 
 static void irrtc_report_key(int ir_key);
@@ -93,37 +94,37 @@ static spinlock_t data_protect = SPIN_LOCK_UNLOCKED;
 
 static void lock_data_protect(void)
 {
-	spin_lock(&data_protect);
+    spin_lock(&data_protect);
 }
 EXPORT_SYMBOL(lock_data_protect);
 
 static void unlock_data_protect(void)
 {
-	spin_unlock(&data_protect);        	
+    spin_unlock(&data_protect);         
 }
 EXPORT_SYMBOL(unlock_data_protect);
 
 static void set_factory_test(int value)
 {
-	factory_test=value;
+    factory_test = value;
 }
 EXPORT_SYMBOL(set_factory_test);
 
 static int get_osd_key(void)
 {
-	return osd_key;
+    return osd_key;
 }
 EXPORT_SYMBOL(get_osd_key);
 
 static void set_osd_key(int value)
 {
-	osd_key=value;
+    osd_key = value;
 }
 EXPORT_SYMBOL(set_osd_key);
 
 static void set_is_learning(int value)
 {
-    is_learning=value;
+    is_learning = value;
 }
 EXPORT_SYMBOL(set_is_learning);
 
@@ -140,7 +141,7 @@ static int read_keybuf(void)
     {
         numOfKeys--;
         key = keybuf[roffset];
-	if(++roffset >= KEYBUF_SIZE) roffset = 0;
+        if (++roffset >= KEYBUF_SIZE) roffset = 0;
     }
 
     up(&keybuf_sem);
@@ -153,19 +154,19 @@ static int read_keybuf(void)
 static void write_keybuf(int key)
 {
     if (-EINTR == down_interruptible(&keybuf_sem))
-	return;
+        return;
 
-	// Display some more sober debug message on key presses but don't bother with key releases.
-	if (key != 0x00) printk("{IR:key:%02x}\n", key);
+    // Display some more sober debug message on key presses but don't bother with key releases.
+    if (key != 0x00) printk("{IR:key:%02x}\n", key);
 
-    if(++numOfKeys > KEYBUF_SIZE) 
-      {
-	  numOfKeys = KEYBUF_SIZE;
-	  if(++roffset >= KEYBUF_SIZE) roffset = 0;
-      }
+    if (++numOfKeys > KEYBUF_SIZE)
+    {
+        numOfKeys = KEYBUF_SIZE;
+        if (++roffset >= KEYBUF_SIZE) roffset = 0;
+    }
 
-    keybuf[woffset]=key;
-    if(++woffset >= KEYBUF_SIZE) woffset = 0;
+    keybuf[woffset] = key;
+    if (++woffset >= KEYBUF_SIZE) woffset = 0;
 
     up(&keybuf_sem);
 }
@@ -173,9 +174,9 @@ static void write_keybuf(int key)
 
 static void report_key(int key)
 {
-	irrtc_report_key(key); //before adding to keybuf we report this key to the input system
-	write_keybuf(key);
-	wake_up_interruptible(&poll_queue);
+    irrtc_report_key(key); //before adding to keybuf we report this key to the input system
+    write_keybuf(key);
+    wake_up_interruptible(&poll_queue);
 }
 EXPORT_SYMBOL(report_key);
 //----------------------------------------------------------- INTERRUPTS -------------------------------------------------------
@@ -183,30 +184,30 @@ EXPORT_SYMBOL(report_key);
 #if USE_WORKQUEUE
 static void irrtc_do_wq(struct work_struct *work)
 {       
-	int key;
-	int retry = IR_RETRY_COUNT;
+    int key;
+    int retry = IR_RETRY_COUNT;
 
-	if (is_learning == 1)
-	{
-		disable_irq(IRQ_TINT1_TINT34);
+    if (is_learning == 1)
+    {
+        disable_irq(IRQ_TINT1_TINT34);
         TIMER1_TCR &= ~(3<<22); //disable timer1 34
         disable_irq(IRQ_GPIO7);
-		lock_data_protect();
-		set_osd_key(1);
+        lock_data_protect();
+        set_osd_key(1);
         set_is_learning(0);
-		unlock_data_protect();
-	}
-	//HACK: we KNOW that key should never become 0xFF!!
-	do 
-	{
-		key = KEY_MASK & i2c_read(regIR);
-	} while ((key == NULL_KEY) && (retry--));
+        unlock_data_protect();
+    }
+    //HACK: we KNOW that key should never become 0xFF!!
+    do 
+    {
+        key = KEY_MASK & i2c_read(regIR);
+    } while ((key == NULL_KEY) && (retry--));
 
-	dbg("do tasklet: key = [%x]\n", key);
-	if (key <= TEST_KEY && key >= UP_KEY)
-	{
-		report_key(key);
-	}
+    dbg("do tasklet: key = [%x]\n", key);
+    if (key <= TEST_KEY && key >= UP_KEY)
+    {
+        report_key(key);
+    }
 }
 
 DECLARE_WORK(irrtc_wq, irrtc_do_wq); 
@@ -216,17 +217,17 @@ DECLARE_DELAYED_WORK(irrtc_delay_wq, irrtc_do_wq);
 static irqreturn_t handle_irrtc_irqs(int irq, void * dev_id)
 {
 #if USE_WORKQUEUE
-	if (!factory_test)
-		schedule_work(&irrtc_wq);
-	else 
-	{
-		schedule_delayed_work(&irrtc_delay_wq,FACTORY_TEST_DELAY);
-		set_factory_test(0);
-	}
+    if (!factory_test)
+        schedule_work(&irrtc_wq);
+    else
+    {
+        schedule_delayed_work(&irrtc_delay_wq,FACTORY_TEST_DELAY);
+        set_factory_test(0);
+    }
 #else
-	keyin=1;
+    keyin = 1;
 #endif
-	return IRQ_HANDLED;
+    return IRQ_HANDLED;
 }
 
 static void irqs_irrtc_init( void )
@@ -273,31 +274,34 @@ static ssize_t irrtc_read(struct file *filp, char __user *buff, size_t count, lo
     key = read_keybuf();
     dbg("key=%d\n", key);
 
-    if (key!=-1)  //none key
-        r=copy_to_user(buff, &key, sizeof(int));
+    if (key != -1)  //none key
+        r = copy_to_user(buff, &key, sizeof(int));
     else
-        count=0;
+        count = 0;
 #else
     if (-EINTR == down_interruptible(&keybuf_sem))
-        return 0; 
+        return 0;
 
-    if (count > KEYBUF_SIZE * sizeof(int)) {
+    if (count > KEYBUF_SIZE * sizeof(int))
+    {
         if (roffset <= woffset)
             count = (woffset - roffset) * sizeof(int);
         else
             count = (KEYBUF_SIZE - (roffset - woffset + 1)) * sizeof(int);
     }
 
-    if (count == 0) {
+    if (count == 0)
+    {
         printk("buffer empty\n");
         goto out;
     }
 
     if (roffset < woffset)
-        r=copy_to_user(buff, keybuf + roffset, count);
-    else {
-        r=copy_to_user(buff, &keybuf[roffset], (KEYBUF_SIZE - roffset + 1) * sizeof(int));
-        r=copy_to_user(buff + (KEYBUF_SIZE - roffset + 1) * sizeof(int), keybuf, woffset * sizeof(int));
+        r = copy_to_user(buff, keybuf + roffset, count);
+    else
+    {
+        r = copy_to_user(buff, &keybuf[roffset], (KEYBUF_SIZE - roffset + 1) * sizeof(int));
+        r = copy_to_user(buff + (KEYBUF_SIZE - roffset + 1) * sizeof(int), keybuf, woffset * sizeof(int));
     }
 
 out:
@@ -313,7 +317,7 @@ static ssize_t irrtc_write(struct file * file, const char __user * buf, size_t c
         return -1;
 
     //printk("-----------------%x\n",key);
-	report_key(key);
+    report_key(key);
     return count;
 }
 
@@ -346,7 +350,7 @@ static void irrtc_inputdev_init(void)
 
     // set a bit in the input device structure for each key that we are able to generate.
     for (i = 0; i < NUM_KEYS; i++)
-        if (keymap[i] != 0) 
+        if (keymap[i] != 0)
             set_bit(keymap[i], ir_input_dev->keybit);
 
     input_register_device(ir_input_dev); //done. we can now send events into the system.
