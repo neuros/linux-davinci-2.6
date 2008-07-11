@@ -190,8 +190,7 @@ static void irrtc_do_wq(struct work_struct *work)
 	{
 		disable_irq(IRQ_TINT1_TINT34);
         TIMER1_TCR &= ~(3<<22); //disable timer1 34
-        CLR_GPIO01_RIS_INT |= (1<<7); // gpio 7 rising edge IRQ disable
-        CLR_GPIO01_FAL_INT |= (1<<7); // gpio 7 falling edge IRQ disable
+        disable_irq(IRQ_GPIO7);
 		lock_data_protect();
 		set_osd_key(1);
         set_is_learning(0);

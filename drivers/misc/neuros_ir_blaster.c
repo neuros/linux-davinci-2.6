@@ -49,7 +49,7 @@
 #define DELAY_FOR_IR 200
 
 #define LEANRING_COMPLETE_DELAY (HZ)
-#define POLL_RELEASE_DELAY (HZ/10)
+#define POLL_RELEASE_DELAY (HZ/20)
 #define KEY_WAVE_PRESENT 1
 #define WAIT_LEARN_COMPLETE 2
 #define WAIT_RELEASE_REMOTE 4
@@ -89,8 +89,7 @@ extern void set_is_learning(int value);
 
 static void enable_learning(void)
 {
-    SET_GPIO01_RIS_INT |= GIO_CAP; // gpio 7 rising edge IRQ enable
-    SET_GPIO01_FAL_INT |= GIO_CAP; // gpio 7 falling edge IRQ enable
+    enable_irq(IRQ_GPIO7);
     lock_data_protect();
     set_is_learning(1);
     unlock_data_protect();
@@ -98,8 +97,7 @@ static void enable_learning(void)
 
 static void disable_learning(void)
 {
-    CLR_GPIO01_RIS_INT |= GIO_CAP; // gpio 7 rising edge IRQ disable
-    CLR_GPIO01_FAL_INT |= GIO_CAP; // gpio 7 falling edge IRQ disable
+    disable_irq(IRQ_GPIO7);
     lock_data_protect();
     set_is_learning(0);
     unlock_data_protect();
@@ -146,8 +144,6 @@ static void set_timer1_div(struct blaster_data_pack *blsdat)
             }
         }
     }
-    TIMER1_TGCR &= ~(15<<8);
-    TIMER1_TGCR |= BLS_TIMER_PRESCALE<<8;
     //div-=div>>5;   // The ideal situation is that set the timer prescale to let the timer cycle is 1us 
     // but the nearest setting make the cycle 1.032us so do this adjustment with 
     // divider value
@@ -158,13 +154,21 @@ static void set_timer1_div(struct blaster_data_pack *blsdat)
         div=MAX_COUNTER;
     }
     div--;
+    TIMER1_TCR &= ~(3<<22); //disable timer1 34
+    TIMER1_TGCR &= ~(1<<1); //reset timer1 34
+    TIMER1_TGCR &= ~(3<<2); //clear timer1 mode
+    TIMER1_TGCR |= (1<<2); //set timer1 unchained mode
+    TIMER1_TGCR |= (1<<1); //set timer1 34 in used
+    TIMER1_TIM34 = 0;
     TIMER1_PRD34 = div; // set timer period
+    TIMER1_TGCR &= ~(15<<8); //clean the prescale value
+    TIMER1_TGCR |= (BLS_TIMER_PRESCALE<<8); //set prescale value
+    TIMER1_TCR |= (1<<22); //enable timer1 34 as one time mode
 }
 
 static void blaster_key(struct blaster_data_pack* blsdat)
 { 
     uint16_t bitset2;
-    enable_irq(IRQ_TINT1_TINT34);
     wave_len=0;
     bls_status=BLS_START;
     bls_wave_count=blsdat->bitstimes&BITS_COUNT_MASK;
@@ -179,6 +183,7 @@ static void blaster_key(struct blaster_data_pack* blsdat)
         return;
     }
     GPIO23_DIR &= ~GIO_BLS;  //gio 47 direction output
+    GPIO23_CLR_DATA |= GIO_BLS;
     /*check if the io port status correct if not correct set it's logic to reverse of start level and hold for a momemt*/
     bitset2=GPIO23_OUT_DATA;
     if(((bitset2 & GIO_BLS)!=0)&&((bls_data_pack->bitstimes&BITS_COUNT_MASK)!=0))
@@ -196,8 +201,7 @@ static void blaster_key(struct blaster_data_pack* blsdat)
     else
         GPIO23_CLR_DATA |= GIO_BLS;
     set_timer1_div(blsdat);
-    TIMER1_TCR &= ~(3<<22); //disable timer1 34
-    TIMER1_TCR |= (2<<22); //enable timer1 34 as continue mode
+    enable_irq(IRQ_TINT1_TINT34);
 }
 
 void timer_handle(unsigned long data)
@@ -213,23 +217,22 @@ void timer_handle(unsigned long data)
         {
             disable_irq(IRQ_TINT1_TINT34);
             TIMER1_TCR &= ~(3<<22); //disable timer1 34
+            TIMER1_TGCR &= ~(1<<1); //reset timer1 34
             report_key(LEARNING_COMPLETE_KEY);
             //report_key(UP_KEY);
         }
         learning_status |= WAIT_RELEASE_REMOTE;
         learning_status &= ~WAIT_LEARN_COMPLETE;
-        learning_key_timer.expires = jiffies + POLL_RELEASE_DELAY;
         learning_key_timer.function = timer_handle;
-        add_timer(&learning_key_timer);
+        mod_timer(&learning_key_timer, jiffies + POLL_RELEASE_DELAY);
     }
     else if(learning_status & WAIT_RELEASE_REMOTE)
     {
         if(learning_status & KEY_WAVE_PRESENT)
         {
             learning_status &= ~KEY_WAVE_PRESENT;
-            learning_key_timer.expires = jiffies + POLL_RELEASE_DELAY;
             learning_key_timer.function = timer_handle;
-            add_timer(&learning_key_timer);
+            mod_timer(&learning_key_timer, jiffies + POLL_RELEASE_DELAY);
         }
         else
         {
@@ -263,7 +266,7 @@ static int capture_key(struct blaster_data_type* blsdat)
             td=MAX_COUNTER - old_counter - INT_CAPTURE_TIME_WASTE + counter ;
         old_counter=counter;
         old_int_counter=timer_int_counter;
-        if(!(learning_status & WAIT_LEARN_COMPLETE))
+        if(learning_status == 0)
         {
             times = 0;
             learning_key_timer.function = timer_handle;
@@ -280,24 +283,26 @@ static int capture_key(struct blaster_data_type* blsdat)
         blsdat->bitstimes++;
         if(times == BLASTER_MAX_CHANGE+1)
         {
+            disable_irq(IRQ_TINT1_TINT34);
+            TIMER1_TCR &= ~(3<<22); //disable timer1 34
+            TIMER1_TGCR &= ~(1<<1); //reset timer1 34
             report_key(LEARNING_COMPLETE_KEY);
-            learning_key_timer.function = timer_handle;
-            mod_timer(&learning_key_timer, jiffies + POLL_RELEASE_DELAY);
             learning_status |= WAIT_RELEASE_REMOTE;
             learning_status &= ~WAIT_LEARN_COMPLETE;
+            learning_key_timer.function = timer_handle;
+            mod_timer(&learning_key_timer, jiffies + POLL_RELEASE_DELAY);
         }
     }
     else
         learning_status |= KEY_WAVE_PRESENT;
-
     return(0);
 }
 
-static irqreturn_t handle_bls_timer1_irqs(int irq, void * dev_id, struct pt_regs * regs)
+static irqreturn_t handle_bls_timer1_irqs(int irq, void * dev_id)
 {
     uint32_t bitset2;
     if(int_type==CAPTURE)
-    {
+    {     
         timer_int_counter++;
         return IRQ_HANDLED;
     }
@@ -400,15 +405,6 @@ static int irrtc_ioctl(struct inode * inode, struct file * file,
         break;
     case RRB_CAPTURE_KEY:
         {
-            set_osd_key(0);
-            int_type=CAPTURE;
-            timer_int_counter=0;
-            TIMER1_TCR &= ~(3<<22); //disable timer1 34
-            TIMER1_TGCR &= ~(15<<8);
-            TIMER1_TGCR |= BLS_TIMER_PRESCALE<<8;
-            TIMER1_PRD34 = MAX_COUNTER; // set timer period 
-            TIMER1_TCR |= (2<<22); //enable timer1 34 as continuous mode
-            enable_irq(IRQ_TINT1_TINT34);
             BlsKey=kmalloc(sizeof(struct blaster_data_type), GFP_KERNEL);
             if(BlsKey==NULL)
             {
@@ -416,7 +412,20 @@ static int irrtc_ioctl(struct inode * inode, struct file * file,
                 break;
             }
             memset(BlsKey, 0, sizeof(struct blaster_data_type));
+            set_osd_key(0);
+            int_type=CAPTURE;
+            timer_int_counter=0;
             learning_status=0;
+            TIMER1_TGCR &= ~(3<<2); //clear timer1 mode
+            TIMER1_TGCR |= (1<<2); //set timer1 unchained mode
+            TIMER1_TGCR &= ~(1<<1); //reset timer1 34
+            TIMER1_TGCR |= (1<<1); //set timer1 34 in used
+            TIMER1_PRD34 = MAX_COUNTER; // set timer period 
+            TIMER1_TGCR &= ~(15<<8); //clean the prescale value
+            TIMER1_TGCR |= (BLS_TIMER_PRESCALE<<8); //set prescale value
+            TIMER1_TCR &= ~(3<<22); //disable timer1 34
+            TIMER1_TCR |= (2<<22); //enable timer1 34 as continuous mode
+            enable_irq(IRQ_TINT1_TINT34);
             enable_learning();
         }
         break;
@@ -462,20 +471,26 @@ static const char * pname = "NEUROS_IRBLAST(KM):";
 
 static int blaster_init( void )
 {
+    int ret;
     PINMUX1 |= (1<<4);  //set gio45/PWM0 pin works as PWM0
-    PWM0_CFG = 2; //set PWM0 contiguous mode
+    PWM0_PCR = 1;
+    PWM0_CFG &= ~2; //clear PWM0 mode
+    PWM0_CFG |= 2; //set PWM0 contiguous mode
     /* PWM0_PER+1=PWM0_PH1D*2 */
-    /*FIXME: PWM config*/
-    PWM0_PER = 59;
-    PWM0_PH1D = 30;
+    /* PWM config PWM 38kHz PER=709 PH1D=355 */
+    PWM0_PER = 709;
+    PWM0_PH1D = 355;
+    PWM0_START = 1;
     GPIO23_DIR |= GIO_BLS;  //gio 47 direction input
     TIMER1_TCR &= ~(3<<22); //disable timer1 34
+    ret = request_irq(IRQ_TINT1_TINT34, handle_bls_timer1_irqs,SA_INTERRUPT , "ir_blaster_timer1", &device); //TIMER__INTERRUPT
     disable_irq(IRQ_TINT1_TINT34);
-    request_irq(IRQ_TINT1_TINT34, handle_bls_timer1_irqs,SA_INTERRUPT , "ir_blaster_timer1", &device); //TIMER__INTERRUPT
 
-    disable_learning();
     GPIO01_DIR |= GIO_CAP;  //gpio 7 direction input
+    SET_GPIO01_RIS_INT |= GIO_CAP; // gpio 7 rising edge IRQ enable
+    SET_GPIO01_FAL_INT |= GIO_CAP; // gpio 7 falling edge IRQ enable
     request_irq(IRQ_GPIO7, handle_capture_irqs,SA_INTERRUPT , "ir_capture", &device); //SA_SHIRQSA_INTERRUPT
+    disable_learning();
 }
 
 static int __init irrtc_init(void)
@@ -486,7 +501,7 @@ static int __init irrtc_init(void)
 
     printk(KERN_INFO "\t" MOD_DESC "\n");
 
-    status = register_chrdev(NEUROS_IR_BLASTER_MAJOR, "ir_blaster", &irrtc_fops);
+    status = register_chrdev(NEUROS_IR_BLASTER_MAJOR, "neuros_ir_blaster", &irrtc_fops);
     if(status != 0)
     {
         if(status == -EINVAL) printk(KERN_ERR "%s Couldn't register device: invalid major number %d.\n", pname, NEUROS_IR_BLASTER_MAJOR);
