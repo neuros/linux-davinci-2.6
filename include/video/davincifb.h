@@ -432,6 +432,25 @@
 #define	OSD_TRANSPVA_RGBTRANS_SHIFT		0
 
 
+enum
+{
+	DAVINCIFB_WIN_VID0,
+	DAVINCIFB_WIN_VID1,
+	DAVINCIFB_WIN_OSD0,
+	DAVINCIFB_WIN_OSD1,
+	DAVINCIFB_WINDOWS
+};
+
+enum
+{
+	DAVINCIFB_OUT_COMPOSITE,
+	DAVINCIFB_OUT_COMPONENT,
+	DAVINCIFB_OUT_SVIDEO,
+	DAVINCIFB_OUT_RGB,
+	DAVINCIFB_OUTPUTS
+};
+
+
 #define LCD             0
 #define NTSC            1
 #define PAL             2
@@ -457,4 +476,5 @@ struct zoom_params
 };
 #define FBIO_SETZOOM		_IOW('F', 0x24, struct zoom_params)
 #define FBIO_GETSTD		_IOR('F', 0x25, u_int32_t)
+#define FBIO_ENABLE 		_IOW('F', 0x26, u_int32_t)
 #endif /* _DAVINCIFB_H_ */
