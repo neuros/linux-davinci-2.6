@@ -182,16 +182,14 @@ static void blaster_key(struct blaster_data_pack* blsdat)
         }
         return;
     }
-    GPIO23_DIR &= ~GIO_BLS;  //gio 47 direction output
-    GPIO23_CLR_DATA |= GIO_BLS;
     /*check if the io port status correct if not correct set it's logic to reverse of start level and hold for a momemt*/
     bitset2 = GPIO23_OUT_DATA;
-    if (((bitset2 & GIO_BLS) != 0) && ((bls_data_pack->bitstimes & BITS_COUNT_MASK) != 0))
+    if (((bitset2 & GIO_BLS) != 0) && ((bls_data_pack->bitstimes & FIRST_LEVEL_BIT_MASK) != 0))
     {
         GPIO23_CLR_DATA |= GIO_BLS;
         msleep(WAIT_HARDWARE_RESET);
     }
-    else if (((bitset2 & GIO_BLS) == 0) && ((bls_data_pack->bitstimes & BITS_COUNT_MASK) == 0))
+    else if (((bitset2 & GIO_BLS) == 0) && ((bls_data_pack->bitstimes & FIRST_LEVEL_BIT_MASK) == 0))
     {
         GPIO23_SET_DATA |= GIO_BLS;
         msleep(WAIT_HARDWARE_RESET);
@@ -276,7 +274,8 @@ static int capture_key(struct blaster_data_type* blsdat)
 
         if (0 == times++)
         {
-            blsdat->bitstimes |= ((SET_GPIO01_IN_DATA & GIO_CAP) << 8);
+            if ((GPIO01_IN_DATA & GIO_CAP) == 0)
+                blsdat->bitstimes |= FIRST_LEVEL_BIT_MASK;
             return 0;
         }
         blsdat->bits[times-2] = td;
@@ -321,7 +320,6 @@ static irqreturn_t handle_bls_timer1_irqs(int irq, void * dev_id)
     {
         disable_irq(IRQ_TINT1_TINT34);
         TIMER1_TCR &= ~(3<<22); //disable timer1 34
-        GPIO23_DIR |= GIO_BLS;  //gio 47 direction input
         bls_status = BLS_COMPLETE;
         if (bls_data_pack)
         {
@@ -481,7 +479,8 @@ static int blaster_init( void )
     PWM0_PER = 709;
     PWM0_PH1D = 355;
     PWM0_START = 1;
-    GPIO23_DIR |= GIO_BLS;  //gio 47 direction input
+    GPIO23_DIR &= ~GIO_BLS;  //gio 47 direction output
+    GPIO23_CLR_DATA |= GIO_BLS; //drive the gpio 47 to low
     TIMER1_TCR &= ~(3<<22); //disable timer1 34
     ret = request_irq(IRQ_TINT1_TINT34, handle_bls_timer1_irqs,SA_INTERRUPT , "ir_blaster_timer1", &device); //TIMER__INTERRUPT
     disable_irq(IRQ_TINT1_TINT34);
