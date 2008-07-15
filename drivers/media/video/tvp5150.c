@@ -834,28 +834,25 @@ static int tvp5150_get_ctrl(struct i2c_client *c, struct v4l2_control *ctrl)
 
 static int tvp5150_get_std(struct i2c_client *c, v4l2_std_id *id)
 {
-	int fmt = tvp5150_read(c, TVP5150_VIDEO_STD);
+	int fmt = tvp5150_read(c, TVP5150_STATUS_REG_5);
 	fmt &= 0x0F;
 	switch (fmt) {
-	case 0x00:
-		*id = V4L2_STD_ALL;
-		break;
-	case 0x02:
+	case 0x01:
 		*id = V4L2_STD_NTSC;
 		break;
-	case 0x04:
+	case 0x03:
 		*id = V4L2_STD_PAL;
 		break;
-	case 0x06:
+	case 0x05:
 		*id = V4L2_STD_PAL_M;
 		break;
-	case 0x08:
+	case 0x07:
 		*id = V4L2_STD_PAL_N | V4L2_STD_PAL_Nc;
 		break;
-	case 0x0A:
+	case 0x09:
 		*id = V4L2_STD_NTSC_443;
 		break;
-	case 0x0C:
+	case 0x0b:
 		*id = V4L2_STD_SECAM;
 		break;
 	default:
