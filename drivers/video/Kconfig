@@ -1857,6 +1857,10 @@ if ARCH_OMAP
 	source "drivers/video/omap/Kconfig"
 endif
 
+if ARCH_DAVINCI
+	source "drivers/video/dm/Kconfig"
+endif
+
 config FB_VIRTUAL
 	tristate "Virtual Frame Buffer support (ONLY FOR TESTING!)"
 	depends on FB

@@ -1,0 +1,6 @@
+config FB_DM
+        tristate "DM frame buffer support (EXPERIMENTAL)"
+        depends on FB
+        help
+          Frame buffer driver for DM644X based boards.
+

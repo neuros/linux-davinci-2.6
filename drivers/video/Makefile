@@ -121,6 +121,7 @@ obj-$(CONFIG_FB_IMAC)             += imacfb.o
 obj-$(CONFIG_FB_VGA16)            += vga16fb.o
 obj-$(CONFIG_FB_OF)               += offb.o
 obj-$(CONFIG_FB_OMAP)             += omap/ cfbcopyarea.o cfbfillrect.o cfbimgblt.o
+obj-$(CONFIG_FB_DM)               += dm/ cfbcopyarea.o cfbfillrect.o cfbimgblt.o
 obj-$(CONFIG_FB_DAVINCI)	  += davincifb.o cfbfillrect.o cfbcopyarea.o cfbimgblt.o
 
 # the test framebuffer is last

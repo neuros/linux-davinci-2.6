@@ -161,7 +161,8 @@ static struct platform_device ntosd_644xa_nandflash_device = {
 };
 #endif
 
-#if defined(CONFIG_FB_DAVINCI) || defined(CONFIG_FB_DAVINCI_MODULE)
+#if defined(CONFIG_FB_DAVINCI) || defined(CONFIG_FB_DAVINCI_MODULE) || \
+defined(CONFIG_FB_DM) || defined(CONFIG_FB_DM_MODULE)
 
 static u64 davinci_fb_dma_mask = DMA_32BIT_MASK;
 
@@ -240,7 +241,8 @@ static struct platform_device *ntosd_644xa_devices[] __initdata = {
 #if defined(CONFIG_MTD_NAND_DAVINCI) || defined(CONFIG_MTD_NAND_DAVINCI_MODULE)
 	&ntosd_644xa_nandflash_device,
 #endif
-#if defined(CONFIG_FB_DAVINCI) || defined(CONFIG_FB_DAVINCI_MODULE)
+#if defined(CONFIG_FB_DAVINCI) || defined(CONFIG_FB_DAVINCI_MODULE) || \
+defined(CONFIG_FB_DM) || defined(CONFIG_FB_DM_MODULE)
 	&davinci_fb_device,
 #endif
 #if defined(CONFIG_USB_MUSB_HDRC) || defined(CONFIG_USB_MUSB_HDRC_MODULE)
