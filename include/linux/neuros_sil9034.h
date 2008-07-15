@@ -25,6 +25,7 @@
  * 
  * 1) Initial creation. ----------------------------------- 2008-06-10 JChen
  * 2) Add support for HDMI user interface . --------------- 2008-06-23 JChen
+ * 3) Add ioctl control for system layer  . --------------- 2008-06-30 JChen
  *
  */
 
@@ -58,6 +59,25 @@
 
 /* Data control register */
 #define DCTL_ADDR						(0x0D)
+
+/* Hdcp RI register */
+#define HDCP_RI1						(0x22)
+#define HDCP_RI2						(0x23)
+#define HDCP_RI128_COMP						(0x24)
+
+/* Hdcp BKSV register */
+#define HDCP_BKSV1_ADDR						(0x10)
+#define HDCP_BKSV2_ADDR						(0x11)
+#define HDCP_BKSV3_ADDR						(0x12)
+#define HDCP_BKSV4_ADDR						(0x13)
+#define HDCP_BKSV5_ADDR						(0x14)
+
+/* Hdcp AKSV register */
+#define HDCP_AKSV1_ADDR						(0x1D)
+#define HDCP_AKSV2_ADDR						(0x1E)
+#define HDCP_AKSV3_ADDR						(0x1F)
+#define HDCP_AKSV4_ADDR						(0x20)
+#define HDCP_AKSV5_ADDR						(0x21)
 
 /* Video Hbit to HSYNC register */
 #define HBIT_2HSYNC1						(0x40)
@@ -153,6 +173,14 @@
 /* Video mode register */
 #define TX_VID_MODE_ADDR					(0x4A)
 
+/* DDC i2c manual register */
+#define DDC_MAN_ADDR						(0xEC)
+#define DDC_ADDR						(0xED)
+#define DDC_SEGM_ADDR						(0xEE)
+#define DDC_OFFSET_ADDR						(0xEF)
+#define DDC_CNT1_ADDR						(0xF0)
+#define DDC_CNT2_ADDR						(0xF1)
+
 
 
 
@@ -181,6 +209,19 @@
 /* Audio IN mode control register */
 #define AUD_MODE_ADDR						(0x14)
 
+/* Ri status register */
+#define RI_STAT_ADDR						(0x26)
+
+/* RI COMMAND */
+#define RI_CMD_ADDR						(0x27)
+
+/* RI Line start register */
+#define RI_LINE_START_ADDR					(0x28)
+
+/* RI RX register */
+#define RI_RX_L_ADDR						(0x29)
+#define RI_RX_H_ADDR						(0x2A)
+
 /* HDMI control register */
 #define HDMI_CTRL_ADDR						(0x2F)
 
@@ -203,10 +244,10 @@
 #define GENERIC1_IF_ADDR 0xC0
 #define GENERIC2_IF_ADDR 0xE0
 #define CP_IF_ADDR   0xDF // Contain Protect 1- byte Frame Info Frame
-#define GEN_RPT		0x1
-#define EN_EN		0x2
-#define GCP_RPT		0x4
-#define GCP_EN		0x8
+#define GEN_RPT		(1<<0)
+#define EN_EN		(1<<1)
+#define GCP_RPT		(1<<2)
+#define GCP_EN		(1<<3)
 #define CLR_AVMUTE	0x10
 #define SET_AVMUTE	0x01
 
@@ -237,6 +278,123 @@
 
 
 /*******************************HDMI Interface *********************/
+#define		DO_NOTHING					0
+#define		SWITCH_480P					1
+#define		SWITCH_720P					2
+#define 	SWITCH_1080I					3
+#define		HDCP_EXCHANGE					4
+#define		SHOW_REGISTER					5
+/*******************************WORK QUEUE *************************/
+#define		HDCP_ENABLE					6
+#define		HDCP_DISABLE					7
+#define		HDCP_RI_STATUS					8
+/******************************* BIT FIELD *********************/
+#define		SET_FIFORTS					(1<<1)
+#define 	SET_SWRST					(1<<0)
+#define		SET_VSYNC					(1<<6)
+#define		SET_VEN						(1<<5)
+#define		SET_HEN						(1<<4)
+#define		SET_BSEL					(1<<2)
+#define		SET_EDGE					(1<<1)
+#define		SET_PD						(1<<0)
+#define		SET_VLOW					(1<<7)
+#define		SET_RSEN					(1<<2)
+#define		SET_HPD						(1<<1)
+#define		SET_P_STABLE					(1<<0)
+#define		SET_PLLF_80UA					(0xf<<1)
+#define		SET_PLLF_45UA					(0x8<<1)
+#define		SET_PLLF_40UA					(0x7<<1)
+#define		SET_PLLF_25UA					(0x4<<1)
+#define		SET_PLLF_15UA					(0x2<<1)
+#define		SET_PLLF_10UA					(0x1<<1)
+#define		SET_PLLF_5UA					(0x0)
+#define		PFEN_ENABLE					(0x1)
+#define		SET_VID_BLANK					(1<<2)
+#define		SET_AUD_MUTE					(1<<1)
+#define		RX_RPTR_ENABLE					(1<<4)
+#define		TX_ANSTOP_ENABLE				(1<<3)
+#define		SET_CP_RESTN					(1<<2)
+#define		SET_ENC_EN					(1<<0)
+#define		BCAP_ENABLE					(1<<1)
+#define		SET_RI_ENABLE					(1<<0)
+#define		SET_RI_DBG_TRASH				(1<<7)
+#define		SET_RI_DBG_HOLD					(1<<6)
+#define		DE_GEN_ENABLE					(1<<6)
+#define		SET_VS_POL_NEG					(1<<5)
+#define		SET_HS_POL_NEG					(1<<4)
+#define		SET_IFPOL_INVERT				(1<<7)
+#define		SET_EXTN_12BIT					(1<<5)
+#define		SET_EXTN_8BIT					~(1<<5)
+#define		CSCSEL_BT709					(1<<4)
+#define		CSCSEL_BT601					~(1<<4)
+#define		PIXEL_REP_4					(0x3)
+#define		PIXEL_REP_1					(0x1)
+#define		PIXEL_NO_REP					(0x0)
+#define		SET_WIDE_BUS_12BITS				(0x2<<7)
+#define		SET_WIDE_BUS_10BITS				(0x1<<7)
+#define		SET_WIDE_BUS_0BITS				(0x0)
+#define		CLIP_CS_ID_YCBCR				(1<<4)
+#define		CLIP_CS_ID_RGB					~(1<<4)
+#define		RANGE_CLIP_ENABLE				(1<<3)
+#define		RGB2YCBCR_ENABLE				(1<<2)
+#define		RANGE_CMPS_ENABLE				(1<<1)
+#define		DOWN_SMPL_ENABLE				(1<<0)
+#define		DITHER_ENABLE					(1<<5)
+#define		RANGE_ENABLE					(1<<4)
+#define		CSC_ENABLE					(1<<3)
+#define		UPSMP_ENABLE					(1<<2)
+#define		DEMUX_ENABLE					(1<<1)
+#define		SYNCEXT_ENABLE					(1<<0)
+#define		INTR1_SOFT					(1<<7)
+#define		INTR1_HPD					(1<<6)
+#define		INTR1_RSEN					(1<<5)
+#define		INTR1_DROP_SAMPLE				(1<<4)
+#define		INTR1_BI_PHASE_ERR				(1<<3)
+#define		INTR1_RI_128					(1<<2)
+#define		INTR1_OVER_RUN					(1<<1)
+#define		INTR1_UNDER_RUN					(1<<0)
+#define		INTR2_BCAP_DONE					(1<<7)
+#define		INTR2_SPDIF_PAR					(1<<6)
+#define		INTR2_ENC_DIS					(1<<5)
+#define		INTR2_PREAM_ERR					(1<<4)
+#define		INTR2_CTS_CHG					(1<<3)
+#define		INTR2_ACR_OVR					(1<<2)
+#define		INTR2_TCLK_STBL					(1<<1)
+#define		INTR2_VSYNC_REC					(1<<0)
+#define		SOFT_INTR_CLEAR					~(1<<3)
+#define		SET_SOFT_INTR					(1<<3)
+#define		OPEN_DRAIN_ENABLE				(1<<2)
+#define		SET_POLARITY_LOW				(1<<1)
+#define		SET_TCLKSEL_40					(0x3<<6)
+#define		SET_TCLKSEL_20					(0x2<<6)
+#define		SET_TCLKSEL_10					(0x1<<6)
+#define		SET_TCLKSEL_05					(0x0<<6)
+#define		LVBIAS_ENABLE					(1<<2)
+#define		STERM_ENABLE					(1<<0)
+#define		SD3_ENABLE					(1<<7)
+#define		SD2_ENABLE					(1<<6)
+#define		SD1_ENABLE					(1<<5)
+#define		SD0_ENABLE					(1<<4)
+#define		DSD_ENABLE					(1<<3)
+#define		SPDIF_ENABLE					(1<<1)
+#define		AUD_ENABLE					(1<<0)
+#define		PDIDCK_NORMAL					(1<<2)
+#define		PDOSC_NORMAL					(1<<1)
+#define		PDTOT_NORMAL					(1<<0)
+#define		MPEG_ENABLE					(1<<7)
+#define		MPEG_RPT_ENABLE					(1<<6)
+#define		CEA861_AUD_ENABLE				(1<<5)
+#define		AUD_RPT_ENABLE					(1<<4)
+#define		SPD_ENABLE					(1<<3)
+#define		SPD_RPT_ENABLE					(1<<2)
+#define		AVI_ENABLE					(1<<1)
+#define		AVI_RPT_ENABLE					(1<<0)
+#define		HDMI_LAYOUT0					~(1<<1)
+#define		HDMI_LAYOUT1					(1<<1)
+#define		HDMI_MODE_ENABLE				(1<<0)
+#define		SET_MAN_OVR					(1<<7)
+#define		SET_MAN_SDA					(1<<5)
+#define		SET_MAN_SCL					(1<<4)
 
 
 #endif /* NEUROS_SIL9034__H */
