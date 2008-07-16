@@ -121,9 +121,16 @@ EXPORT_SYMBOL(ide_hwifs);
 static void init_hwif_data(ide_hwif_t *hwif, unsigned int index)
 {
 	unsigned int unit;
+	unsigned int noprobe[MAX_DRIVES];
 
 	/* bulk initialize hwif & drive info with zeros */
+	for(unit = 0; unit < MAX_DRIVES; unit++) {
+		noprobe[unit] = hwif->drives[unit].noprobe;
+	}
 	memset(hwif, 0, sizeof(ide_hwif_t));
+	for(unit = 0; unit < MAX_DRIVES; unit++) {
+		hwif->drives[unit].noprobe = noprobe[unit];
+	}
 
 	/* fill in any non-zero initial values */
 	hwif->index	= index;

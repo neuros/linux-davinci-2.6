@@ -643,6 +643,7 @@ static void hwif_register (ide_hwif_t *hwif)
 static int wait_hwif_ready(ide_hwif_t *hwif)
 {
 	int rc;
+	unsigned int unit;
 
 	printk(KERN_DEBUG "Probing IDE interface %s...\n", hwif->name);
 
@@ -659,16 +660,24 @@ static int wait_hwif_ready(ide_hwif_t *hwif)
 		return rc;
 
 	/* Now make sure both master & slave are ready */
-	SELECT_DRIVE(&hwif->drives[0]);
-	hwif->OUTB(8, hwif->io_ports[IDE_CONTROL_OFFSET]);
-	mdelay(2);
-	rc = ide_wait_not_busy(hwif, 35000);
-	if (rc)
-		return rc;
-	SELECT_DRIVE(&hwif->drives[1]);
-	hwif->OUTB(8, hwif->io_ports[IDE_CONTROL_OFFSET]);
-	mdelay(2);
-	rc = ide_wait_not_busy(hwif, 35000);
+    for (unit = 0; unit < MAX_DRIVES; ++unit) {
+            /* Ignore disks that we will not probe for later. */
+            if (!hwif->drives[unit].noprobe ||
+                hwif->drives[unit].present) {
+                    SELECT_DRIVE(&hwif->drives[unit]);
+                    hwif->OUTB(8, hwif->io_ports[IDE_CONTROL_OFFSET]);
+                    mdelay(2);
+                    rc = ide_wait_not_busy(hwif, 35000);
+                    if (rc) {
+                            /* Exit function with master reselected */
+                            if (unit != 0)
+                                    SELECT_DRIVE(&hwif->drives[0]);
+                            return rc;
+                    }
+            } else {
+                    printk("Skip ide_wait_not_busy for %s:%d\n",hwif->name, unit);
+            }
+    }
 
 	/* Exit function with master reselected (let's be sane) */
 	SELECT_DRIVE(&hwif->drives[0]);
@@ -723,8 +732,6 @@ static void probe_hwif(ide_hwif_t *hwif, void (*fixup)(ide_hwif_t *hwif))
 	unsigned long flags;
 	unsigned int irqd;
 
-    if(!hwif->present)
-        return;
 	if (hwif->noprobe)
 		return;
 
