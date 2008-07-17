@@ -80,8 +80,8 @@ MODULE_LICENSE("GPL");
 			 (x)->name);					\
 } while (0)
 #define DEVICE_CMD(dev, cmd, arg) \
-		((dev) && (dev)->capture_device_cmd && \
-		(dev)->capture_device_cmd(cmd, arg));
+	((dev) && (dev)->capture_device_cmd) ?		\
+	(dev)->capture_device_cmd(cmd, arg) : -EINVAL
 
 static struct v4l2_rect ntsc_bounds = VPFE_WIN_NTSC;
 static struct v4l2_rect pal_bounds = VPFE_WIN_PAL;
@@ -90,6 +90,12 @@ static struct v4l2_fract pal_aspect = VPFE_PIXELASPECT_PAL;
 static struct v4l2_rect ntscsp_bounds = VPFE_WIN_NTSC_SP;
 static struct v4l2_rect palsp_bounds = VPFE_WIN_PAL_SP;
 static struct v4l2_fract sp_aspect = VPFE_PIXELASPECT_NTSC_SP;
+
+#define NTOSD_INPUTS	2
+static struct v4l2_input ntosd_inputs[NTOSD_INPUTS] = {
+     { 0, "COMPOSITE", V4L2_INPUT_TYPE_CAMERA, 2, 0, V4L2_STD_ALL, 0 },
+     { 1, "COMPONENT", V4L2_INPUT_TYPE_CAMERA, 2, 0, V4L2_STD_ALL, 0 },
+};
 
 static vpfe_obj vpfe_device = {	/* the default format is NTSC */
 	.usrs = 0,
@@ -584,38 +590,36 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 	}
 	case VIDIOC_ENUMINPUT:
 	{
-		u32 index=0;
 		struct v4l2_input *input = (struct v4l2_input *)arg;
-		if (input->index > 1) 	/* only two inputs are available */
+
+		if( input->index < 0 || input->index >= NTOSD_INPUTS)
 			ret = -EINVAL;
-		index = input->index;
-		memset(input, 0, sizeof(*input));
-                input->index = index;
-		input->type = V4L2_INPUT_TYPE_CAMERA;
-		input->std = V4L2_STD_ALL;
-		if(input->index == 0){
-			sprintf(input->name, "COMPOSITE");
-		}else if(input->index == 1) {
-			sprintf(input->name, "S-VIDEO");
-		}
+
+		memcpy(input, &ntosd_inputs[input->index], sizeof(struct v4l2_input));
 		break;
 	}
 	case VIDIOC_G_INPUT:
 	{
 		int *index = (int *)arg;
+
 		*index = vpfe->capture_params.amuxmode;
 		break;
 	}
 	case VIDIOC_S_INPUT:
 	{
 		int *index = (int *)arg;
-		if (*index > 1 || *index < 0) {
-			ret = -EINVAL;
-		}
+
+		if (*index == VPFE_AMUX_COMPOSITE)
+			vpfe_select_capture_device(VPFE_CAPTURE_ID_TVP5150);
+		else if (*index == VPFE_AMUX_COMPONENT)
+			vpfe_select_capture_device(VPFE_CAPTURE_ID_TVP7000);
+		else
+			return -EINVAL;
+
 		vpfe->capture_params.amuxmode = *index;
 
-		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
-				  VIDIOC_S_INPUT, index);
+		ret = DEVICE_CMD(ACTIVE_DEVICE(), VIDIOC_S_INPUT, index);
+
 		break;
 	}
 	case VIDIOC_CROPCAP:
@@ -967,7 +971,9 @@ static int vpfe_open(struct inode *inode, struct file *filep)
 		down_interruptible(&vpfe->lock);
 		DEVICE_CMD(ACTIVE_DEVICE(), VIDIOC_QUERYSTD, id);
 		up(&vpfe->lock);
-		if (*id == V4L2_STD_UNKNOWN)
+		if (*id != V4L2_STD_UNKNOWN)
+			vpfe->capture_params.amuxmode = VPFE_AMUX_COMPOSITE;
+		else
 		{
 			/*  no valid input for tvp5150 then try tvp7000
 			 *  activate the tvp7000, and detect if there is valid input
