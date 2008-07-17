@@ -907,12 +907,6 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		up(&vpfe->lock);
 		break;
 	}
-	case VPFE_CMD_CAPTURE_ACTIVE:
-	{
-		int device_id = *((int *)arg);
-		ret = vpfe_select_capture_device(device_id);
-		break;
-	}
 	default:
 		ret = -ENOIOCTLCMD;
 		break;
@@ -962,6 +956,30 @@ static int vpfe_open(struct inode *inode, struct file *filep)
 	fh->prio = V4L2_PRIORITY_UNSET;
 	v4l2_prio_open(&vpfe->prio, &fh->prio);
 	vpfe->usrs++;
+
+	/* active the tvp5150 */
+	vpfe_select_capture_device(VPFE_CAPTURE_ID_TVP5150);
+	/* detect if there is valid signal input */
+	{
+		v4l2_std_id *id;
+
+		*id = 0;
+		down_interruptible(&vpfe->lock);
+		DEVICE_CMD(ACTIVE_DEVICE(), VIDIOC_QUERYSTD, id);
+		up(&vpfe->lock);
+		if (*id == V4L2_STD_UNKNOWN)
+		{
+			/*  no valid input for tvp5150 then try tvp7000
+			 *  activate the tvp7000, and detect if there is valid input
+			 *  Todo after tvp7000 driver available.
+			 */
+			debug_print(KERN_INFO "no valid signal input\n");
+			/*  the device can be opened even without valid input
+			 *  so if no valid input, use a default one
+			 */
+			vpfe->capture_params.amuxmode = VPFE_AMUX_COMPOSITE;
+		}
+	}
 
 	return 0;
 }
