@@ -181,7 +181,7 @@
 #define	OSD_MISCCT				(OSD_REG_BASE + 0xE8)
 #define	OSD_CLUTRAMYC				(OSD_REG_BASE + 0xEC)
 #define	OSD_CLUTRAMC				(OSD_REG_BASE + 0xF0)
-#define	OSD_TRANSPVA				(OSD_REG_BASE + 0xF0)
+#define	OSD_TRANSPVA				(OSD_REG_BASE + 0xF4)
 #define	OSD_PPVWIN0AD				(OSD_REG_BASE + 0xFC)
 
 /* bit definitions */
@@ -255,7 +255,7 @@
 #define	OSD_OSDWIN0MD_OVZ0_SHIFT		8
 #define	OSD_OSDWIN0MD_BMW0			(3 << 6)
 #define	OSD_OSDWIN0MD_BMW0_SHIFT		6
-#define	OSD_OSDWIN0MD_BLND0			(3 << 3)
+#define	OSD_OSDWIN0MD_BLND0			(7 << 3)
 #define	OSD_OSDWIN0MD_BLND0_SHIFT		3
 #define	OSD_OSDWIN0MD_TE0			(1 << 2)
 #define	OSD_OSDWIN0MD_OFF0			(1 << 1)
@@ -271,7 +271,7 @@
 #define	OSD_OSDWIN1MD_OVZ1_SHIFT		8
 #define	OSD_OSDWIN1MD_BMW1			(3 << 6)
 #define	OSD_OSDWIN1MD_BMW1_SHIFT		6
-#define	OSD_OSDWIN1MD_BLND1			(3 << 3)
+#define	OSD_OSDWIN1MD_BLND1			(7 << 3)
 #define	OSD_OSDWIN1MD_BLND1_SHIFT		3
 #define	OSD_OSDWIN1MD_TE1			(1 << 2)
 #define	OSD_OSDWIN1MD_OFF1			(1 << 1)
@@ -431,7 +431,6 @@
 #define	OSD_TRANSPVA_RGBTRANS			(0xff << 0)
 #define	OSD_TRANSPVA_RGBTRANS_SHIFT		0
 
-
 enum
 {
 	DAVINCIFB_WIN_VID0,
@@ -450,6 +449,10 @@ enum
 	DAVINCIFB_OUTPUTS
 };
 
+struct davincifb_mach_info
+{
+	unsigned int size[DAVINCIFB_WINDOWS];
+};
 
 #define LCD             0
 #define NTSC            1
@@ -477,4 +480,6 @@ struct zoom_params
 #define FBIO_SETZOOM		_IOW('F', 0x24, struct zoom_params)
 #define FBIO_GETSTD		_IOR('F', 0x25, u_int32_t)
 #define FBIO_ENABLE 		_IOW('F', 0x26, u_int32_t)
+#define FBIO_TRANSP 		_IOW('F', 0x27, u_int32_t)
+#define FBIO_TRANSP_COLOR	_IOW('F', 0x28, u_int32_t)
 #endif /* _DAVINCIFB_H_ */
