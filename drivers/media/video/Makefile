@@ -124,6 +124,7 @@ obj-$(CONFIG_USB_QUICKCAM_MESSENGER)	+= usbvideo/
 
 obj-$(CONFIG_VIDEO_TVP5146)     += tvp5146.o
 obj-$(CONFIG_VIDEO_TVP5150)	+= tvp5150.o
+obj-$(CONFIG_VIDEO_TVP7000)	+= tvp7000.o
 
 obj-$(CONFIG_VIDEO_VIVI) += vivi.o
 

@@ -42,6 +42,7 @@
 
 #define    VPFE_AMUX_COMPOSITE  0
 #define    VPFE_AMUX_SVIDEO     1
+#define    VPFE_AMUX_COMPONENT     2
 
 /* settings for commonly used video formats */
 #define VPFE_WIN_NTSC    {0,0,720,480}
@@ -55,6 +56,7 @@
 
 #define VPFE_CAPTURE_ID_TVP5146		0
 #define VPFE_CAPTURE_ID_TVP5150		1
+#define VPFE_CAPTURE_ID_TVP7000		2
 
 
 #ifdef __KERNEL__

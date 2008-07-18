@@ -383,9 +383,7 @@ config VIDEO_DAVINCI
 	  To compile this driver as a module, choose M here: the
 	  module will be called vpfe.
 
-choice
-	prompt "Video Capture Decoder"
-	optional
+menu "Video Capture Decoder"
 	depends on VIDEO_DAVINCI
 
 config VIDEO_TVP5146
@@ -405,7 +403,16 @@ config VIDEO_TVP5150
 
           To compile this driver as a module, choose M here: the
           module will be called tvp5150.
-endchoice
+
+config VIDEO_TVP7000
+	tristate "tvp7000 video capture driver"
+	depends on I2C && ARCH_DAVINCI
+	---help---
+          Support for I2C bus based TVP7000 configuration.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called tvp7000.
+endmenu
 
 source "drivers/media/video/bt8xx/Kconfig"
 
