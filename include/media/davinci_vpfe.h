@@ -41,8 +41,7 @@
 #define VPFE_CMD_CAPTURE_ACTIVE _IOW('V', BASE_VIDIOC_PRIVATE + 4, long int)
 
 #define    VPFE_AMUX_COMPOSITE  0
-#define    VPFE_AMUX_SVIDEO     1
-#define    VPFE_AMUX_COMPONENT     2
+#define    VPFE_AMUX_COMPONENT	1
 
 /* settings for commonly used video formats */
 #define VPFE_WIN_NTSC    {0,0,720,480}
@@ -54,9 +53,8 @@
 #define VPFE_WIN_QVGA    {0,0,320,240}
 #define VPFE_WIN_SIF     {0,0,352,240}
 
-#define VPFE_CAPTURE_ID_TVP5146		0
-#define VPFE_CAPTURE_ID_TVP5150		1
-#define VPFE_CAPTURE_ID_TVP7000		2
+#define VPFE_CAPTURE_ID_TVP5150		0
+#define VPFE_CAPTURE_ID_TVP7000		1
 
 
 #ifdef __KERNEL__
