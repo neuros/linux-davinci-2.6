@@ -30,6 +30,7 @@
 #include <linux/fs.h>
 #include <linux/poll.h>
 #include <linux/interrupt.h>
+#include <linux/device.h>
 #include <asm/io.h>
 #include <asm/arch/irqs.h>
 
@@ -71,6 +72,7 @@ static int int_type;
 static struct timer_list learning_key_timer;
 static struct blaster_data_type *BlsKey;
 static struct blaster_data_pack *bls_data_pack;
+static struct class * sysfs_class;
 
 struct irrtc_device
 {
@@ -500,6 +502,11 @@ static int __init irrtc_init(void)
 
     printk(KERN_INFO "\t" MOD_DESC "\n");
 
+    sysfs_class = class_create(THIS_MODULE, "neuros_ir_blaster");
+    if (IS_ERR(sysfs_class)) 
+    {
+        return PTR_ERR(sysfs_class);
+    }
     status = register_chrdev(NEUROS_IR_BLASTER_MAJOR, "neuros_ir_blaster", &irrtc_fops);
     if (status != 0)
     {
@@ -509,6 +516,9 @@ static int __init irrtc_init(void)
         status = -1;
         goto out;
     }
+	class_device_create(sysfs_class, NULL,
+			    MKDEV(NEUROS_IR_BLASTER_MAJOR, 0),
+			    NULL, "neuros_ir_blaster");
 
     blaster_init();
 
@@ -520,12 +530,14 @@ static void __exit irrtc_exit(void)
 {
     //~ irqs_irrtc_exit();
 
-    unregister_chrdev(NEUROS_IR_BLASTER_MAJOR, "ir_blaster");
+    unregister_chrdev(NEUROS_IR_BLASTER_MAJOR, "neuros_ir_blaster");
+    class_device_destroy(sysfs_class, MKDEV(NEUROS_IR_BLASTER_MAJOR, 0));
+    class_destroy(sysfs_class);
 }
 
 MODULE_AUTHOR("Neuros");
 MODULE_DESCRIPTION(MOD_DESC);
-MODULE_LICENSE("Neuros Technology LLC");
+MODULE_LICENSE("GPL");
 
 module_init(irrtc_init);
 module_exit(irrtc_exit);

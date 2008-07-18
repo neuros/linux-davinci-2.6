@@ -35,6 +35,7 @@
 #include <linux/jiffies.h>
 #include <linux/poll.h>
 #include <linux/input.h>
+#include <linux/device.h>
 
 #include <asm/uaccess.h>
 #include <asm/io.h>
@@ -66,6 +67,7 @@ struct irrtc_device
     int    key;
 };
 static struct irrtc_device device;
+static struct class * sysfs_class;
 
 static wait_queue_head_t wait;
 static wait_queue_head_t poll_queue;
@@ -395,7 +397,11 @@ static int __init irrtc_init(void)
     init_waitqueue_head (&poll_queue);
 
     printk(KERN_INFO "\t" MOD_DESC "\n");
-
+    sysfs_class = class_create(THIS_MODULE, "neuros_ir");
+    if (IS_ERR(sysfs_class)) 
+    {
+        return PTR_ERR(sysfs_class);
+    }
     status = register_chrdev(NEUROS_IR_MAJOR, "neuros_ir", &irrtc_fops);
     if (status != 0)
     {
@@ -406,6 +412,9 @@ static int __init irrtc_init(void)
 
         goto out;
     }
+    class_device_create(sysfs_class, NULL,
+                        MKDEV(NEUROS_IR_MAJOR, 0),
+                        NULL, "neuros_ir");
 
     irrtc_inputdev_init();
     memset(keybuf,-1,sizeof(keybuf));  //init keybuf to none key
@@ -422,11 +431,13 @@ static void __exit irrtc_exit(void)
     irqs_irrtc_exit();
     irrtc_inputdev_close();
     unregister_chrdev(NEUROS_IR_MAJOR, "neuros_ir");
+    class_device_destroy(sysfs_class, MKDEV(NEUROS_IR_MAJOR, 0));
+    class_destroy(sysfs_class);
 }
 
 MODULE_AUTHOR("Neuros");
 MODULE_DESCRIPTION(MOD_DESC);
-MODULE_LICENSE("Neuros Technology LLC");
+MODULE_LICENSE("GPL");
 
 module_init(irrtc_init);
 module_exit(irrtc_exit);
