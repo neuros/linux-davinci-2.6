@@ -35,6 +35,8 @@
 #include <asm/arch/hardware.h>
 #include <asm/arch/psc.h>
 
+#include <video/davincifb.h>
+
 /* other misc. init functions */
 void __init davinci_psc_init(void);
 void __init davinci_irq_init(void);
@@ -164,6 +166,13 @@ static struct platform_device ntosd_644xa_nandflash_device = {
 #if defined(CONFIG_FB_DAVINCI) || defined(CONFIG_FB_DAVINCI_MODULE) || \
 defined(CONFIG_FB_DM) || defined(CONFIG_FB_DM_MODULE)
 
+static struct davincifb_mach_info davincifb_mach_info = {
+	.size[DAVINCIFB_WIN_VID0] = 12441600, /* 1920x1080*16bpp*3buffers */
+	.size[DAVINCIFB_WIN_VID1] = 691200, /* 720x480*16bpp*1buffer */
+	.size[DAVINCIFB_WIN_OSD0] = 3686400, /* 1280x720*16bpp*2buffers */
+	.size[DAVINCIFB_WIN_OSD1] = 172800, /* 720x480*4bpp*1buffer */
+};
+
 static u64 davinci_fb_dma_mask = DMA_32BIT_MASK;
 
 static struct platform_device davinci_fb_device = {
@@ -172,6 +181,7 @@ static struct platform_device davinci_fb_device = {
 	.dev = {
 		.dma_mask		= &davinci_fb_dma_mask,
 		.coherent_dma_mask      = DMA_32BIT_MASK,
+		.platform_data 		= &davincifb_mach_info,
 	},
 	.num_resources = 0,
 };

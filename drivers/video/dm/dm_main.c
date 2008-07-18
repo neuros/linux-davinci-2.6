@@ -34,6 +34,8 @@
  * function is getting big
  * + Remove dparams completely and redo the parser of the parameters, also
  * add module parameters
+ * + The status of each window isnt stored and every mode set resets every
+ * window configuration, whcih is really wrong
  *
  * Notes:
  * + Every framebuffer but the vid0 can have a size different to the output size
@@ -161,11 +163,9 @@ struct dm_info {
 	unsigned int windows_mask;
 	struct output_device *output;
 	unsigned int output_sel;
+	struct davincifb_mach_info *mach_info;
 };
 
-
-/* Random value chosen for now. Should be within the panel's supported range */
-#define LCD_PANEL_CLOCK	180000
 
 /* All window widths have to be rounded up to a multiple of 32 bytes */
 
@@ -192,6 +192,8 @@ static char *dm_win_names[DAVINCIFB_WINDOWS] = {
 	[DAVINCIFB_WIN_VID1] = "dm_vid1_fb"
 };
 
+
+#if 0
 static struct fb_var_screeninfo dm_default_var[DAVINCIFB_WINDOWS] = {
 	/* the max mode allowed on osd0 should be 720p x 2 buffers
 	 * which is 1843200 pixels at 16bpp (1280*720*2)
@@ -240,6 +242,9 @@ static struct fb_var_screeninfo dm_default_var[DAVINCIFB_WINDOWS] = {
 		.vmode = FB_VMODE_INTERLACED,
 	}
 };
+
+#endif
+
 static inline int is_win(const struct dm_win_info *w, unsigned int win)
 {
 	if (w->win == win)
@@ -278,184 +283,134 @@ static inline int is_win(const struct dm_win_info *w, unsigned int win)
 #define DISP_YRES1080I   1080
 #define DISP_MEMY1080I   1080
 
+/* Random value chosen for now. Should be within the panel's supported range */
+#define LCD_PANEL_CLOCK	180000
 
-#if 0
-#define OSD0_XRES	round_32((DISP_XRES)*16/8) * 8/16	/* pixels */
-#define OSD0_YRES	DISP_YRES
-#define OSD0_FB_PHY	0
-#define OSD0_FB_SIZE	(round_32((DISP_XRES)*16/8) * DISP_MEMY * DOUBLE_BUF)
-
-			/* 16 bpp, Double buffered */
-static struct fb_var_screeninfo osd0_default_var = {
-	.xres = OSD0_XRES,
-	.yres = OSD0_YRES,
-	.xres_virtual = OSD0_XRES,
-	.yres_virtual = OSD0_YRES * DOUBLE_BUF,
-	.xoffset = 0,
-	.yoffset = 0,
-	.bits_per_pixel = 16,
-	.grayscale = 0,
-	.red = {11, 5, 0},
-	.green = {5, 6, 0},
-	.blue = {0, 5, 0},
-	.transp = {0, 0, 0},
-	.nonstd = 0,
-	.activate = FB_ACTIVATE_NOW,
-	.height = -1,
-	.width = -1,
-	.accel_flags = 0,
-	.pixclock = LCD_PANEL_CLOCK,	/* picoseconds */
-	.left_margin = 40,	/* pixclocks */
-	.right_margin = 4,	/* pixclocks */
-	.upper_margin = 8,	/* line clocks */
-	.lower_margin = 2,	/* line clocks */
-	.hsync_len = 4,		/* pixclocks */
-	.vsync_len = 2,		/* line clocks */
-	.sync = 0,
-	.vmode = FB_VMODE_INTERLACED,
-};
-
-/* Using the full screen for DAVINCIFB_WIN_OSD1 by default */
-#define OSD1_XRES	round_32(DISP_XRES*4/8) * 8/4	/* pixels */
-#define OSD1_YRES	DISP_YRES
-#define OSD1_FB_PHY	0
-#define OSD1_FB_SIZE	(round_32(DISP_XRES*4/8) * DISP_MEMY * DOUBLE_BUF)
-
-static struct fb_var_screeninfo osd1_default_var = {
-	.xres = DISP_XRES,
-	.yres = OSD1_YRES,
-	.xres_virtual = OSD1_XRES,
-	.yres_virtual = OSD1_YRES * DOUBLE_BUF,
-	.xoffset = 0,
-	.yoffset = 0,
-	.bits_per_pixel = 4,
-	.activate = FB_ACTIVATE_NOW,
-	.accel_flags = 0,
-	.pixclock = LCD_PANEL_CLOCK,	/* picoseconds */
-	.vmode = FB_VMODE_INTERLACED,
-};
-
-/* Using the full screen for DAVINCIFB_WIN_OSD0 by default */
-#define VID0_XRES	round_32(DISP_XRES*16/8) * 8/16	/* pixels */
-#define VID0_YRES	DISP_YRES
-#define VID0_FB_PHY	0
-#define VID0_FB_SIZE	(round_32(DISP_XRES*16/8) * DISP_MEMY * TRIPLE_BUF)
-static struct fb_var_screeninfo vid0_default_var = {
-	.xres = VID0_XRES,
-	.yres = VID0_YRES,
-	.xres_virtual = VID0_XRES,
-	.yres_virtual = VID0_YRES * TRIPLE_BUF,
-	.xoffset = 0,
-	.yoffset = 0,
-	.bits_per_pixel = 16,
-	.activate = FB_ACTIVATE_NOW,
-	.accel_flags = 0,
-	.pixclock = LCD_PANEL_CLOCK,	/* picoseconds */
-	.vmode = FB_VMODE_INTERLACED,
-};
-
-/* Using the bottom right quadrant of the screen screen for DAVINCIFB_WIN_VID1 by default,
- * but keeping the framebuffer allocated for the full screen, so the user can
- * change the 'xres' and 'yres' later using the FBIOPUT_VSCREENINFO ioctl.
- */
-#define VID1_BPP	16	/* Video1 can be in YUV or RGB888 format */
-#define VID1_XRES round_32(DISP_XRES*16/8) * 8/16	/* pixels */
-#define VID1_YRES DISP_YRES
-#define VID1_FB_PHY	0
-#define VID1_FB_SIZE (round_32(DISP_XRES*16/8) * DISP_MEMY * TRIPLE_BUF)
-static struct fb_var_screeninfo vid1_default_var = {
-	.xres = VID1_XRES,
-	.yres = VID1_YRES,
-	.xres_virtual = VID1_XRES,
-	.yres_virtual = VID1_YRES * TRIPLE_BUF,
-	.xoffset = 0,
-	.yoffset = 0,
-	.bits_per_pixel = VID1_BPP,
-	.activate = FB_ACTIVATE_NOW,
-	.accel_flags = 0,
-	.pixclock = LCD_PANEL_CLOCK,	/* picoseconds */
-	.vmode = FB_VMODE_INTERLACED,
-};
-
-#endif
-static struct dmparams_t {
-	u8 output;
-	u8 format;
-	u8 windows;		/* bitmap flag based on DAVINCIFB_WIN_VID0, DAVINCIFB_WIN_VID1, DAVINCIFB_WIN_OSD0, DAVINCIFB_WIN_OSD1
-				 * definitions in header file */
-	u32 vid0_xres;
-	u32 vid0_yres;
-	u32 vid0_xpos;
-	u32 vid0_ypos;
-
-	u32 vid1_xres;
-	u32 vid1_yres;
-	u32 vid1_xpos;
-	u32 vid1_ypos;
-
-	u32 osd0_xres;
-	u32 osd0_yres;
-	u32 osd0_xpos;
-	u32 osd0_ypos;
-
-	u32 osd1_xres;
-	u32 osd1_yres;
-	u32 osd1_xpos;
-	u32 osd1_ypos;
-
-	u32 vid0_phys;
-	u32 vid1_phys;
-	u32 osd0_phys;
-	u32 osd1_phys;
-} dmparams = {
-	NTSC,		/* output */
-	    COMPOSITE,		/* format */
-	    (1 << DAVINCIFB_WIN_VID0) | (1 << DAVINCIFB_WIN_VID1) | (1 << DAVINCIFB_WIN_OSD0) | (1 << DAVINCIFB_WIN_OSD1),
-	    /* windows registered */
-	    720, 480, 0, 0,	/* vid0 size and position */
-	    720, 480, 0, 0,	/* vid1 size and position */
-	    720, 480, 0, 0,	/* osd0 size and position */
-	    720, 480, 0, 0,	/* osd1 size and position */
-#if 0
-		VID0_FB_PHY,
-		VID1_FB_PHY,
-		OSD0_FB_PHY,
-		OSD1_FB_PHY,
-#endif
-};
-
-
-static const struct fb_videomode dm_modedb[] = {
+static const struct fb_videomode dmfb_modedb[] = {
 	/* name, refresh, xres, yres, pixclock, left_margin, right_margin
 	 * upper_margin, lower_margin, hsync_len, vsync_len, sync,
 	 *  vmode, flag
 	 */
-	/* 576i*/
-	{ "576i", 50, 720, 576, 0, 0, 0, 0, 0, 0, FB_SYNC_BROADCAST,
-		FB_VMODE_INTERLACED},
+	/* Standard Modes */
+	{ "576i", 50, 720, 576, LCD_PANEL_CLOCK, 0, 0, 0, 0, 127, 6, FB_SYNC_BROADCAST,
+		FB_VMODE_INTERLACED, 0},
+	{ "480i", 50, 720, 480, LCD_PANEL_CLOCK, 0, 0, 0, 0, 127, 5, FB_SYNC_BROADCAST,
+		FB_VMODE_INTERLACED, 0},
+	/* Modes provided by THS8200 */
+	{ "480p", 30, 720, 480, LCD_PANEL_CLOCK, 122, 15, 36, 8, 0x50, 0x5, FB_SYNC_BROADCAST, FB_VMODE_NONINTERLACED, 0},
+	{ "720p", 30, 1280, 720, LCD_PANEL_CLOCK, 300, 69, 26, 3, 0x50, 0x5, FB_SYNC_BROADCAST, FB_VMODE_NONINTERLACED, 0},
 };
 /*============================================================================*
  *                              VENC interface                                *
  *============================================================================*/
-/* VOUT code */
-#if 0
-struct dm_vout_ops {
-
-};
-
-static int dm_vout_register(struct dm_vout_ops *ops)
+/* Find the mode that matches exactly this var */
+static int dm_venc_find_mode(const struct fb_var_screeninfo *var)
 {
-	/* append to the list of ops */
+	unsigned int i;
+
+        /* only check the mode that has the same displayable size */
+	for (i = 0; i < ARRAY_SIZE(dmfb_modedb); i++) {
+		if (var->xres == dmfb_modedb[i].xres &&
+			var->yres == dmfb_modedb[i].yres)
+			return i;
+	}
+	return -EINVAL;
 }
 
+/* Set the timings from a mode */
+static int dm_venc_mode_set(struct dm_info *dm, const struct fb_videomode *mode)
+{
+	dispc_reg_out(VENC_HSPLS, mode->hsync_len);
+	dispc_reg_out(VENC_VSPLS, mode->vsync_len);
+	dispc_reg_out(VENC_HINT, mode->xres + mode->left_margin +
+		mode->right_margin);
+	dispc_reg_out(VENC_HSTART, mode->left_margin);
+	dispc_reg_out(VENC_HVALID, mode->xres);
+	dispc_reg_out(VENC_VINT, mode->yres + mode->upper_margin +
+		mode->lower_margin);
+	dispc_reg_out(VENC_VSTART, mode->upper_margin);
+	dispc_reg_out(VENC_VVALID, mode->yres);
+	/* TODO check vmode (interlaced / progressive)*/
+	/* set the window field / frame mode */
+	dispc_reg_out(VENC_YCCCTL, 0x0);
+}
 
-/* VENC */
-struct dm_vout_ops dm_vout_venc {
+/* Select the output on the venc mode. This outputs are only
+ * available on standard moed timings, both SD or HD.
+ * DACSEL.DAnS CMPNT.MRGB DAC Output
+ *      0           -        CVBS
+ *      1           -      S-Video Y
+ *      2           -      S-Video C
+ *      3          0           Y
+ *                 1           G
+ *      4          0          Pb
+ *                 1           B
+ *      5          0           Pr
+ *                 1           R
+ */
+int dm_venc_set_state(struct output_device *od)
+{
+	struct dm_info *dm =
+		(struct dm_info *)class_get_devdata(&od->class_dev);
+	unsigned long state = od->request_state;
 
+
+	/* TODO check that the output is in standard mode */
+	switch (state)
+	{
+		case DAVINCIFB_OUT_COMPOSITE:
+		dispc_reg_out(VENC_DACSEL, 0x0);
+		break;
+
+		case DAVINCIFB_OUT_COMPONENT:
+		/* Enable Component output; DAC A: Y, DAC B: Pb, DAC C: Pr  */
+		dispc_reg_out(VENC_DACSEL, 0x543);
+		break;
+
+		case DAVINCIFB_OUT_SVIDEO:
+		/* Enable S-Video Output; DAC B: S-Video Y, DAC C: S-Video C  */
+		dispc_reg_out(VENC_DACSEL, 0x210);
+		break;
+
+		case DAVINCIFB_OUT_RGB:
+		/* TODO handle rgb */
+		printk("rgb!\n");
+		break;
+
+		default:
+		return -EINVAL;
+
+	}
+	dm->output_sel = state;
+	return 0;
+}
+/* Returns the current output mode selcted */
+int dm_venc_get_status(struct output_device *od)
+{
+	struct dm_info *dm =
+		(struct dm_info *)class_get_devdata(&od->class_dev);
+
+	return dm->output_sel;
+}
+
+struct output_properties dm_venc_props = {
+	.set_state = &dm_venc_set_state,
+	.get_status = &dm_venc_get_status,
 };
+#if 0
+static int dm_vout_probe(struct dm_info *info)
+{
+	int ret;
+
+	dm->output = video_output_register("venc", dm->dev, dm, &dm_venc_props);
+	if (!dm->output)
+		return -EINVAL;
+	return 0;
+}
 #endif
-
-
+/*============================================================================*
+ *                             Mode definitions                               *
+ *============================================================================*/
 static void enable_digital_output(bool on)
 {
 	if (on) {
@@ -899,237 +854,11 @@ static void davincifb_720p_component_config(int on)
 	}
 }
 
-static void davincifb_ntsc_composite_config(int on)
-{
-	if (on) {
-		/* Reset video encoder module */
-		dispc_reg_out(VENC_VMOD, 0);
-
-		/* Enable Composite output and start video encoder */
-		dispc_reg_out(VENC_VMOD, (VENC_VMOD_VIE | VENC_VMOD_VENC));
-
-		/* Set REC656 Mode */
-		dispc_reg_out(VENC_YCCCTL, 0x1);
-
-		/* Enable output mode and NTSC  */
-		dispc_reg_out(VENC_VMOD, 0x1003);
-
-		/* Enable all DACs  */
-		dispc_reg_out(VENC_DACTST, 0);
-	} else {
-		/* Reset video encoder module */
-		dispc_reg_out(VENC_VMOD, 0);
-	}
-}
-
-static void davincifb_ntsc_svideo_config(int on)
-{
-	if (on) {
-		/* Reset video encoder module */
-		dispc_reg_out(VENC_VMOD, 0);
-
-		/* Enable Composite output and start video encoder */
-		dispc_reg_out(VENC_VMOD, (VENC_VMOD_VIE | VENC_VMOD_VENC));
-
-		/* Set REC656 Mode */
-		dispc_reg_out(VENC_YCCCTL, 0x1);
-
-		/* Enable output mode and NTSC  */
-		dispc_reg_out(VENC_VMOD, 0x1003);
-
-		/* Enable S-Video Output; DAC B: S-Video Y, DAC C: S-Video C  */
-		dispc_reg_out(VENC_DACSEL, 0x210);
-
-		/* Enable all DACs  */
-		dispc_reg_out(VENC_DACTST, 0);
-	} else {
-		/* Reset video encoder module */
-		dispc_reg_out(VENC_VMOD, 0);
-	}
-}
-
-static void davincifb_ntsc_component_config(int on)
-{
-	if (on) {
-		/* Reset video encoder module */
-		dispc_reg_out(VENC_VMOD, 0);
-
-		/* Enable Composite output and start video encoder */
-		dispc_reg_out(VENC_VMOD, (VENC_VMOD_VIE | VENC_VMOD_VENC));
-
-		/* Set REC656 Mode */
-		dispc_reg_out(VENC_YCCCTL, 0x1);
-
-		/* Enable output mode and NTSC  */
-		dispc_reg_out(VENC_VMOD, 0x1003);
-
-		/* Enable Component output; DAC A: Y, DAC B: Pb, DAC C: Pr  */
-		dispc_reg_out(VENC_DACSEL, 0x543);
-
-		/* Enable all DACs  */
-		dispc_reg_out(VENC_DACTST, 0);
-	} else {
-		/* Reset video encoder module */
-		dispc_reg_out(VENC_VMOD, 0);
-	}
-}
-
-static void davincifb_pal_composite_config(int on)
-{
-	if (on) {
-		/* Reset video encoder module */
-		dispc_reg_out(VENC_VMOD, 0);
-
-		/* Enable Composite output and start video encoder */
-		dispc_reg_out(VENC_VMOD, (VENC_VMOD_VIE | VENC_VMOD_VENC));
-
-		/* Set REC656 Mode */
-		dispc_reg_out(VENC_YCCCTL, 0x1);
-
-		/* Enable output mode and PAL  */
-		dispc_reg_out(VENC_VMOD, 0x1043);
-
-		/* Enable all DACs  */
-		dispc_reg_out(VENC_DACTST, 0);
-	} else {
-		/* Reset video encoder module */
-		dispc_reg_out(VENC_VMOD, 0);
-	}
-}
-
-static void davincifb_pal_svideo_config(int on)
-{
-	if (on) {
-		/* Reset video encoder module */
-		dispc_reg_out(VENC_VMOD, 0);
-
-		/* Enable Composite output and start video encoder */
-		dispc_reg_out(VENC_VMOD, (VENC_VMOD_VIE | VENC_VMOD_VENC));
-
-		/* Set REC656 Mode */
-		dispc_reg_out(VENC_YCCCTL, 0x1);
-
-		/* Enable output mode and PAL  */
-		dispc_reg_out(VENC_VMOD, 0x1043);
-
-		/* Enable S-Video Output; DAC B: S-Video Y, DAC C: S-Video C  */
-		dispc_reg_out(VENC_DACSEL, 0x210);
-
-		/* Enable all DACs  */
-		dispc_reg_out(VENC_DACTST, 0);
-	} else {
-		/* Reset video encoder module */
-		dispc_reg_out(VENC_VMOD, 0);
-	}
-}
-
-static void davincifb_pal_component_config(int on)
-{
-	if (on) {
-		/* Reset video encoder module */
-		dispc_reg_out(VENC_VMOD, 0);
-
-		/* Enable Composite output and start video encoder */
-		dispc_reg_out(VENC_VMOD, (VENC_VMOD_VIE | VENC_VMOD_VENC));
-
-		/* Set REC656 Mode */
-		dispc_reg_out(VENC_YCCCTL, 0x1);
-
-		/* Enable output mode and PAL  */
-		dispc_reg_out(VENC_VMOD, 0x1043);
-
-		/* Enable Component output; DAC A: Y, DAC B: Pb, DAC C: Pr  */
-		dispc_reg_out(VENC_DACSEL, 0x543);
-
-		/* Enable all DACs  */
-		dispc_reg_out(VENC_DACTST, 0);
-	} else {
-		/* Reset video encoder module */
-		dispc_reg_out(VENC_VMOD, 0);
-	}
-}
-
-
-/* video_output interface */
-int output_set_state(struct output_device *od)
-{
-	struct dm_info *dm =
-		(struct dm_info *)class_get_devdata(&od->class_dev);
-	unsigned long state = od->request_state;
-	/* TODO check that the output is available */
-
-	switch (state)
-	{
-		case DAVINCIFB_OUT_COMPOSITE:
-		dispc_reg_out(VENC_DACSEL, 0x0);
-		break;
-
-		case DAVINCIFB_OUT_COMPONENT:
-		/* Enable Component output; DAC A: Y, DAC B: Pb, DAC C: Pr  */
-		dispc_reg_out(VENC_DACSEL, 0x543);
-		break;
-
-		case DAVINCIFB_OUT_SVIDEO:
-		/* Enable S-Video Output; DAC B: S-Video Y, DAC C: S-Video C  */
-		dispc_reg_out(VENC_DACSEL, 0x210);
-		break;
-
-		case DAVINCIFB_OUT_RGB:
-		/* TODO handle rgb */
-		printk("rgb!\n");
-		break;
-
-		default:
-		return -EINVAL;
-
-	}
-	dm->output_sel = state;
-#if 0
-	/* off dac */
-	/* Reset video encoder module */
-	dispc_reg_out(VENC_VMOD, 0);
-#endif
-
-	return 0;
-}
-
-int output_get_status(struct output_device *od)
-{
-	struct dm_info *dm =
-		(struct dm_info *)class_get_devdata(&od->class_dev);
-
-	return dm->output_sel;
-}
-
-struct output_properties output_props = {
-	.set_state = &output_set_state,
-	.get_status = &output_get_status,
-};
-#if 0
-static int dm_vout_probe(void)
-{
-	int ret;
-
-	ret = dm_vout_register(&dm_vout_venc);
-	return ret;
-}
-#endif
-/* Must do checks against the limits of the output device */
-static int davincifb_venc_check_mode(const struct dm_win_info *w,
-				     const struct fb_var_screeninfo *var)
-{
-	/* ntsc / pal */
-	if (var->xres == 720) {
-		if ((var->yres == 576) || (var->yres == 480))
-			return 0;
-	}
-	/* TODO check specific output beside the venc */
-	return -EINVAL;
-}
 /*============================================================================*
- *                           OSD windows interface                            *
+ *                          OSD controller interface                          *
  *============================================================================*/
-static void set_sdram_params(const struct dm_win_info *w, u32 addr, u32 line_length);
+/* All this functions should setup some global register of the osd controller
+ */
 /* Wait for a vsync interrupt.  This routine sleeps so it can only be called
  * from process context.
  */
@@ -1153,7 +882,20 @@ static int davincifb_wait_for_vsync(struct dm_win_info *w)
 
 	return 0;
 }
+/* set the global transparency color for all osd windows */
+static void dm_transp_color_set(struct dm_info *i, int color)
+{
+	struct device *dev = i->dev;
 
+	dev_dbg(dev, "Setting color transparency to %x\n", color);
+	printk("OSDTRANSPVA %x\n", dispc_reg_in(OSD_TRANSPVA));
+	dispc_reg_out(OSD_TRANSPVA, color);
+	printk("OSDTRANSPVA %x\n", dispc_reg_in(OSD_TRANSPVA));
+}
+/*============================================================================*
+ *                           OSD windows interface                            *
+ *============================================================================*/
+static void set_sdram_params(const struct dm_win_info *w, u32 addr, u32 line_length);
 /* Sets a uniform attribute value over a rectangular area on the attribute
  * window. The attribute value (0 to 7) is passed through the fb_fillrect's
  * color parameter.
@@ -1190,9 +932,6 @@ static int davincifb_set_attr_blend(struct dm_win_info *w,
 
 	return 0;
 }
-/*============================================================================*
- *                           OSD windows interface                            *
- *============================================================================*/
 /* Interlaced = Frame mode, Non-interlaced = Field mode */
 static void set_interlaced(struct dm_win_info *w, unsigned int on)
 {
@@ -1434,6 +1173,29 @@ static int check_new_vid0_size(struct dm_win_info *vid0, u32 xp0, u32 yp0,
 
 #undef WITHIN_LIMITS
 }
+/* enable the transparency on the plane based on the transparency color */
+static int dm_win_transp_enable(struct dm_win_info *w, int enable)
+{
+	struct device *dev = w->dm->dev;
+	enable = (enable == 0) ? 0 : 1;
+
+	dev_dbg(dev, "Enabling transparency on plane %s %d\n", dm_win_names[w->win], enable);
+	if (is_win(w, DAVINCIFB_WIN_VID0) || is_win(w, DAVINCIFB_WIN_VID1)) {
+		return -EINVAL;
+	}
+	else if (is_win(w, DAVINCIFB_WIN_OSD0)) {
+		dispc_reg_merge(OSD_OSDWIN0MD, enable << 2, OSD_OSDWIN0MD_TE0);
+		dispc_reg_merge(OSD_OSDWIN0MD, 0x0 << OSD_OSDWIN0MD_BLND0_SHIFT, OSD_OSDWIN0MD_BLND0);
+		printk("WINO0MD %x\n", dispc_reg_in(OSD_OSDWIN0MD));
+	}
+	else {
+		/* TODO check that is not set in attribute mode */
+		dispc_reg_merge(OSD_OSDWIN1MD, enable << 2, OSD_OSDWIN1MD_TE1);
+		dispc_reg_merge(OSD_OSDWIN1MD, 0x0, OSD_OSDWIN1MD_BLND1);
+	}
+	return 0;
+}
+
 /* Initialize the fb_info structure with common values and values that wont
  * change if var changes
  */
@@ -1476,37 +1238,26 @@ static void dm_win_fix_set(struct dm_win_info *w)
 	info->fix.type_aux = 0;
 }
 
-static int dm_win_mem_free(struct dm_win_info *w)
+static void dm_win_mem_free(struct dm_win_info *w)
 {
-#if 0
-	iounmap((void *)w->fb_base);
-	release_mem_region(w->fb_base_phys, w->fb_size);
-#endif
-#if 0
-	dma_free_coherent(NULL, w->fb_size, (void *)w->fb_base,
-				  w->fb_base_phys);
-#endif
+	struct device *dev  = w->dm->dev;
+
+	dev_dbg(dev, "Freeing allocated at memory\n");
 	free_pages_exact((void *)w->fb_base, w->fb_size);
 }
 
 static int dm_win_mem_alloc(struct dm_win_info *w)
 {
-	struct fb_var_screeninfo *vinfo = &w->info.var;
 	struct device *dev  = w->dm->dev;
 
-	w->fb_size = vinfo->xres_virtual * vinfo->yres_virtual * 
-		vinfo->bits_per_pixel / 8;
+	w->fb_size = w->dm->mach_info->size[w->win];
 	dev_dbg(dev, "Trying to allocate %lu bytes of buffer\n", w->fb_size);
-#if 0
-	w->fb_base = (unsigned long)dma_alloc_coherent(dev, w->fb_size,
-		&w->fb_base_phys, GFP_DMA);
-#endif
 	w->fb_base = (unsigned long)alloc_pages_exact(w->fb_size, GFP_DMA);
 	w->fb_base_phys = virt_to_phys((void *)w->fb_base);
 
 	if (!w->fb_base)
 		return -ENOMEM;
-	
+
 	dev_dbg(dev, "Framebuffer allocated at 0x%x "
 		"mapped to 0x%x, size %dk\n",
 		(unsigned)w->fb_base_phys, (unsigned)w->fb_base,
@@ -1514,110 +1265,14 @@ static int dm_win_mem_alloc(struct dm_win_info *w)
 	return 0;
 }
 
-static int dm_win_probe(struct dm_win_info *w)
+static void dm_win_remove(struct dm_win_info *w)
 {
-	int bg_color = 0x00;
-	struct fb_info *info = &w->info;
 	struct device *dev  = w->dm->dev;
-	struct fb_var_screeninfo *vinfo = &info->var;
 
-	/* TODO redo this logic, first map the maximum size and then
-	 * check the mode
-	 */
-	dev_dbg(dev, "Probing device %s\n", dm_win_names[w->win]);
-	/* check the requested var */
-	if (davincifb_check_var(&dm_default_var[w->win], info)) {
-		dev_err(dev, "%s: Invalid default video mode\n",
-			dm_win_names[w->win]);
-		return -EINVAL;
+	dev_dbg(dev, "Removing framebuffer %s\n", dm_win_names[w->win]);
+	if (!unregister_framebuffer(&w->info)) {
+		dm_win_mem_free(w);
 	}
-	/* copy the modified default var into the fb_info struct */
-	memcpy(vinfo, &dm_default_var[w->win],
-		sizeof(struct fb_var_screeninfo));
-	/* request memory */
-	if (dm_win_mem_alloc(w) < 0) {
-		dev_err(dev, "%s: Cannot allocate framebuffer of size %lu\n",
-			dm_win_names[w->win], w->fb_size);
-		return -EINVAL;
-	}
-	/* setup common values */
-	dm_win_common_info_set(w);
-	dm_win_fix_set(w);
-	/* create the fb device */
-	if (register_framebuffer(info) < 0) {
-		dev_err(dev, "Unable to register %s framebuffer\n",
-			dm_win_names[w->win]);
-		return -EINVAL;
-	}
-	davincifb_set_par(info);
-	/* clear the memory */
-	switch (info->var.bits_per_pixel) {
-		case 16:
-		/* yuv422 */
-		if (is_win(w, DAVINCIFB_WIN_VID0) ||
-			is_win(w, DAVINCIFB_WIN_VID1))
-			bg_color = 0x88;
-		break;
-
-		/* attribute */
-		case 4:
-		if (is_win(w, DAVINCIFB_WIN_OSD1))
-			bg_color = 0xff;
-		break;
-	}
-	memset((void *)w->fb_base, bg_color, w->fb_size);
-	return 0;
-}
-
-static int dm_wins_probe(struct dm_info *info)
-{
-	int windows;
-	int i = 0;
-
-	/* Setup DAVINCIFB_WIN_VID0 framebuffer */
-	if (!(info->windows_mask & (1 << DAVINCIFB_WIN_VID0))) {
-		printk(KERN_WARNING "No video/osd windows will be enabled "
-		       "because Video0 is disabled\n");
-		return 0;	/* background will still be shown */
-	}
-	/* Probe all requested windows */
-	windows = info->windows_mask;
-	info->windows_mask = 0;
-	while (windows)
-	{
-		if (windows & 1) {
-			struct dm_win_info *w;
-
-			w = kzalloc(sizeof(struct dm_win_info), GFP_KERNEL);
-			if (!w) {
-				dev_err(info->dev, "%s: could not allocate\
-					memory\n", dm_win_names[i]);
-				goto stop;
-			}
-			/* necessary information for checkvar */
-			w->win = i;
-			w->dm = info;
-			w->info.par = w;
-			if (dm_win_probe(w)) {
-				kfree(w);
-			}
-			else {
-				info->windows[i] = w;
-				info->windows_mask |= (1 << i);
-			}
-		}
-		windows >>= 1;
-		i++;
-	}
-	/* TODO return EINVAL in case none of the requested wins were ok */
-stop:
-	return 0;
-}
-
-static int dm_win_remove(struct dm_win_info *w)
-{
-	unregister_framebuffer(&w->info);
-	dm_win_mem_free(w);
 	/* TODO disable the plane */
 }
 
@@ -1638,7 +1293,118 @@ static int dm_wins_remove(struct dm_info *info)
 		windows >>= 1;
 		i++;
 	}
+	return 0;
 }
+
+static int dm_win_probe(struct dm_win_info *w)
+{
+	int ret;
+	int bg_color = 0x00;
+	struct fb_info *info = &w->info;
+	struct device *dev  = w->dm->dev;
+	struct fb_var_screeninfo *vinfo = &info->var;
+
+	dev_dbg(dev, "Probing device %s\n", dm_win_names[w->win]);
+	/* alloc the memory */
+	if (dm_win_mem_alloc(w) < 0) {
+		dev_err(dev, "%s: Cannot allocate framebuffer of size %lu\n",
+			dm_win_names[w->win], w->fb_size);
+		return -EINVAL;
+	}
+	/* setup common values */
+	dm_win_common_info_set(w);
+	dm_win_fix_set(w);
+	/* append the list modes */
+	fb_videomode_to_modelist(dmfb_modedb, ARRAY_SIZE(dmfb_modedb),
+		&info->modelist);
+	if (!fb_find_mode(vinfo, &w->info, NULL,
+		dmfb_modedb, ARRAY_SIZE(dmfb_modedb), NULL, is_win(w, DAVINCIFB_WIN_OSD1) ? 4 : 16)) {
+		return -EINVAL;
+	}
+	/* create the fb device */
+	if (register_framebuffer(info) < 0) {
+		dev_err(dev, "Unable to register %s framebuffer\n",
+			dm_win_names[w->win]);
+		ret = -EINVAL;
+		goto register_error;
+	}
+	davincifb_set_par(info);
+	/* clear the memory */
+	switch (info->var.bits_per_pixel) {
+		case 16:
+		/* yuv422 */
+		if (is_win(w, DAVINCIFB_WIN_VID0) ||
+			is_win(w, DAVINCIFB_WIN_VID1))
+			bg_color = 0x88;
+		break;
+
+		/* attribute */
+		case 4:
+		if (is_win(w, DAVINCIFB_WIN_OSD1))
+			bg_color = 0xff;
+		break;
+	}
+	memset((void *)w->fb_base, bg_color, w->fb_size);
+	return 0;
+
+register_error:
+	dm_win_mem_free(w);
+	return ret;
+}
+
+static int dm_wins_probe(struct dm_info *info)
+{
+	int windows;
+	int windows_ok = 0;
+	int i = 0;
+
+	/* Setup DAVINCIFB_WIN_VID0 framebuffer */
+	if (!(info->windows_mask & (1 << DAVINCIFB_WIN_VID0))) {
+		printk(KERN_WARNING "No video/osd windows will be enabled "
+		       "because Video0 is disabled\n");
+		return 0;	/* background will still be shown */
+	}
+	/* Probe all requested windows */
+	windows = info->windows_mask;
+	while (windows)
+	{
+		if (windows & 1) {
+			struct dm_win_info *w;
+
+			w = kzalloc(sizeof(struct dm_win_info), GFP_KERNEL);
+			if (!w) {
+				dev_err(info->dev, "%s: could not allocate\
+					memory\n", dm_win_names[i]);
+				break;
+			}
+			/* necessary information for checkvar */
+			w->win = i;
+			w->dm = info;
+			w->info.par = w;
+			if (dm_win_probe(w) < 0) {
+				kfree(w);
+				break;
+			}
+			else {
+				info->windows[i] = w;
+				windows_ok |= (1 << i);
+			}
+		}
+		windows >>= 1;
+		i++;
+	}
+	/* Something has failed, remove all the probed wins */
+	if (windows_ok != info->windows_mask) {
+		dev_err(info->dev, "Not all windows were correctly setup "
+			"removing all framebuffers (%x %x)\n", windows_ok,
+			info->windows_mask);
+		info->windows_mask = windows_ok;
+		dm_wins_remove(info);
+		return -EINVAL;
+	}
+	return 0;
+}
+
 static int parse_win_params(char *wp,
 			    int *xres, int *yres, int *xpos, int *ypos)
 {
@@ -1724,10 +1490,9 @@ static int davincifb_check_var(struct fb_var_screeninfo *var,
 		dev_dbg(dev, "Virtual y offset > vitual size\n");
 		return -EINVAL;
 	}
-	/* TODO handle the vid0 output thing */
+	/* get the mode */
 	if (is_win(w, DAVINCIFB_WIN_VID0)) {
-		/* do board-specific checks on the var */
-		if (davincifb_venc_check_mode(w, &v))
+		if (dm_venc_find_mode(&v) < 0)
 			return -EINVAL;
 	}
 
@@ -1736,15 +1501,15 @@ static int davincifb_check_var(struct fb_var_screeninfo *var,
 	 */
 	/* Rules 4, 5 */
 	if ((v.xres * v.bits_per_pixel / 8) % 32 || (v.xres_virtual * v.bits_per_pixel / 8) % 32) {
-		dev_dbg(dev, "%s Offset isnt 32 byte aligned xres = %d \
-			xres_virtual = %d bpp = %d\n", dm_win_names[w->win],
+		dev_dbg(dev, "%s Offset isnt 32 byte aligned xres = %d "
+			"xres_virtual = %d bpp = %d\n", dm_win_names[w->win],
 			v.xres, v.xres_virtual, v.bits_per_pixel);
 		return -EINVAL;
 	}
 	if ((w->fb_size) && (v.xres_virtual * v.yres_virtual * v.bits_per_pixel
 		 / 8 > w->fb_size)) {
 		dev_dbg(dev, "Requested resolution too big\n");
-		return -EINVAL;
+		goto error;
 	}
 	if (!is_win(w, DAVINCIFB_WIN_VID0)) {
 		/* Rule 1 */
@@ -1780,9 +1545,9 @@ static int davincifb_check_var(struct fb_var_screeninfo *var,
 	} else if (is_win(w, DAVINCIFB_WIN_VID0)) {
 		if (check_new_vid0_size((struct dm_info *)w, x_pos(w), y_pos(w),
 			v.xres, v.yres)) {
-			dev_dbg(dev, "vid0 isn't large enough to handle all\
-				windows\n");
-			//return -EINVAL;
+			dev_dbg(dev, "vid0 isn't large enough to handle all "
+				"windows\n");
+			goto error;
 		}
 		v.bits_per_pixel = 16;
 	} else if (is_win(w, DAVINCIFB_WIN_VID1)) {
@@ -1790,8 +1555,8 @@ static int davincifb_check_var(struct fb_var_screeninfo *var,
 		if (w->dm->windows[DAVINCIFB_WIN_VID0] &&
 			((x_pos(w->dm->windows[DAVINCIFB_WIN_VID0]) - x_pos(w))
 			% 16)) {
-			dev_dbg(dev, "vid1 x should be multiple of 16 from\
-				vid0\n");
+			dev_dbg(dev, "vid1 x should be multiple of 16 from "
+				"vid0\n");
 			return -EINVAL;
 		}
 		/* Video1 may be in YUV or RGB888 format */
@@ -1802,6 +1567,10 @@ static int davincifb_check_var(struct fb_var_screeninfo *var,
 
 	memcpy(var, &v, sizeof(v));
 	return 0;
+error:
+	dev_dbg(dev, "<%d>%dx%d<%d>@%dbpp\n", v.xres_virtual, v.xres, v.yres,
+		v.yres_virtual, v.bits_per_pixel);
+	return -EINVAL;
 }
 
 /**
@@ -1822,6 +1591,7 @@ static int davincifb_set_par(struct fb_info *info)
 	struct dm_win_info *w = (struct dm_win_info *)info->par;
 	struct fb_var_screeninfo *v = &info->var;
 	u32 start = 0, offset = 0;
+	int mode;
 
 	info->fix.line_length = v->xres_virtual * v->bits_per_pixel / 8;
 
@@ -1830,42 +1600,67 @@ static int davincifb_set_par(struct fb_info *info)
 	start = (u32) w->fb_base_phys + offset;
 	set_sdram_params(w, start, info->fix.line_length);
 
+	/* TODO fix interlaced and position */
 	set_interlaced(w, 1);
 	set_win_position(w,
 			 x_pos(w), y_pos(w), v->xres, v->yres / 2);
 	set_win_mode(w);
 	set_win_enable(w, 1);
-	/* TODO handle the vid0 output thing */
-	if (is_win(w, DAVINCIFB_WIN_VID0)) {
-		/* TODO set video output to that resolution */
-		/* turn off current output */
-		//w->dm->output_device_config(0);
-		/* NTSC / PAL */
-		if (v->xres == 720)
-		{
-			/* Reset video encoder module */
-			dispc_reg_out(VENC_VMOD, 0);
 
-			/* Enable Composite output and start video encoder */
-			dispc_reg_out(VENC_VMOD, (VENC_VMOD_VIE | VENC_VMOD_VENC));
-			/* Set REC656 Mode */
-			dispc_reg_out(VENC_YCCCTL, 0x1);
-			if (v->yres == 480) {
-				/* Enable output mode and NTSC  */
-				dispc_reg_out(VENC_VMOD, 0x1003);
-			}
-			else {
-				/* Enable output mode and PAL  */
-				dispc_reg_out(VENC_VMOD, 0x1043);
-			}
-
-			/* Enable all DACs  */
-			dispc_reg_out(VENC_DACTST, 0);
-		}
-		/* turn on new mode */
-		//w->dm->output_device_config(1);
+	if (!is_win(w, DAVINCIFB_WIN_VID0))
+		return 0;
+	mode = dm_venc_find_mode(v);
+	/* shutdown previous mode */
+	dispc_reg_out(VENC_VMOD, 0);
+	enable_digital_output(false);
+	/* for standard modes */
+	if (!strcmp(dmfb_modedb[mode].name, "480i")) {
+		/* Enable all DACs  */
+		dispc_reg_out(VENC_DACTST, 0);
+		/* Set REC656 Mode */
+		dispc_reg_out(VENC_YCCCTL, 0x1);
+		/* Enable output mode and NTSC  */
+		dispc_reg_out(VENC_VMOD, 0x1003);
 	}
-
+	else if (!strcmp(dmfb_modedb[mode].name, "576i")) {
+		/* Enable all DACs  */
+		dispc_reg_out(VENC_DACTST, 0);
+		/* Set REC656 Mode */
+		dispc_reg_out(VENC_YCCCTL, 0x1);
+		/* Enable output mode and PAL  */
+		dispc_reg_out(VENC_VMOD, 0x1043);
+	}
+	/* for non standard modes */
+	else {
+		enable_digital_output(true);
+		dm_venc_mode_set(w->dm, &dmfb_modedb[mode]);
+#ifdef CONFIG_THS8200
+		if (!strcmp(dmfb_modedb[mode].name, "480p")) {
+			/* slow down the vclk as 27MHZ */
+			slow_down_vclk();
+			ths8200_set_480p_mode();
+			/* Enable all VENC, non-standard timing mode,
+			 * master timing, HD, progressive */
+			dispc_reg_out(VENC_VMOD, (VENC_VMOD_VENC |
+				VENC_VMOD_VMD | VENC_VMOD_HDMD));
+		}
+		else if (!strcmp(dmfb_modedb[mode].name, "720p")) {
+			ths8200_set_720p_mode();
+			/* Enable all VENC, non-standard timing mode,
+			 * master timing, HD, progressive */
+			dispc_reg_out(VENC_VMOD, (VENC_VMOD_VENC |
+				VENC_VMOD_VMD | VENC_VMOD_HDMD));
+		}
+		else if (!strcmp(dmfb_modedb[mode].name, "1080i")) {
+			ths8200_set_1080i_mode();
+			/* Enable all VENC, non-standard timing mode,
+			 * master timing, HD, interlaced */
+			dispc_reg_out(VENC_VMOD, (VENC_VMOD_VENC |
+				VENC_VMOD_VMD | VENC_VMOD_HDMD |
+				VENC_VMOD_NSIT));
+		}
+#endif
+	}
 	return 0;
 }
 
@@ -1882,6 +1677,7 @@ static int davincifb_ioctl(struct fb_info *info, unsigned int cmd,
 	long std = 0;
 	unsigned int enable = 0;
 	unsigned int pos = 0;
+	unsigned int color = 0;
 
 	switch (cmd) {
 	case FBIO_WAITFORVSYNC:
@@ -1947,17 +1743,26 @@ static int davincifb_ioctl(struct fb_info *info, unsigned int cmd,
 			return -EINVAL;
 		}
 		break;
-	case FBIO_GETSTD:
-		std = ((dmparams.output << 16) | (dmparams.format));	//(NTSC <<16) | (COPOSITE);
-		if (copy_to_user(argp, &std, sizeof(u_int32_t)))
-			return -EFAULT;
-		return 0;
-		break;
 	case FBIO_ENABLE:
 		if (copy_from_user(&enable, argp, sizeof(u_int32_t)))
 			return -EFAULT;
 		set_win_enable(w, enable);
 		return 0;
+		break;
+	/* set the transparent rgb value this will affect all osd windows */
+	case FBIO_TRANSP_COLOR:
+		if (copy_from_user(&color, argp, sizeof(u_int32_t)))
+			return -EFAULT;
+		dm_transp_color_set(w->dm, color);
+		return 0;
+		break;
+	/* enable the blending based on the transparent value for the specified
+	 * plane
+	 */
+	case FBIO_TRANSP:
+		if (copy_from_user(&enable, argp, sizeof(u_int32_t)))
+			return -EFAULT;
+		return dm_win_transp_enable(w, enable);
 		break;
 	}
 
@@ -2083,106 +1888,6 @@ static int davincifb_blank(int blank_mode, struct fb_info *info)
 	return 0;
 }
 
-#if 0
-static int mem_alloc(struct dm_win_info *w, dma_addr_t fb_base_phys,
-		     unsigned long fb_size, char *fbname)
-{
-	struct device *dev = w->dm->dev;
-	w->fb_base_phys = fb_base_phys;
-	w->fb_size = fb_size;
-
-	/* A null base address indicates that the framebuffer memory should be
-	 * dynamically allocated.
-	 */
-	if (!w->fb_base_phys)
-	{
-		printk("using dma alloc coherent\n");
-		w->alloc_fb_mem = 1;
-	}
-
-	if (!w->alloc_fb_mem) {
-		if (!request_mem_region(w->fb_base_phys, w->fb_size, fbname)) {
-			dev_err(dev, "%s: cannot reserve FB region\n", fbname);
-			goto free_par;
-		}
-		w->fb_base =
-		    (unsigned long)ioremap(w->fb_base_phys, w->fb_size);
-		if (!w->fb_base) {
-			dev_err(dev, "%s: cannot map framebuffer\n", fbname);
-			goto release_fb;
-		}
-	} else {
-		/* allocate coherent memory for the framebuffer */
-		w->fb_base = (unsigned long)dma_alloc_coherent(dev,
-							       w->fb_size,
-							       &w->fb_base_phys,
-							       GFP_KERNEL |
-							       GFP_DMA);
-		if (!w->fb_base) {
-			dev_err(dev, "%s: cannot allocate framebuffer\n",
-				fbname);
-			goto free_par;
-		}
-	}
-	dev_dbg(dev, "Framebuffer allocated at 0x%x "
-		"mapped to 0x%x, size %dk\n",
-		(unsigned)w->fb_base_phys, (unsigned)w->fb_base,
-		(unsigned)w->fb_size / 1024);
-
-	return 0;
-
-      release_fb:
-	if (!w->alloc_fb_mem)
-		release_mem_region(w->fb_base_phys, w->fb_size);
-      free_par:
-	return -ENOMEM;
-}
-
-static struct fb_info *init_fb_info(struct dm_win_info *w,
-				    struct fb_var_screeninfo *var, char *id)
-{
-	struct fb_info *info = &(w->info);
-	struct dm_info *dm = w->dm;
-
-	/* initialize the fb_info structure */
-	info->flags = FBINFO_DEFAULT;
-	info->fbops = &davincifb_ops;
-	info->screen_base = (char *)(w->fb_base);
-	info->pseudo_palette = w->pseudo_palette;
-	info->par = w;
-
-	/* Initialize variable screeninfo.
-	 * The variable screeninfo can be directly specified by the user
-	 * via an ioctl.
-	 */
-	memcpy(&info->var, var, sizeof(info->var));
-	info->var.activate = FB_ACTIVATE_NOW;
-
-	/* Initialize fixed screeninfo.
-	 * The fixed screeninfo cannot be directly specified by the user, but
-	 * it may change to reflect changes to the var info.
-	 */
-	strlcpy(info->fix.id, id, sizeof(info->fix.id));
-	info->fix.smem_start = w->fb_base_phys;
-	info->fix.line_length =
-	    (info->var.xres_virtual * info->var.bits_per_pixel) / 8;
-	info->fix.smem_len = w->fb_size;
-	info->fix.type = FB_TYPE_PACKED_PIXELS;
-	info->fix.visual = (info->var.bits_per_pixel <= 8) ?
-	    FB_VISUAL_PSEUDOCOLOR : FB_VISUAL_TRUECOLOR;
-	info->fix.xpanstep = 0;
-	info->fix.ypanstep = 1;
-	info->fix.ywrapstep = 0;
-	info->fix.type_aux = 0;
-	info->fix.mmio_start = dm->mmio_base_phys;
-	info->fix.mmio_len = dm->mmio_size;
-	info->fix.accel = FB_ACCEL_NONE;
-	w->sdram_address = 0;
-
-	return info;
-}
-#endif
-
 static inline void fix_default_var(struct dm_win_info *w,
 				   u32 xres, u32 yres, u32 xpos, u32 ypos,
 				   int n_buf)
@@ -2263,8 +1968,9 @@ static int davincifb_remove(struct platform_device *pdev)
 
 	/* Cleanup all framebuffers */
 	dm_wins_remove(dm);
+	/* TODO remove this */
 	/* Turn OFF the output device */
-	dm->output_device_config(0);
+	//dm->output_device_config(0);
 	video_output_unregister(dm->output);
 
 	if (dm->mmio_base)
@@ -2280,15 +1986,11 @@ static int davincifb_remove(struct platform_device *pdev)
 static int davincifb_probe(struct platform_device *pdev)
 {
 	struct dm_info *dm;
-	struct fb_info *info;
-
-
-	if (dmparams.windows == 0)
-		return 0;	/* user disabled all windows through bootargs */
 
 	dm = kzalloc(sizeof(struct dm_info), GFP_KERNEL);
 
 	dm->dev = &pdev->dev;
+	dm->mach_info = pdev->dev.platform_data;
 	dm->mmio_base_phys = OSD_REG_BASE;
 	dm->mmio_size = OSD_REG_SIZE;
 
@@ -2310,43 +2012,7 @@ static int davincifb_probe(struct platform_device *pdev)
 	init_waitqueue_head(&dm->vsync_wait);
 	dm->timeout = HZ / 5;
 
-	{
-#if 0
-		void *virt;
-
-		virt = alloc_pages_exact(5 * 1024 * 1024, GFP_DMA | __GFP_ZERO);
-		printk("virtual = %p\n", virt);
-		if (virt)
-			free_pages_exact(virt, 5 * 1024 * 1024);
-#endif
-	}
-
-	if ((dmparams.output == NTSC) && (dmparams.format == COMPOSITE))
-		dm->output_device_config = davincifb_ntsc_composite_config;
-	else if ((dmparams.output == NTSC) && (dmparams.format == SVIDEO))
-		dm->output_device_config = davincifb_ntsc_svideo_config;
-	else if ((dmparams.output == NTSC) && (dmparams.format == COMPONENT))
-		dm->output_device_config = davincifb_ntsc_component_config;
-	else if ((dmparams.output == PAL) && (dmparams.format == COMPOSITE))
-		dm->output_device_config = davincifb_pal_composite_config;
-	else if ((dmparams.output == PAL) && (dmparams.format == SVIDEO))
-		dm->output_device_config = davincifb_pal_svideo_config;
-	else if ((dmparams.output == PAL) && (dmparams.format == COMPONENT))
-		dm->output_device_config = davincifb_pal_component_config;
-	else if ((dmparams.output == HD720P) && (dmparams.format == COMPONENT))
-		dm->output_device_config = davincifb_720p_component_config;
-	else if ((dmparams.output == HD1080I) && (dmparams.format == COMPONENT))
-		dm->output_device_config = davincifb_1080i_component_config;
-	else if ((dmparams.output == HD480P) && (dmparams.format == COMPONENT))
-		dm->output_device_config = davincifb_480p_component_config;
-	/* Add support for other displays here */
-	else {
-		printk(KERN_WARNING "Unsupported output device!\n");
-		dm->output_device_config = NULL;
-	}
-
 	printk("Setting Up Clocks for DM420 OSD rev = %x\n", dispc_reg_in(VPBE_PID));
-
 	/* Initialize the VPSS Clock Control register */
 	dispc_reg_out(VPSS_CLKCTL, 0x18);
 
@@ -2365,37 +2031,40 @@ static int davincifb_probe(struct platform_device *pdev)
 	dispc_reg_out(OSD_MODE, 0x200);
 
 	dm->windows_mask = (1 << DAVINCIFB_WIN_OSD0) |
-		(1 << DAVINCIFB_WIN_OSD1) |
+		//(1 << DAVINCIFB_WIN_OSD1) |
 		(1 << DAVINCIFB_WIN_VID0) |
 		(1 << DAVINCIFB_WIN_VID1);
-	dm_wins_probe(dm);
+	if (dm_wins_probe(dm) < 0)
+		goto probe_error;
 	/* install our interrupt service routine */
 	if (request_irq(IRQ_VENCINT, davincifb_isr, IRQF_SHARED, MODULE_NAME,
 			dm)) {
 		dev_err(dm->dev, MODULE_NAME
 			": could not install interrupt service routine\n");
-		goto exit;
+		goto irq_error;
 	}
 	/* TODO remove this */
-	/* Turn ON the output device */
-	dm->output_device_config(1);
+	//dm->output_device_config(1);
 
 	dm->output =
-		video_output_register("venc", dm->dev, dm, &output_props);
+		video_output_register("venc", dm->dev, dm, &dm_venc_props);
+	if (!dm->output)
+		goto venc_error;
 	platform_set_drvdata(pdev, dm);
 	return 0;
 
-exit:
-	davincifb_remove(pdev);
+venc_error:
+	free_irq(IRQ_VENCINT, dm);
+irq_error:
+	dm_wins_remove(dm);
+probe_error:
 	iounmap((void *)dm->mmio_base);
-
 release_mmio:
 	release_mem_region(dm->mmio_base_phys, dm->mmio_size);
 free_dm:
 	kfree(dm);
 	return -ENODEV;
 }
-
 
 static struct platform_driver davincifb_driver = {
 	.probe		= davincifb_probe,
@@ -2434,7 +2103,8 @@ int __init davincifb_setup(char *options)
 
 	if (!options || !*options)
 		return 0;
-
+#if 0
+	/* This will go away soon */
 	while ((this_opt = strsep(&options, ":")) != NULL) {
 
 		if (!*this_opt)
@@ -2600,6 +2270,7 @@ int __init davincifb_setup(char *options)
 		       "position (%d,%d)\n",
 		       dmparams.osd1_xres, dmparams.osd1_yres,
 		       dmparams.osd1_xpos, dmparams.osd1_ypos);
+#endif
 	return 0;
 }
 #endif
@@ -2611,6 +2282,7 @@ int __init davincifb_setup(char *options)
 /* Register both the driver and the device */
 int __init davincifb_init(void)
 {
+	int ret;
 #ifndef MODULE
 	/* boot-line options */
 	/* handle options for "dm64xxfb" for backwards compatability */
