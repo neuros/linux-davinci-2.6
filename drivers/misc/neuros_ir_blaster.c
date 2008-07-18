@@ -186,18 +186,18 @@ static void blaster_key(struct blaster_data_pack* blsdat)
     bitset2 = GPIO23_OUT_DATA;
     if (((bitset2 & GIO_BLS) != 0) && ((bls_data_pack->bitstimes & FIRST_LEVEL_BIT_MASK) != 0))
     {
-        GPIO23_CLR_DATA |= GIO_BLS;
+        GPIO23_OUT_DATA &= ~GIO_BLS;
         msleep(WAIT_HARDWARE_RESET);
     }
     else if (((bitset2 & GIO_BLS) == 0) && ((bls_data_pack->bitstimes & FIRST_LEVEL_BIT_MASK) == 0))
     {
-        GPIO23_SET_DATA |= GIO_BLS;
+        GPIO23_OUT_DATA |= GIO_BLS;
         msleep(WAIT_HARDWARE_RESET);
     }
     if (blsdat->bitstimes & FIRST_LEVEL_BIT_MASK)
-        GPIO23_SET_DATA |= GIO_BLS;
+        GPIO23_OUT_DATA |= GIO_BLS;
     else
-        GPIO23_CLR_DATA |= GIO_BLS;
+        GPIO23_OUT_DATA &= ~GIO_BLS;
     set_timer1_div(blsdat);
     enable_irq(IRQ_TINT1_TINT34);
 }
@@ -311,9 +311,9 @@ static irqreturn_t handle_bls_timer1_irqs(int irq, void * dev_id)
     {
         bitset2 = GPIO23_OUT_DATA;
         if (bitset2 & GIO_BLS)
-            GPIO23_CLR_DATA |= GIO_BLS;
+            GPIO23_OUT_DATA &= ~GIO_BLS;
         else
-            GPIO23_SET_DATA |= GIO_BLS;
+            GPIO23_OUT_DATA |= GIO_BLS;
         bls_wave_count--;
     }
     if (bls_wave_count == 0)
@@ -480,7 +480,7 @@ static int blaster_init( void )
     PWM0_PH1D = 355;
     PWM0_START = 1;
     GPIO23_DIR &= ~GIO_BLS;  //gio 47 direction output
-    GPIO23_CLR_DATA |= GIO_BLS; //drive the gpio 47 to low
+    GPIO23_OUT_DATA &= ~GIO_BLS; //drive the gpio 47 to low
     TIMER1_TCR &= ~(3<<22); //disable timer1 34
     ret = request_irq(IRQ_TINT1_TINT34, handle_bls_timer1_irqs,SA_INTERRUPT , "ir_blaster_timer1", &device); //TIMER__INTERRUPT
     disable_irq(IRQ_TINT1_TINT34);
