@@ -450,7 +450,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 			ret = -EINVAL;
 		}
 
-		ret |= DEVICE_CMD(ACTIVE_DEVICE(), VIDIOC_S_FMT, arg);
+		ret = DEVICE_CMD(ACTIVE_DEVICE(), VIDIOC_S_FMT, arg);
 
 		up(&vpfe->lock);
 		break;
@@ -531,7 +531,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		vpfe->capture_params.mode = id;
 		vpfe->capture_params.squarepixel = sqp;
 
-		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
+		ret = DEVICE_CMD(ACTIVE_DEVICE(),
 				  VPFE_CMD_CONFIG_CAPTURE,
 				  &vpfe->capture_params);
 
@@ -661,7 +661,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 	case VIDIOC_G_CTRL:
 		down_interruptible(&vpfe->lock);
 
-		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
+		ret = DEVICE_CMD(ACTIVE_DEVICE(),
 				  VIDIOC_G_CTRL, arg);
 
 		up(&vpfe->lock);
@@ -669,7 +669,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 	case VIDIOC_S_CTRL:
 		down_interruptible(&vpfe->lock);
 
-		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
+		ret = DEVICE_CMD(ACTIVE_DEVICE(),
 				  VIDIOC_S_CTRL, arg);
 
 		up(&vpfe->lock);
@@ -677,7 +677,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 	case VIDIOC_QUERYCTRL:
 		down_interruptible(&vpfe->lock);
 
-		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
+		ret = DEVICE_CMD(ACTIVE_DEVICE(),
 				  VIDIOC_QUERYCTRL, arg);
 
 		up(&vpfe->lock);
@@ -724,7 +724,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		v4l2_std_id *id = (v4l2_std_id *) arg;
 		down_interruptible(&vpfe->lock);
 
-		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
+		ret = DEVICE_CMD(ACTIVE_DEVICE(),
 				  VIDIOC_QUERYSTD, id);
 
 		up(&vpfe->lock);
@@ -781,12 +781,12 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 			ret = -EACCES;
 			break;
 		}
-		if(vpfe->started){
+		if (vpfe->started){
 			ret = -EBUSY;
 			break;
 		}
 		ret = videobuf_streamon(&vpfe->bufqueue);
-		if(ret) break;
+		if (ret) break;
 
 		down_interruptible(&vpfe->lock);
 		/* get the current and next frame buffers */
@@ -806,9 +806,11 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		vpfe->curFrm->state = STATE_ACTIVE;
 
 		/* sense the current video input standard */
-		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
+		ret = DEVICE_CMD(ACTIVE_DEVICE(),
 				  VPFE_CMD_CONFIG_CAPTURE,
 				  &vpfe->capture_params);
+		if (ret < 0)
+			break;
 		/* configure the ccdc and resizer as needed   */
 		/* start capture by enabling CCDC and resizer */
 		ccdc_config_ycbcr(&vpfe->ccdc_params);
@@ -904,7 +906,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 			vpfe->pixelaspect = sp_aspect;
 		}
 		vpfe->std = std;
-		ret |= DEVICE_CMD(ACTIVE_DEVICE(),
+		ret = DEVICE_CMD(ACTIVE_DEVICE(),
 				  VPFE_CMD_CONFIG_CAPTURE,
 				  params);
 		vpfe->capture_params = *params;
@@ -965,13 +967,13 @@ static int vpfe_open(struct inode *inode, struct file *filep)
 	vpfe_select_capture_device(VPFE_CAPTURE_ID_TVP5150);
 	/* detect if there is valid signal input */
 	{
-		v4l2_std_id *id;
+		v4l2_std_id id;
 
-		*id = 0;
+		id = 0;
 		down_interruptible(&vpfe->lock);
-		DEVICE_CMD(ACTIVE_DEVICE(), VIDIOC_QUERYSTD, id);
+		DEVICE_CMD(ACTIVE_DEVICE(), VIDIOC_QUERYSTD, &id);
 		up(&vpfe->lock);
-		if (*id != V4L2_STD_UNKNOWN)
+		if (id != V4L2_STD_UNKNOWN)
 			vpfe->capture_params.amuxmode = VPFE_AMUX_COMPOSITE;
 		else
 		{
@@ -1139,7 +1141,7 @@ static int capture_device_all_unregister(void)
 	down_interruptible(&vpfe_device.lock);
 	list_for_each_entry(device, &vpfe_device.capture_device_list,
 			    device_list){
-		ret |= vpfe_capture_device_unregister(device);
+		ret = vpfe_capture_device_unregister(device);
 	}
 	up(&vpfe_device.lock);
 
