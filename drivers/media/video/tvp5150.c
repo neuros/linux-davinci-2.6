@@ -1078,9 +1078,9 @@ static int tvp5150_command(struct i2c_client *c,
 
 			if (params->amuxmode == VPFE_AMUX_COMPOSITE) {
 				decoder->route.input = TVP5150_COMPOSITE1;
-				} else {
-					decoder->route.input = TVP5150_SVIDEO;
-				}
+			} else {
+				decoder->route.input = TVP5150_SVIDEO;
+			}
 			tvp5150_selmux(c);
 			tvp5150_set_std(c, params->mode);
 			decoder->norm = params->mode;
