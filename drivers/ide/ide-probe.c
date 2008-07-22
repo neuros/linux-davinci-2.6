@@ -644,6 +644,16 @@ static int wait_hwif_ready(ide_hwif_t *hwif)
 {
 	int rc;
 	unsigned int unit;
+	unsigned int hw_noprobe_flag=1;
+
+	for(unit = 0;unit < MAX_DRIVES; unit++) {
+		if(hwif->drives[unit].noprobe == 0) {
+			hw_noprobe_flag = 0;
+			break;
+		}
+	}
+	if(hw_noprobe_flag == 1)
+		return -EBUSY;
 
 	printk(KERN_DEBUG "Probing IDE interface %s...\n", hwif->name);
 
