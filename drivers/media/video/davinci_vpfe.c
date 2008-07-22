@@ -120,7 +120,7 @@ static vpfe_obj vpfe_device = {	/* the default format is NTSC */
 	},
 	.capture_params = {
 		.mode = VPFE_STD_AUTO,
-		.amuxmode = VPFE_AMUX_COMPOSITE,
+		.amuxmode = VPFE_AMUX_COMPOSITE0,
 		.enablebt656sync = TRUE,
 		.squarepixel = FALSE,
 	},
@@ -609,7 +609,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 	{
 		int *index = (int *)arg;
 
-		if (*index == VPFE_AMUX_COMPOSITE)
+		if (*index == VPFE_AMUX_COMPOSITE0 || *index == VPFE_AMUX_COMPOSITE1)
 			vpfe_select_capture_device(VPFE_CAPTURE_ID_TVP5150);
 		else if (*index == VPFE_AMUX_COMPONENT)
 			vpfe_select_capture_device(VPFE_CAPTURE_ID_TVP7000);
@@ -974,7 +974,7 @@ static int vpfe_open(struct inode *inode, struct file *filep)
 		DEVICE_CMD(ACTIVE_DEVICE(), VIDIOC_QUERYSTD, &id);
 		up(&vpfe->lock);
 		if (id != V4L2_STD_UNKNOWN)
-			vpfe->capture_params.amuxmode = VPFE_AMUX_COMPOSITE;
+			vpfe->capture_params.amuxmode = VPFE_AMUX_COMPOSITE0;
 		else
 		{
 			/*  no valid input for tvp5150 then try tvp7000
@@ -985,7 +985,7 @@ static int vpfe_open(struct inode *inode, struct file *filep)
 			/*  the device can be opened even without valid input
 			 *  so if no valid input, use a default one
 			 */
-			vpfe->capture_params.amuxmode = VPFE_AMUX_COMPOSITE;
+			vpfe->capture_params.amuxmode = VPFE_AMUX_COMPOSITE0;
 		}
 	}
 

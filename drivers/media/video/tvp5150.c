@@ -298,12 +298,15 @@ static inline void tvp5150_selmux(struct i2c_client *c)
 	if ((decoder->route.output & TVP5150_BLACK_SCREEN) || !decoder->enable)
 		input = 8;
 
-	switch (decoder->route.input) {
-	case TVP5150_COMPOSITE1:
-		input |= 0;
-		/* fall through */
+	switch (decoder->route.input)
+	{
 	case TVP5150_COMPOSITE0:
-		opmode=0x30;		/* TV Mode */
+		input |= 0;
+		opmode = 0x30;		/* TV Mode */
+		break;
+	case TVP5150_COMPOSITE1:
+		input |= 0x02;
+		opmode = 0x30;		/* TV Mode */
 		break;
 	case TVP5150_SVIDEO:
 	default:
@@ -916,6 +919,8 @@ static int tvp5150_command(struct i2c_client *c,
 	{
 		int input = *(int *)arg;
 		if (input == 0)
+			decoder->route.input = TVP5150_COMPOSITE0;
+		else if (input == 1)
 			decoder->route.input = TVP5150_COMPOSITE1;
 		else
 			decoder->route.input = TVP5150_SVIDEO;
@@ -1076,7 +1081,9 @@ static int tvp5150_command(struct i2c_client *c,
 			struct vpfe_capture_params *params =
 				(struct vpfe_capture_params *)arg;
 
-			if (params->amuxmode == VPFE_AMUX_COMPOSITE) {
+			if (params->amuxmode == VPFE_AMUX_COMPOSITE0) {
+				decoder->route.input = TVP5150_COMPOSITE0;
+			} else if (params->amuxmode == VPFE_AMUX_COMPOSITE1) {
 				decoder->route.input = TVP5150_COMPOSITE1;
 			} else {
 				decoder->route.input = TVP5150_SVIDEO;
@@ -1139,7 +1146,7 @@ static int tvp5150_detect_client(struct i2c_adapter *adapter,
 	rv = i2c_attach_client(tvp5150_client);
 
 	core->norm = V4L2_STD_ALL;	/* Default is autodetect */
-	core->route.input = TVP5150_COMPOSITE1;
+	core->route.input = TVP5150_COMPOSITE0;
 	core->enable = 1;
 	core->bright = 32768;
 	core->contrast = 32768;

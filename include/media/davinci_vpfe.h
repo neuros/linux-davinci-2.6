@@ -40,8 +40,9 @@
 		struct vpfe_capture_params)
 #define VPFE_CMD_CAPTURE_ACTIVE _IOW('V', BASE_VIDIOC_PRIVATE + 4, long int)
 
-#define    VPFE_AMUX_COMPOSITE  0
-#define    VPFE_AMUX_COMPONENT	1
+#define    VPFE_AMUX_COMPOSITE0 0
+#define    VPFE_AMUX_COMPOSITE1 1
+#define    VPFE_AMUX_COMPONENT  2
 
 /* settings for commonly used video formats */
 #define VPFE_WIN_NTSC    {0,0,720,480}
