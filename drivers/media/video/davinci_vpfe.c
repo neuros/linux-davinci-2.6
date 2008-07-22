@@ -933,31 +933,9 @@ static int vpfe_open(struct inode *inode, struct file *filep)
 	v4l2_prio_open(&vpfe->prio, &fh->prio);
 	vpfe->usrs++;
 
-	/* active the tvp5150 */
+	/* default active the tvp5150 */
 	vpfe_select_capture_device(VPFE_CAPTURE_ID_TVP5150);
-	/* detect if there is valid signal input */
-	{
-		v4l2_std_id id;
-
-		id = 0;
-		down_interruptible(&vpfe->lock);
-		DEVICE_CMD(ACTIVE_DEVICE(), VIDIOC_QUERYSTD, &id);
-		up(&vpfe->lock);
-		if (id != V4L2_STD_UNKNOWN)
-			vpfe->capture_params.amuxmode = VPFE_AMUX_COMPOSITE0;
-		else
-		{
-			/*  no valid input for tvp5150 then try tvp7000
-			 *  activate the tvp7000, and detect if there is valid input
-			 *  Todo after tvp7000 driver available.
-			 */
-			debug_print(KERN_INFO "no valid signal input\n");
-			/*  the device can be opened even without valid input
-			 *  so if no valid input, use a default one
-			 */
-			vpfe->capture_params.amuxmode = VPFE_AMUX_COMPOSITE0;
-		}
-	}
+	vpfe->capture_params.amuxmode = VPFE_AMUX_COMPOSITE0;
 
 	return 0;
 }
