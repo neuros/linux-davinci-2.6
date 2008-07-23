@@ -1,6 +1,7 @@
 config FB_DM
         tristate "DM frame buffer support (EXPERIMENTAL)"
         depends on FB
+	depends on VIDEO_OUTPUT_CONTROL
         help
           Frame buffer driver for DM644X based boards.
 
