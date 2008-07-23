@@ -170,7 +170,7 @@ static struct davincifb_mach_info davincifb_mach_info = {
 	.size[DAVINCIFB_WIN_VID0] = 12441600, /* 1920x1080*16bpp*3buffers */
 	.size[DAVINCIFB_WIN_VID1] = 691200, /* 720x480*16bpp*1buffer */
 	.size[DAVINCIFB_WIN_OSD0] = 3686400, /* 1280x720*16bpp*2buffers */
-	.size[DAVINCIFB_WIN_OSD1] = 172800, /* 720x480*4bpp*1buffer */
+	.size[DAVINCIFB_WIN_OSD1] = 184320, /* 768x480*4bpp*1buffer */
 };
 
 static u64 davinci_fb_dma_mask = DMA_32BIT_MASK;
