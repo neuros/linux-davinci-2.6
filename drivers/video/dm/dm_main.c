@@ -76,18 +76,6 @@
 #endif /* CONFIG_THS8200 */
 
 #define MODULE_NAME "davincifb"
-#if 0
-/* Output Format Selection  */
-#define MULTIPLE_BUFFERING	1
-
-#ifdef MULTIPLE_BUFFERING
-#define DOUBLE_BUF	2
-#define TRIPLE_BUF	3
-#else
-#define DOUBLE_BUF	1
-#define TRIPLE_BUF	1
-#endif
-#endif
 
 /* needed prototypes */
 static int davincifb_check_var(struct fb_var_screeninfo *var,
@@ -127,8 +115,10 @@ static __inline__ u32 dispc_reg_merge(u32 offset, u32 val, u32 mask)
 struct dm_win_info {
 	struct fb_info info;
 
+	/* TODO this can be infered from the registers */
 	/* X and Y position */
 	unsigned int x, y;
+	unsigned char enabled;
 
 	/* framebuffer area */
 	dma_addr_t fb_base_phys;
@@ -166,7 +156,6 @@ struct dm_info {
 	struct davincifb_mach_info *mach_info;
 };
 
-
 /* All window widths have to be rounded up to a multiple of 32 bytes */
 
 /* The DAVINCIFB_WIN_OSD0 window has to be always within DAVINCIFB_WIN_VID0. Plus, since it is in RGB565
@@ -193,58 +182,6 @@ static char *dm_win_names[DAVINCIFB_WINDOWS] = {
 };
 
 
-#if 0
-static struct fb_var_screeninfo dm_default_var[DAVINCIFB_WINDOWS] = {
-	/* the max mode allowed on osd0 should be 720p x 2 buffers
-	 * which is 1843200 pixels at 16bpp (1280*720*2)
-	 */
-	[DAVINCIFB_WIN_OSD0] = {
-		.xres = 720,
-		.yres = 480,
-		.xres_virtual = 720,
-		.yres_virtual = 2560,
-		.bits_per_pixel = 16,
-		.activate = FB_ACTIVATE_NOW,
-		.pixclock = LCD_PANEL_CLOCK,	/* picoseconds */
-		.vmode = FB_VMODE_INTERLACED,
-	},
-	[DAVINCIFB_WIN_OSD1] = {
-		.xres = 320,
-		.yres = 240,
-		.xres_virtual = 320,
-		.yres_virtual = 240,
-		.bits_per_pixel = 4,
-		.activate = FB_ACTIVATE_NOW,
-		.pixclock = LCD_PANEL_CLOCK,	/* picoseconds */
-		.vmode = FB_VMODE_INTERLACED,
-	},
-	/* the max mode allowed on vid0 should be 1080i x 3 buffers
-	 * which is 6220800 pixels at 16 bpp (1920*1080*3)
-	 */
-	[DAVINCIFB_WIN_VID0] = {
-		.xres = 720,
-		.yres = 480,
-		.xres_virtual = 720,
-		.yres_virtual = 8640,
-		.bits_per_pixel = 16,
-		.activate = FB_ACTIVATE_NOW,
-		.pixclock = LCD_PANEL_CLOCK,	/* picoseconds */
-		.vmode = FB_VMODE_INTERLACED,
-	},
-	[DAVINCIFB_WIN_VID1] = {
-		.xres = 720,
-		.yres = 480,
-		.xres_virtual = 720,
-		.yres_virtual = 480,
-		.bits_per_pixel = 16,
-		.activate = FB_ACTIVATE_NOW,
-		.pixclock = LCD_PANEL_CLOCK,	/* picoseconds */
-		.vmode = FB_VMODE_INTERLACED,
-	}
-};
-
-#endif
-
 static inline int is_win(const struct dm_win_info *w, unsigned int win)
 {
 	if (w->win == win)
@@ -252,10 +189,6 @@ static inline int is_win(const struct dm_win_info *w, unsigned int win)
 	else
 		return 0;
 }
-
-#define	x_pos(w)	((w)->x)
-#define	y_pos(w)	((w)->y)
-
 
 /* TODO remove this static default vars */
 #define BASEX		0x80
@@ -478,7 +411,7 @@ static void enable_digital_output(bool on)
 		dispc_reg_out(VENC_OSDCLK0, 0);
 		dispc_reg_out(VENC_OSDCLK1, 1);
 		dispc_reg_out(VENC_OSDHAD, 0);
-
+#if 0
 		/* Enable Video Window 0 / disable video window 1 */
 		dispc_reg_out(OSD_VIDWINMD, OSD_VIDWINMD_ACT0);
 
@@ -490,7 +423,7 @@ static void enable_digital_output(bool on)
 
 		/* Disable DAVINCIFB_WIN_OSD1 Window */
 		dispc_reg_out(OSD_OSDWIN1MD, 0x00008000);
-
+#endif
 		/* set VPSS clock */
 		dispc_reg_out(VPSS_CLKCTL, 0x0a);
 
@@ -518,7 +451,7 @@ static void enable_digital_output(bool on)
 				(accepting default polarity) */
 			dispc_reg_out(VENC_LCDOUT, 0);
 			dispc_reg_out(VENC_CMPNT, 0x100);
-
+#if 0
 			/* Enable Video Window 1 / disable video window 0 */
 			dispc_reg_out(OSD_VIDWINMD, 0x302);
 
@@ -560,7 +493,7 @@ static void enable_digital_output(bool on)
 			dispc_reg_out(OSD_CURYP, 0);
 			dispc_reg_out(OSD_CURXL, 0x2d0);
 			dispc_reg_out(OSD_CURYL, 0xf0);
-
+#endif
 
 			dispc_reg_out(VENC_HSPLS, 0);
 			dispc_reg_out(VENC_VSPLS, 0);
@@ -599,7 +532,7 @@ static inline void slow_down_vclk(void)
 	outl(VPSS_CLKCTL_ENABLE_VPBE_CLK,
 		 VPSS_CLKCTL);
 }
-
+#if 0
 static void davincifb_480p_component_config(int on)
 {
 	if (on) {
@@ -853,7 +786,7 @@ static void davincifb_720p_component_config(int on)
 		dispc_reg_out(VENC_VMOD, 0);
 	}
 }
-
+#endif
 /*============================================================================*
  *                          OSD controller interface                          *
  *============================================================================*/
@@ -892,6 +825,17 @@ static void dm_transp_color_set(struct dm_info *i, int color)
 	dispc_reg_out(OSD_TRANSPVA, color);
 	printk("OSDTRANSPVA %x\n", dispc_reg_in(OSD_TRANSPVA));
 }
+/* enable color bar test mode */
+static void dm_cbtest_enable(struct dm_info *i, int enable)
+{
+	struct device *dev = i->dev;
+
+	dev_dbg(dev, "Setting color bar mode %d\n", enable);
+	dispc_reg_merge(VENC_VDPRO, VENC_VDPRO_CBTYPE, VENC_VDPRO_CBTYPE);
+	dispc_reg_merge(VENC_VDPRO, enable << 8, VENC_VDPRO_CBMD);
+	printk("VDPRO %x\n", dispc_reg_in(VENC_VDPRO));
+}
+
 /*============================================================================*
  *                           OSD windows interface                            *
  *============================================================================*/
@@ -1046,7 +990,10 @@ static void set_win_enable(const struct dm_win_info *w, unsigned int on)
 	}
 }
 
-/* TODO fix this, isnt flexible enough */
+/*
+ * Sets the depth of the window plane
+ * TODO fix this, isnt flexible enough
+ */
 static void set_win_mode(const struct dm_win_info *w)
 {
 	if (is_win(w, DAVINCIFB_WIN_VID0)) ;
@@ -1099,8 +1046,8 @@ static inline void get_win_position(const struct dm_win_info *w,
 {
 	struct fb_var_screeninfo *v = &w->info.var;
 
-	*xp = x_pos(w);
-	*yp = y_pos(w);
+	*xp = w->x;
+	*yp = w->y;
 	*xl = v->xres;
 	*yl = v->yres;
 }
@@ -1185,7 +1132,7 @@ static int dm_win_transp_enable(struct dm_win_info *w, int enable)
 	}
 	else if (is_win(w, DAVINCIFB_WIN_OSD0)) {
 		dispc_reg_merge(OSD_OSDWIN0MD, enable << 2, OSD_OSDWIN0MD_TE0);
-		dispc_reg_merge(OSD_OSDWIN0MD, 0x0 << OSD_OSDWIN0MD_BLND0_SHIFT, OSD_OSDWIN0MD_BLND0);
+		dispc_reg_merge(OSD_OSDWIN0MD, 0x7 << OSD_OSDWIN0MD_BLND0_SHIFT, OSD_OSDWIN0MD_BLND0);
 		printk("WINO0MD %x\n", dispc_reg_in(OSD_OSDWIN0MD));
 	}
 	else {
@@ -1453,6 +1400,8 @@ static int davincifb_check_var(struct fb_var_screeninfo *var,
 	const struct dm_win_info *w = (const struct dm_win_info *)info->par;
 	struct fb_var_screeninfo v;
 	struct device *dev = w->dm->dev;
+	unsigned int mod;
+	unsigned int line_length;
 
 /* Rules:
  * 1) Vid1, DAVINCIFB_WIN_OSD0, DAVINCIFB_WIN_OSD1 and Cursor must be fully contained inside of Vid0.
@@ -1495,12 +1444,24 @@ static int davincifb_check_var(struct fb_var_screeninfo *var,
 		if (dm_venc_find_mode(&v) < 0)
 			return -EINVAL;
 	}
+	/* Align the line_length to 32 bytes */
+	mod = (v.xres * v.bits_per_pixel / 8) % 32;
+	if (mod) {
+		v.xres_virtual = v.xres + (((32 - mod) * 8) / v.bits_per_pixel);
+	}
+	else
+		v.xres_virtual = v.xres;
+	v.yres_virtual = (w->fb_size / v.bits_per_pixel * 8) / v.xres_virtual;
+	if (v.yres_virtual < v.yres)
+		v.yres = v.yres_virtual;
 
-	/* FIXME Rules 4 and 5 aren't good. The line_length should be multiple
-	 * of 32 bytes but not the xres
-	 */
+	line_length = v.xres_virtual * v.bits_per_pixel / 8;
+
+	dev_dbg(dev, "<%d>%dx%d<%d>@%dbpp\n", v.xres_virtual, v.xres, v.yres,
+		v.yres_virtual, v.bits_per_pixel);
+
 	/* Rules 4, 5 */
-	if ((v.xres * v.bits_per_pixel / 8) % 32 || (v.xres_virtual * v.bits_per_pixel / 8) % 32) {
+	if (line_length % 32) {
 		dev_dbg(dev, "%s Offset isnt 32 byte aligned xres = %d "
 			"xres_virtual = %d bpp = %d\n", dm_win_names[w->win],
 			v.xres, v.xres_virtual, v.bits_per_pixel);
@@ -1514,7 +1475,7 @@ static int davincifb_check_var(struct fb_var_screeninfo *var,
 	if (!is_win(w, DAVINCIFB_WIN_VID0)) {
 		/* Rule 1 */
 		if (!within_vid0_limits(w->dm->windows[DAVINCIFB_WIN_VID0],
-			x_pos(w), y_pos(w), v.xres, v.yres)) {
+			w->x, w->y, v.xres, v.yres)) {
 			dev_dbg(dev, "Window %s isnt fully contained on vid0\n",
 				dm_win_names[w->win]);
 			//return -EINVAL;
@@ -1543,7 +1504,7 @@ static int davincifb_check_var(struct fb_var_screeninfo *var,
 	} else if (is_win(w, DAVINCIFB_WIN_OSD1)) {
 		v.bits_per_pixel = 4;
 	} else if (is_win(w, DAVINCIFB_WIN_VID0)) {
-		if (check_new_vid0_size((struct dm_info *)w, x_pos(w), y_pos(w),
+		if (check_new_vid0_size((struct dm_info *)w, w->x, w->y,
 			v.xres, v.yres)) {
 			dev_dbg(dev, "vid0 isn't large enough to handle all "
 				"windows\n");
@@ -1553,7 +1514,7 @@ static int davincifb_check_var(struct fb_var_screeninfo *var,
 	} else if (is_win(w, DAVINCIFB_WIN_VID1)) {
 		/* Rule 11 */
 		if (w->dm->windows[DAVINCIFB_WIN_VID0] &&
-			((x_pos(w->dm->windows[DAVINCIFB_WIN_VID0]) - x_pos(w))
+			((w->dm->windows[DAVINCIFB_WIN_VID0]->x - w->x)
 			% 16)) {
 			dev_dbg(dev, "vid1 x should be multiple of 16 from "
 				"vid0\n");
@@ -1568,8 +1529,6 @@ static int davincifb_check_var(struct fb_var_screeninfo *var,
 	memcpy(var, &v, sizeof(v));
 	return 0;
 error:
-	dev_dbg(dev, "<%d>%dx%d<%d>@%dbpp\n", v.xres_virtual, v.xres, v.yres,
-		v.yres_virtual, v.bits_per_pixel);
 	return -EINVAL;
 }
 
@@ -1593,6 +1552,7 @@ static int davincifb_set_par(struct fb_info *info)
 	u32 start = 0, offset = 0;
 	int mode;
 
+	/* Memory offsets */
 	info->fix.line_length = v->xres_virtual * v->bits_per_pixel / 8;
 
 	offset = v->yoffset * info->fix.line_length +
@@ -1600,16 +1560,17 @@ static int davincifb_set_par(struct fb_info *info)
 	start = (u32) w->fb_base_phys + offset;
 	set_sdram_params(w, start, info->fix.line_length);
 
+	mode = dm_venc_find_mode(v);
+
 	/* TODO fix interlaced and position */
 	set_interlaced(w, 1);
-	set_win_position(w,
-			 x_pos(w), y_pos(w), v->xres, v->yres / 2);
+	set_win_position(w, w->x, w->y, v->xres, v->yres / 2);
 	set_win_mode(w);
 	set_win_enable(w, 1);
 
 	if (!is_win(w, DAVINCIFB_WIN_VID0))
 		return 0;
-	mode = dm_venc_find_mode(v);
+
 	/* shutdown previous mode */
 	dispc_reg_out(VENC_VMOD, 0);
 	enable_digital_output(false);
@@ -1764,6 +1725,12 @@ static int davincifb_ioctl(struct fb_info *info, unsigned int cmd,
 			return -EFAULT;
 		return dm_win_transp_enable(w, enable);
 		break;
+	case FBIO_CBTEST:
+		if (copy_from_user(&enable, argp, sizeof(u_int32_t)))
+			return -EFAULT;
+		dm_cbtest_enable(w->dm, enable);
+		return 0;
+		break;
 	}
 
 	return -EINVAL;
@@ -1898,8 +1865,8 @@ static inline void fix_default_var(struct dm_win_info *w,
 	v->yres = yres;
 	v->xres_virtual = v->xres;
 	v->yres_virtual = v->yres * n_buf;
-	x_pos(w) = xpos;
-	y_pos(w) = ypos;
+	w->x = xpos;
+	w->y = ypos;
 }
 
 
@@ -1968,6 +1935,11 @@ static int davincifb_remove(struct platform_device *pdev)
 
 	/* Cleanup all framebuffers */
 	dm_wins_remove(dm);
+	/* Reset OSD registers to default. */
+	dispc_reg_out(OSD_MODE, 0);
+	dispc_reg_out(OSD_VIDWINMD, 0);
+	dispc_reg_out(OSD_OSDWIN0MD, 0);
+	dispc_reg_out(OSD_OSDWIN1MD, 0);
 	/* TODO remove this */
 	/* Turn OFF the output device */
 	//dm->output_device_config(0);
@@ -1987,6 +1959,7 @@ static int davincifb_probe(struct platform_device *pdev)
 {
 	struct dm_info *dm;
 
+	printk(MODULE_NAME "Initializing\n");
 	dm = kzalloc(sizeof(struct dm_info), GFP_KERNEL);
 
 	dm->dev = &pdev->dev;
@@ -2023,6 +1996,8 @@ static int davincifb_probe(struct platform_device *pdev)
 	/* Reset OSD registers to default. */
 	dispc_reg_out(OSD_MODE, 0);
 	dispc_reg_out(OSD_OSDWIN0MD, 0);
+	dispc_reg_out(OSD_OSDWIN1MD, 0);
+	dispc_reg_out(OSD_VIDWINMD, 0);
 
 	/* Set blue background color */
 	set_bg_color(0, 162);
@@ -2031,7 +2006,7 @@ static int davincifb_probe(struct platform_device *pdev)
 	dispc_reg_out(OSD_MODE, 0x200);
 
 	dm->windows_mask = (1 << DAVINCIFB_WIN_OSD0) |
-		//(1 << DAVINCIFB_WIN_OSD1) |
+		(1 << DAVINCIFB_WIN_OSD1) |
 		(1 << DAVINCIFB_WIN_VID0) |
 		(1 << DAVINCIFB_WIN_VID1);
 	if (dm_wins_probe(dm) < 0)

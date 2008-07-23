@@ -433,9 +433,9 @@
 
 enum
 {
+	DAVINCIFB_WIN_OSD0,
 	DAVINCIFB_WIN_VID0,
 	DAVINCIFB_WIN_VID1,
-	DAVINCIFB_WIN_OSD0,
 	DAVINCIFB_WIN_OSD1,
 	DAVINCIFB_WINDOWS
 };
@@ -482,4 +482,5 @@ struct zoom_params
 #define FBIO_ENABLE 		_IOW('F', 0x26, u_int32_t)
 #define FBIO_TRANSP 		_IOW('F', 0x27, u_int32_t)
 #define FBIO_TRANSP_COLOR	_IOW('F', 0x28, u_int32_t)
+#define FBIO_CBTEST		_IOW('F', 0x29, u_int32_t)
 #endif /* _DAVINCIFB_H_ */
