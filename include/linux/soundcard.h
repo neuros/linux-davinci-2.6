@@ -544,6 +544,21 @@ typedef struct {
 /********************************************
  * IOCTL commands for /dev/dsp and /dev/audio
  */
+#define OSS_ENUM_MAXVALUE       255
+
+/*
+ * Description:
+ * http://manuals.opensound.com/developer/SNDCTL_MIX_ENUMINFO.html
+ */
+typedef struct oss_mixer_enuminfo
+{
+	int	dev;
+	int	ctrl;
+	int	nvalues;
+	int	version;
+	short	strindex[OSS_ENUM_MAXVALUE];
+	char	strings[3000];
+} oss_mixer_enuminfo;
 
 #define SNDCTL_DSP_RESET		_SIO  ('P', 0)
 #define SNDCTL_DSP_SYNC			_SIO  ('P', 1)
@@ -696,6 +711,13 @@ typedef struct buffmem_desc {
 #define SOUND_PCM_GETOPTR		SNDCTL_DSP_GETOPTR
 #define SOUND_PCM_MAPINBUF		SNDCTL_DSP_MAPINBUF
 #define SOUND_PCM_MAPOUTBUF		SNDCTL_DSP_MAPOUTBUF
+
+/*
+ * Interface for selecting recording sources and playback output routings.
+*/
+#define SNDCTL_DSP_GET_RECSRC_NAMES     _IOR ('P', 37, oss_mixer_enuminfo)
+#define SNDCTL_DSP_GET_RECSRC           _IOR ('P', 38, int)
+#define SNDCTL_DSP_SET_RECSRC           _IOWR('P', 38, int)
 
 /*
  * ioctl calls to be used in communication with coprocessors and

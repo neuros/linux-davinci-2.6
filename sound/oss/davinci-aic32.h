@@ -35,6 +35,8 @@
 #define MIC3_TO_RIGHT_ADC_CTRL_REG 18
 #define LINE1L_TO_LEFT_ADC_CTRL_REG  19
 #define LINE1R_TO_RIGHT_ADC_CTRL_REG 22
+#define LINE2L_TO_LEFT_ADC_CTRL_REG  20
+#define LINE2R_TO_RIGHT_ADC_CTRL_REG 23
 
 #define MCBIAS_CTRL_REG 25
 
@@ -98,6 +100,12 @@
 /* used by register 22 */
 #define LINE1R_NOT_CONNECT    0x78
 #define RIGHT_ADC_POWER_UP   0x04
+
+/* used by register 20 */
+#define LINE2_LEFT_ADC_NOT_CONNECT 0x78
+
+/* used by register 23 */
+#define LINE2_RIGHT_ADC_NOT_CONNECT 0x78
 
 /* MICBIAS control register 25 */
 #define MICBIAS_OUTPUT_2_0V     0x40

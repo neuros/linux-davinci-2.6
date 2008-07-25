@@ -268,6 +268,57 @@ static __inline__ void audio_aic32_write(u8 address, u16 data)
 		printk(KERN_INFO "aic32 write failed for reg = %d\n", address);
 }
 
+static void enable_adc(void)
+{
+	audio_aic32_write(LINE1L_TO_LEFT_ADC_CTRL_REG,
+				LINE1L_NOT_CONNECT | LEFT_ADC_POWER_UP);
+	audio_aic32_write(LINE1R_TO_RIGHT_ADC_CTRL_REG,
+				LINE1R_NOT_CONNECT | RIGHT_ADC_POWER_UP);
+}
+/* enable ADC and enable line1 input*/
+static void enable_line1_input(void)
+{
+	audio_aic32_write(LINE1L_TO_LEFT_ADC_CTRL_REG,
+				LEFT_ADC_POWER_UP);
+	audio_aic32_write(LINE1R_TO_RIGHT_ADC_CTRL_REG,
+				RIGHT_ADC_POWER_UP);
+}
+/* enable ADC and disable line1 input */
+static void disable_line1_input(void)
+{
+	audio_aic32_write(LINE1L_TO_LEFT_ADC_CTRL_REG,
+				LINE1L_NOT_CONNECT | LEFT_ADC_POWER_UP);
+	audio_aic32_write(LINE1R_TO_RIGHT_ADC_CTRL_REG,
+				LINE1R_NOT_CONNECT | RIGHT_ADC_POWER_UP);
+}
+
+/* enable line2 input*/
+static void enable_line2_input(void)
+{
+	audio_aic32_write(LINE2L_TO_LEFT_ADC_CTRL_REG, 0x0);
+	audio_aic32_write(LINE2R_TO_RIGHT_ADC_CTRL_REG, 0x0);
+}
+static void disable_line2_input(void)
+{
+	audio_aic32_write(LINE2L_TO_LEFT_ADC_CTRL_REG,
+				LINE2_LEFT_ADC_NOT_CONNECT);
+	audio_aic32_write(LINE2R_TO_RIGHT_ADC_CTRL_REG,
+				LINE2_RIGHT_ADC_NOT_CONNECT);
+}
+
+/* enable mic/line3 input*/
+static void enable_mic_input(void)
+{
+	audio_aic32_write(MIC3_TO_LEFT_ADC_CTRL_REG, 0x0);
+	audio_aic32_write(MIC3_TO_RIGHT_ADC_CTRL_REG, 0x0);
+}
+static void disable_mic_input(void)
+{
+	audio_aic32_write(MIC3_TO_LEFT_ADC_CTRL_REG,
+				MIC3L_LEFT_ADC_NOT_CONNECT | MIC3R_LEFT_ADC_NOT_CONNECT);
+	audio_aic32_write(MIC3_TO_RIGHT_ADC_CTRL_REG,
+				MIC3L_RIGHT_ADC_NOT_CONNECT | MIC3R_RIGHT_ADC_NOT_CONNECT);
+}
 static int aic32_update(int flag, int val)
 {
 	u16 volume;
@@ -456,12 +507,112 @@ static int mixer_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
+int oss_recsrc_enum (oss_mixer_enuminfo * ei, const char *s)
+{
+	int n = 1, l;
+	int i;
+
+	memset (ei, 0, sizeof (*ei));
+
+	strncpy (ei->strings, s, sizeof (ei->strings) - 1);
+	ei->strings[sizeof (ei->strings) - 1] = 0;
+
+	ei->strindex[0] = 0;
+
+	l = strlen (ei->strings);
+	for (i = 0; i < l; i++)
+	{
+		if (ei->strings[i] == ' ')
+		{
+			ei->strindex[n++] = i + 1;
+			ei->strings[i] = 0;
+		}
+	}
+
+	ei->nvalues = n;
+
+	return 0;
+}
+static int mixer_get_recnames(ulong arg)
+{
+	oss_mixer_enuminfo ei;
+	char *s = "line1 line2 line3";
+
+	oss_recsrc_enum(&ei, s);
+	return copy_to_user((int *)arg, &ei, sizeof(ei));
+}
+static int mixer_get_recroute(ulong arg)
+{
+	return copy_to_user((int *)arg, &(aic32_local.recsrc),sizeof(int));
+}
+
+static int mixer_set_recroute(ulong arg)
+{
+	long val;
+	int ret;
+
+	ret = get_user(val, (long *)arg);
+	if(ret)
+		return -ENOTTY;
+
+	switch(val)
+	{
+		case 0:
+			printk("LINE1 audio input selected\n");
+			enable_line1_input();
+			disable_line2_input();
+			disable_mic_input();
+			aic32_local.recsrc = val;
+			ret = 0;
+			break;
+		case 1:
+			printk("LINE2 audio input selected\n");
+			disable_line1_input();
+			enable_line2_input();
+			disable_mic_input();
+			aic32_local.recsrc = val;
+			ret = 0;
+			break;
+		case 2:
+			printk("LINE3 audio input selected\n");
+			disable_line1_input();
+			disable_line2_input();
+			enable_mic_input();
+			aic32_local.recsrc = val;
+			ret = 0;
+			break;
+		default:
+			printk("Invalid Record Source\n");
+			ret = -ENOTTY;
+			break;
+	}
+
+	return ret;
+}
+
+
 static int
 mixer_ioctl(struct inode *inode, struct file *file, uint cmd, ulong arg)
 {
 	int val;
 	int ret = 0;
 	int nr = _IOC_NR(cmd);
+
+	/*
+     * choose which input source to use
+     */
+	switch(cmd)
+	{
+		case SNDCTL_DSP_GET_RECSRC_NAMES:
+			ret = mixer_get_recnames(arg);
+			return ret;
+		case SNDCTL_DSP_SET_RECSRC:
+			ret = mixer_set_recroute(arg);
+			return ret;
+		case SNDCTL_DSP_GET_RECSRC:
+			ret = mixer_get_recroute(arg);
+			return ret;
+	}
 
 	/*
 	 * We only accept mixer (type 'M') ioctls.
