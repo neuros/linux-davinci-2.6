@@ -13,6 +13,10 @@
 #ifndef	__DAVINCI_GPIO_H
 #define	__DAVINCI_GPIO_H
 
+#include <asm/io.h>
+#include "hardware.h"
+#include "io.h"
+
 /*
  * basic gpio routines
  *
