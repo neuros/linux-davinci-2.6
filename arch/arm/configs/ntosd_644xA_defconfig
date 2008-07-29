@@ -836,7 +836,18 @@ CONFIG_NEUROS_IR_BLASTER=m
 # Multifunction device drivers
 #
 # CONFIG_MFD_SM501 is not set
-# CONFIG_NEW_LEDS is not set
+CONFIG_NEW_LEDS=y
+CONFIG_LEDS_CLASS=y
+
+#
+# LED drivers
+#
+CONFIG_LEDS_GPIO=y
+
+#
+# LED Triggers
+#
+# CONFIG_LEDS_TRIGGERS is not set
 
 #
 # Multimedia devices
