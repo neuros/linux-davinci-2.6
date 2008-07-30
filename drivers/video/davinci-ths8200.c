@@ -38,8 +38,7 @@
 
 static int ths8200_attach_adapter(struct i2c_adapter *adapter);
 static int ths8200_detach_client(struct i2c_client *client);
-static int ths8200_detect_client(struct i2c_adapter *adapter,
-						int address, int kind);
+static int ths8200_detect_client(struct i2c_adapter *adapter, int address, int kind);
 static inline int ths8200_write_value(u8 reg, u8 value);
 static inline int ths8200_read_value(u8 reg);
 
@@ -56,8 +55,7 @@ static struct i2c_driver ths8200_driver = {
 };
 
 /* I2C Addresses to scan */
-static unsigned short normal_i2c[] = { 0x20, \
-	I2C_CLIENT_END};
+static unsigned short normal_i2c[] = { 0x20, I2C_CLIENT_END };
 
 /* This makes all addr_data:s */
 I2C_CLIENT_INSMOD;
@@ -74,8 +72,7 @@ static inline int ths8200_write_value(u8 reg, u8 value)
 {
 	int ret;
 
-	ret = i2c_smbus_write_byte_data(ths8200_client,
-							reg, value);
+	ret = i2c_smbus_write_byte_data(ths8200_client, reg, value);
 	if (ret != 0)
 		DPRINTK("Write Error Address = %x\n", reg);
 
@@ -100,8 +97,7 @@ static int ths8200_detach_client(struct i2c_client *client)
 
 	err = i2c_detach_client(client);
 	if (err) {
-		DPRINTK("Client deregistration failed, \
-		       client not detached.\n");
+		DPRINTK("Client deregistration failed, client not detached.\n");
 		return err;
 	}
 	kfree(client);
@@ -110,26 +106,24 @@ static int ths8200_detach_client(struct i2c_client *client)
 }
 
 static int ths8200_detect_client(struct i2c_adapter *adapter,
-					int address, int kind)
+				 int address, int kind)
 {
 	int err = 0;
 	const char *client_name = "THS8200 Video DAC";
 
 	FN_IN;
 
-	if (!i2c_check_functionality(adapter, I2C_FUNC_SMBUS_WORD_DATA |
+	if (!i2c_check_functionality(adapter,
+				     I2C_FUNC_SMBUS_WORD_DATA |
 				     I2C_FUNC_SMBUS_WRITE_BYTE)) {
-		DPRINTK("Functinality check failed for %s \n",
-				client_name);
+		DPRINTK("Functinality check failed for %s \n", client_name);
 		return err;
-    }
+	}
 
-	ths8200_client = kmalloc(sizeof(struct i2c_client),
-							 GFP_KERNEL);
+	ths8200_client = kmalloc(sizeof(struct i2c_client), GFP_KERNEL);
 	if (ths8200_client == NULL) {
 		err = -ENOMEM;
-		DPRINTK("Couldn't allocate memory for %s\n",
-				client_name);
+		DPRINTK("Couldn't allocate memory for %s\n", client_name);
 		return err;
 	}
 
@@ -152,14 +146,15 @@ static int ths8200_detect_client(struct i2c_adapter *adapter,
 
 int ths8200_set_480p_mode(void)
 {
-    /* place ths8200 in reset state */
+	/* place ths8200 in reset state */
 	ths8200_write_value(CHIP_CTL_REG, CHIP_SOFTWARE_RESET);
 
-    /* take ths8200 out of reset and in normal operation mode */
-	ths8200_write_value(CHIP_CTL_REG, CHIP_SOFTWARE_OUT_OF_RESET |
-						CHIP_LOW_FREQUENCY);
+	/* take ths8200 out of reset and in normal operation mode */
+	ths8200_write_value(CHIP_CTL_REG,
+			    CHIP_SOFTWARE_OUT_OF_RESET |
+			    CHIP_LOW_FREQUENCY);
 
-    /* place color space conversion control in reset state */
+	/* place color space conversion control in reset state */
 	ths8200_write_value(CSC_R11_REG, 0x00);
 	ths8200_write_value(CSC_R21_REG, 0x00);
 	ths8200_write_value(CSC_R31_REG, 0x00);
@@ -173,14 +168,15 @@ int ths8200_set_480p_mode(void)
 	ths8200_write_value(CSC_OFFS12_REG, 0x00);
 	ths8200_write_value(CSC_OFFS23_REG, 0x00);
 	ths8200_write_value(CSC_OFFS3_REG,
-						CSC_BYPASSED |
-						CSC_PROTECTION_ON);
+			    CSC_BYPASSED |
+			    CSC_PROTECTION_ON);
 
-    /* set YCx20 External Sync */
-	ths8200_write_value(DTG2_CNTL_REG, HS_IN_POSITIVE_POLARITY |
-						VS_IN_POSITIVE_POLARITY |
-						HS_OUT_POSITIVE_POLARITY |
-						VS_OUT_POSITIVE_POLARITY);
+	/* set YCx20 External Sync */
+	ths8200_write_value(DTG2_CNTL_REG,
+			    HS_IN_POSITIVE_POLARITY |
+			    VS_IN_POSITIVE_POLARITY |
+			    HS_OUT_POSITIVE_POLARITY |
+			    VS_OUT_POSITIVE_POLARITY);
 
 	/* select the format for the input data manager */
 	ths8200_write_value(DATA_CNTL_REG, DATA_20BIT_YCBCR_MODE);
@@ -202,8 +198,8 @@ int ths8200_set_480p_mode(void)
 	ths8200_write_value(DTG1_CBCR_SYNC1_LSB_REG, 0xFF);
 
 	/* set the amplitude of the negative sync and
-		equalization/serration/broad pulses for the
-		Cb and Cr channels */
+	   equalization/serration/broad pulses for the
+	   Cb and Cr channels */
 	ths8200_write_value(DTG1_CBCR_SYNC2_LSB_REG, 0xFF);
 
 	/* set the amplitude of the positive sync for the Cb and Cr channels */
@@ -212,13 +208,13 @@ int ths8200_set_480p_mode(void)
 	/* set msb for sync1 sync2 and sync3 */
 	ths8200_write_value(DTG1_CBCR_SYNC_MSB_REG, 0x15);
 
-    /* set negative hsync width (half of total width) */
+	/* set negative hsync width (half of total width) */
 	ths8200_write_value(DTG1_SPEC_A_REG, 0x28);
 
-    /* set end of active video to start of negative sync */
+	/* set end of active video to start of negative sync */
 	ths8200_write_value(DTG1_SPEC_B_REG, 0x10);
 
-    /* set positive hsync width (half of total width) */
+	/* set positive hsync width (half of total width) */
 	ths8200_write_value(DTG1_SPEC_C_REG, 0x28);
 
 	/* set LSBs of sync to broad pulse */
@@ -227,13 +223,13 @@ int ths8200_set_480p_mode(void)
 	/* set LSBs of sync to active video */
 	ths8200_write_value(DTG1_SPEC_E_LSB_REG, 0x7A);
 
-    /* set MSB bit of sync to active video width[6]/sync to broad pulse [7] */
+	/* set MSB bit of sync to active video width[6]/sync to broad pulse [7] */
 	ths8200_write_value(DTG1_SPEC_DEH_MSB_REG, 0x00);
 
 	/* set broad pulse duration for SDTV (NA) */
 	ths8200_write_value(DTG1_SPEC_H_LSB_REG, 0x00);
 
-    /* set end of active video to sync LSBs [7:0] */
+	/* set end of active video to sync LSBs [7:0] */
 	ths8200_write_value(DTG1_SPEC_K_LSB_REG, 0x10);
 
 	/* set end of active video to sync MSBs [2:0] */
@@ -246,17 +242,17 @@ int ths8200_set_480p_mode(void)
 	ths8200_write_value(DTG1_TOTAL_PIXELS_LSB_REG, 0x5A);
 
 	/* set MSB and LSB bit of the starting line number
-		for the DTG when Vsync input or V-bit is
-		asserted(vertical display control) */
+	   for the DTG when Vsync input or V-bit is
+	   asserted(vertical display control) */
 	ths8200_write_value(DTG1_FIELDFLIP_LINECNT_MSB_REG, 0x00);
 	ths8200_write_value(DTG1_FIELDFLIP_LINECNT_LSB_REG, 0x01);
 
 	/* set DTG on and set DTG operation mode to
-		ATSC mode 720P(SMPTE296M progressive)*/
+	   ATSC mode 720P(SMPTE296M progressive)*/
 	ths8200_write_value(DTG1_MODE_REG, DTG_ON | ATSC_MODE_480P);
 
 	/* set MSB bit of number of lines per frame and
-		number of lines in field 1when in generic mode */
+	   number of lines in field 1when in generic mode */
 	ths8200_write_value(DTG1_FRAME_FILED_SIZE_MSB_REG, 0x27);
 
 	/* set LSB bit of number of lines per frame when in generic mode */
@@ -266,25 +262,26 @@ int ths8200_set_480p_mode(void)
 	ths8200_write_value(DTG1_FIELDSIZE_LSB_REG, 0xFF);
 
 	/* set MSB and LSB bit of the number of pixels that the DTG
-		startup is horizontally delayed with respect to HS input for
-		dedicated timing modes or EAV input for embedded
-		timing modes. */
+	   startup is horizontally delayed with respect to HS input for
+	   dedicated timing modes or EAV input for embedded
+	   timing modes. */
 	ths8200_write_value(DTG2_HS_IN_DLY_MSB_REG, 0x00);
 	ths8200_write_value(DTG2_HS_IN_DLY_LSB_REG, 0x40);
 
 	/* set MSB and LSB bit of the number of lines that the DTG
-		startup is vertically delayed with respect to VS input for
-		dedicated timing modes or the line counter value for
-		embedded timing.*/
+	   startup is vertically delayed with respect to VS input for
+	   dedicated timing modes or the line counter value for
+	   embedded timing.*/
 	ths8200_write_value(DTG2_VS_IN_DLY_MSB_REG, 0x00);
 	ths8200_write_value(DTG2_VS_IN_DLY_LSB_REG, 0x00);
 
-   /* place ths8200 in reset state */
+	/* place ths8200 in reset state */
 	ths8200_write_value(CHIP_CTL_REG, CHIP_SOFTWARE_RESET);
 
 	/* take ths8200 out of reset and in normal operation mode */
-	ths8200_write_value(CHIP_CTL_REG, CHIP_SOFTWARE_OUT_OF_RESET |
-						CHIP_LOW_FREQUENCY);
+	ths8200_write_value(CHIP_CTL_REG,
+			    CHIP_SOFTWARE_OUT_OF_RESET |
+			    CHIP_LOW_FREQUENCY);
 
 	printk(KERN_INFO "THS8200 set video mode as 480p\n");
 
@@ -295,13 +292,13 @@ int ths8200_set_720p_mode(void)
 {
 	FN_IN;
 
-    /* place ths8200 in reset state */
+	/* place ths8200 in reset state */
 	ths8200_write_value(CHIP_CTL_REG, CHIP_SOFTWARE_RESET);
 
-    /* take ths8200 out of reset and in normal operation mode */
+	/* take ths8200 out of reset and in normal operation mode */
 	ths8200_write_value(CHIP_CTL_REG, CHIP_SOFTWARE_OUT_OF_RESET);
 
-    /* place color space conversion control in reset state */
+	/* place color space conversion control in reset state */
 	ths8200_write_value(CSC_R11_REG, 0x00);
 	ths8200_write_value(CSC_R21_REG, 0x00);
 	ths8200_write_value(CSC_R31_REG, 0x00);
@@ -315,14 +312,15 @@ int ths8200_set_720p_mode(void)
 	ths8200_write_value(CSC_OFFS12_REG, 0x00);
 	ths8200_write_value(CSC_OFFS23_REG, 0x00);
 	ths8200_write_value(CSC_OFFS3_REG,
-						CSC_BYPASSED |
-						CSC_PROTECTION_ON);
+			    CSC_BYPASSED |
+			    CSC_PROTECTION_ON);
 
-    /* set YCx20 External Sync */
-	ths8200_write_value(DTG2_CNTL_REG, HS_IN_POSITIVE_POLARITY |
-						VS_IN_POSITIVE_POLARITY |
-						HS_OUT_POSITIVE_POLARITY |
-						VS_OUT_POSITIVE_POLARITY);
+	/* set YCx20 External Sync */
+	ths8200_write_value(DTG2_CNTL_REG,
+			    HS_IN_POSITIVE_POLARITY |
+			    VS_IN_POSITIVE_POLARITY |
+			    HS_OUT_POSITIVE_POLARITY |
+			    VS_OUT_POSITIVE_POLARITY);
 
 	/* select the format for the input data manager */
 	ths8200_write_value(DATA_CNTL_REG, DATA_20BIT_YCBCR_MODE);
@@ -331,7 +329,7 @@ int ths8200_set_720p_mode(void)
 	ths8200_write_value(DTG1_Y_SYNC1_LSB_REG, 0xFF);
 
 	/* set the amplitude of the negative sync and
-		equalization/serration/broad pulses for the Y channel */
+	   equalization/serration/broad pulses for the Y channel */
 	ths8200_write_value(DTG1_Y_SYNC2_LSB_REG, 0x49);
 
 	/* set the amplitude of the positive sync for the Y channel */
@@ -344,8 +342,8 @@ int ths8200_set_720p_mode(void)
 	ths8200_write_value(DTG1_CBCR_SYNC1_LSB_REG, 0xFF);
 
 	/* set the amplitude of the negative sync and
-		equalization/serration/broad pulses for the
-		Cb and Cr channels */
+	   equalization/serration/broad pulses for the
+	   Cb and Cr channels */
 	ths8200_write_value(DTG1_CBCR_SYNC2_LSB_REG, 0xFF);
 
 	/* set the amplitude of the positive sync for the Cb and Cr channels */
@@ -354,13 +352,13 @@ int ths8200_set_720p_mode(void)
 	/* set msb for sync1 sync2 and sync3 */
 	ths8200_write_value(DTG1_CBCR_SYNC_MSB_REG, 0x15);
 
-    /* set negative hsync width (half of total width) */
+	/* set negative hsync width (half of total width) */
 	ths8200_write_value(DTG1_SPEC_A_REG, 0x28);
 
-    /* set end of active video to start of negative sync */
+	/* set end of active video to start of negative sync */
 	ths8200_write_value(DTG1_SPEC_B_REG, 0x46);
 
-    /* set positive hsync width (half of total width) */
+	/* set positive hsync width (half of total width) */
 	ths8200_write_value(DTG1_SPEC_C_REG, 0x28);
 
 	/* set LSBs of sync to broad pulse */
@@ -369,13 +367,13 @@ int ths8200_set_720p_mode(void)
 	/* set LSBs of sync to active video */
 	ths8200_write_value(DTG1_SPEC_E_LSB_REG, 0x2C);
 
-    /* set MSB bit of sync to active video width[6]/sync to broad pulse [7] */
+	/* set MSB bit of sync to active video width[6]/sync to broad pulse [7] */
 	ths8200_write_value(DTG1_SPEC_DEH_MSB_REG, 0xC0);
 
 	/* set broad pulse duration for SDTV (NA) */
 	ths8200_write_value(DTG1_SPEC_H_LSB_REG, 0x00);
 
-    /* set end of active video to sync LSBs [7:0] */
+	/* set end of active video to sync LSBs [7:0] */
 	ths8200_write_value(DTG1_SPEC_K_LSB_REG, 0x46);
 
 	/* set end of active video to sync MSBs [2:0] */
@@ -388,17 +386,17 @@ int ths8200_set_720p_mode(void)
 	ths8200_write_value(DTG1_TOTAL_PIXELS_LSB_REG, 0x72);
 
 	/* set MSB and LSB bit of the starting line number
-		for the DTG when Vsync input or V-bit is
-		asserted(vertical display control) */
+	   for the DTG when Vsync input or V-bit is
+	   asserted(vertical display control) */
 	ths8200_write_value(DTG1_FIELDFLIP_LINECNT_MSB_REG, 0x00);
 	ths8200_write_value(DTG1_FIELDFLIP_LINECNT_LSB_REG, 0x01);
 
 	/* set DTG on and set DTG operation mode to
-		ATSC mode 720P(SMPTE296M progressive)*/
+	   ATSC mode 720P(SMPTE296M progressive)*/
 	ths8200_write_value(DTG1_MODE_REG, DTG_ON | ATSC_MODE_720P);
 
 	/* set MSB bit of number of lines per frame and
-		number of lines in field 1when in generic mode */
+	   number of lines in field 1when in generic mode */
 	ths8200_write_value(DTG1_FRAME_FILED_SIZE_MSB_REG, 0x27);
 
 	/* set LSB bit of number of lines per frame when in generic mode */
@@ -408,23 +406,23 @@ int ths8200_set_720p_mode(void)
 	ths8200_write_value(DTG1_FIELDSIZE_LSB_REG, 0xFF);
 
 	/* set MSB and LSB bit of the number of pixels that the DTG
-		startup is horizontally delayed with respect to HS input for
-		dedicated timing modes or EAV input for embedded
-		timing modes. */
+	   startup is horizontally delayed with respect to HS input for
+	   dedicated timing modes or EAV input for embedded
+	   timing modes. */
 	ths8200_write_value(DTG2_HS_IN_DLY_MSB_REG, 0x00);
 	ths8200_write_value(DTG2_HS_IN_DLY_LSB_REG, 0x60);
 
 	/* set MSB and LSB bit of the number of lines that the DTG
-		startup is vertically delayed with respect to VS input for
-		dedicated timing modes or the line counter value for
-		embedded timing.*/
+	   startup is vertically delayed with respect to VS input for
+	   dedicated timing modes or the line counter value for
+	   embedded timing.*/
 	ths8200_write_value(DTG2_VS_IN_DLY_MSB_REG, 0x08);
 	ths8200_write_value(DTG2_VS_IN_DLY_LSB_REG, 0x06);
 
-    /* place ths8200 in reset state */
+	/* place ths8200 in reset state */
 	ths8200_write_value(CHIP_CTL_REG, CHIP_SOFTWARE_RESET);
 
-    /* take ths8200 out of reset and in normal operation mode */
+	/* take ths8200 out of reset and in normal operation mode */
 	ths8200_write_value(CHIP_CTL_REG, CHIP_SOFTWARE_OUT_OF_RESET);
 
 	printk(KERN_INFO "THS8200 set video mode as 720p\n");
@@ -435,15 +433,17 @@ int ths8200_set_1080i_mode(void)
 {
 	FN_IN;
 
-    /* place ths8200 in reset state */
-	ths8200_write_value(CHIP_CTL_REG,CHIP_SOFTWARE_RESET |
-						CHIP_LOW_FREQUENCY);
+	/* place ths8200 in reset state */
+	ths8200_write_value(CHIP_CTL_REG,
+			    CHIP_SOFTWARE_RESET |
+			    CHIP_LOW_FREQUENCY);
 
-    /* take ths8200 out of reset and in normal operation mode */
-	ths8200_write_value(CHIP_CTL_REG, CHIP_SOFTWARE_OUT_OF_RESET |
-						CHIP_LOW_FREQUENCY);
+	/* take ths8200 out of reset and in normal operation mode */
+	ths8200_write_value(CHIP_CTL_REG,
+			    CHIP_SOFTWARE_OUT_OF_RESET |
+			    CHIP_LOW_FREQUENCY);
 
-    /* place color space conversion control in reset state */
+	/* place color space conversion control in reset state */
 	ths8200_write_value(CSC_R11_REG, 0x00);
 	ths8200_write_value(CSC_R21_REG, 0x00);
 	ths8200_write_value(CSC_R31_REG, 0x00);
@@ -457,22 +457,23 @@ int ths8200_set_1080i_mode(void)
 	ths8200_write_value(CSC_OFFS12_REG, 0x00);
 	ths8200_write_value(CSC_OFFS23_REG, 0x00);
 	ths8200_write_value(CSC_OFFS3_REG,
-						CSC_BYPASSED |
-						CSC_PROTECTION_ON);
+			    CSC_BYPASSED |
+			    CSC_PROTECTION_ON);
 
-    /* Turn off THS8200 Test Modes */
+	/* Turn off THS8200 Test Modes */
 	ths8200_write_value(TST_CNTL1_REG, 0x00);
 	ths8200_write_value(TST_CNTL2_REG, 0x00);
 
-    /* Turn CSM Off */
+	/* Turn CSM Off */
 	ths8200_write_value(CSM_GY_CNTL_MULT_MSB_REG, 0x00);
 
-    /* set YCx20 External Sync */
-	ths8200_write_value(DTG2_CNTL_REG, HS_IN_POSITIVE_POLARITY |
-						VS_IN_POSITIVE_POLARITY |
-						HS_OUT_POSITIVE_POLARITY |
-						VS_OUT_POSITIVE_POLARITY |
-						FID_POLARITY);
+	/* set YCx20 External Sync */
+	ths8200_write_value(DTG2_CNTL_REG,
+			    HS_IN_POSITIVE_POLARITY |
+			    VS_IN_POSITIVE_POLARITY |
+			    HS_OUT_POSITIVE_POLARITY |
+			    VS_OUT_POSITIVE_POLARITY |
+			    FID_POLARITY);
 
 	/* select the format for the input data manager */
 	ths8200_write_value(DATA_CNTL_REG, DATA_20BIT_YCBCR_MODE);
@@ -481,7 +482,7 @@ int ths8200_set_1080i_mode(void)
 	ths8200_write_value(DTG1_Y_SYNC1_LSB_REG, 0xFF);
 
 	/* set the amplitude of the negative sync and
-		equalization/serration/broad pulses for the Y channel */
+	   equalization/serration/broad pulses for the Y channel */
 	ths8200_write_value(DTG1_Y_SYNC2_LSB_REG, 0x49);
 
 	/* set the amplitude of the positive sync for the Y channel */
@@ -491,8 +492,8 @@ int ths8200_set_1080i_mode(void)
 	ths8200_write_value(DTG1_CBCR_SYNC1_LSB_REG, 0xFF);
 
 	/* set the amplitude of the negative sync and
-		equalization/serration/broad pulses for the
-		Cb and Cr channels */
+	   equalization/serration/broad pulses for the
+	   Cb and Cr channels */
 	ths8200_write_value(DTG1_CBCR_SYNC2_LSB_REG, 0xFF);
 
 	/* set the amplitude of the positive sync for the Cb and Cr channels */
@@ -507,29 +508,29 @@ int ths8200_set_1080i_mode(void)
 	/* set negative hsync width (half of total width) */
 	ths8200_write_value(DTG1_SPEC_A_REG, 0x2C);
 
-    /* set end of active video to start of negative sync */
+	/* set end of active video to start of negative sync */
 	ths8200_write_value(DTG1_SPEC_B_REG, 0x58);
 
-    /* set positive hsync width (half of total width) */
+	/* set positive hsync width (half of total width) */
 	ths8200_write_value(DTG1_SPEC_C_REG, 0x2C);
 
 	/* set LSBs of sync to broad pulse */
 	ths8200_write_value(DTG1_SPEC_D_LSB_REG, 0x84);
 
 	/* set distance from equalization pulse at center
-		of line to active video*/
+	   of line to active video*/
 	ths8200_write_value(DTG1_SPEC_D1_REG, 0x00);
 
 	/* set LSBs of sync to active video */
 	ths8200_write_value(DTG1_SPEC_E_LSB_REG, 0xC0);
 
-    /* set MSB bit of sync to active video width[6]/sync to broad pulse [7] */
+	/* set MSB bit of sync to active video width[6]/sync to broad pulse [7] */
 	ths8200_write_value(DTG1_SPEC_DEH_MSB_REG, 0x00);
 
 	/* set broad pulse duration for SDTV (NA) */
 	ths8200_write_value(DTG1_SPEC_H_LSB_REG, 0x00);
 
-    /* set end of active video to sync LSBs [7:0] */
+	/* set end of active video to sync LSBs [7:0] */
 	ths8200_write_value(DTG1_SPEC_K_LSB_REG, 0x58);
 
 	/* set end of active video to sync MSBs [2:0] */
@@ -548,17 +549,17 @@ int ths8200_set_1080i_mode(void)
 	ths8200_write_value(DTG1_TOTAL_PIXELS_LSB_REG, 0x98);
 
 	/* set MSB and LSB bit of the starting line number
-		for the DTG when Vsync input or V-bit is
-		asserted(vertical display control) */
+	   for the DTG when Vsync input or V-bit is
+	   asserted(vertical display control) */
 	ths8200_write_value(DTG1_FIELDFLIP_LINECNT_MSB_REG, 0x00);
 	ths8200_write_value(DTG1_FIELDFLIP_LINECNT_LSB_REG, 0x01);
 
 	/* set DTG on and set DTG operation mode to
-		ATSC mode 1080I(SMPTE274M Interlaced)*/
+	   ATSC mode 1080I(SMPTE274M Interlaced)*/
 	ths8200_write_value(DTG1_MODE_REG, DTG_ON | ATSC_MODE_1080I);
 
 	/* set MSB bit of number of lines per frame and
-		number of lines in field 1when in generic mode */
+	   number of lines in field 1when in generic mode */
 	ths8200_write_value(DTG1_FRAME_FILED_SIZE_MSB_REG, 0x42);
 
 	/* set LSB bit of number of lines per frame when in generic mode */
@@ -577,45 +578,45 @@ int ths8200_set_1080i_mode(void)
 	ths8200_write_value(DTG2_HDLY_LSB, 0x00);
 
 	/* set LSB bit of the duration of the VS_OUT output signal during
-		progressive scan video modes or during the vertical blank interval
-		of field 1 in interlaced video modes. */
+	   progressive scan video modes or during the vertical blank interval
+	   of field 1 in interlaced video modes. */
 	ths8200_write_value(DTG2_VLENGTH1_LSB, 0x05);
 
 	/* set MSB bit of the VS_OUT output signal during progressive scan
-		video modes or during the vertical blank interval of field 1 in
-		interlaced video modes. */
+	   video modes or during the vertical blank interval of field 1 in
+	   interlaced video modes. */
 	ths8200_write_value(DTG2_VLENGTH1_MSB_VDLY1_MSB, 0x00);
 
 	/* set LSB bit of line number that VS_OUT signal is asserted on for
-		progressive video modes or for field 1 of interlaced video modes. */
+	   progressive video modes or for field 1 of interlaced video modes. */
 	ths8200_write_value(DTG2_VDLY1_LSB, 0x00);
 
 	/* set LSB bit of the duration of the VS_OUT output signal during
-		the vertical blank interval of field 2 in interlaced video modes.
-		In progressive video modes, this register must be set to all 0. */
+	   the vertical blank interval of field 2 in interlaced video modes.
+	   In progressive video modes, this register must be set to all 0. */
 	ths8200_write_value(DTG2_VLENGTH2_LSB, 0x05);
 
 	/* set the MSB bit of the duration of the VS_OUT output signal
-		during the vertical blank interval of field2 in interlaced video
-		modes.In progressive video modes, this register must be set to all 0.*/
+	   during the vertical blank interval of field2 in interlaced video
+	   modes.In progressive video modes, this register must be set to all 0.*/
 	ths8200_write_value(DTG2_VLENGTH2_MSB_VDLY2_MSB, 0x77);
 
 	/* set LSB bit of the line number that the VS_OUT signal is asserted on
-		for field 2 of interlaced scan video modes.For progressive scan video
-		modes, this register must be set to all 1. */
+	   for field 2 of interlaced scan video modes.For progressive scan video
+	   modes, this register must be set to all 1. */
 	ths8200_write_value(DTG2_VDLY2_LSB, 0x00);
 
 	/* set MSB and LSB bit of the number of pixels that the DTG
-		startup is horizontally delayed with respect to HS input for
-		dedicated timing modes or EAV input for embedded
-		timing modes. */
+	   startup is horizontally delayed with respect to HS input for
+	   dedicated timing modes or EAV input for embedded
+	   timing modes. */
 	ths8200_write_value(DTG2_HS_IN_DLY_MSB_REG, 0x00);
 	ths8200_write_value(DTG2_HS_IN_DLY_LSB_REG, 0x44);
 
 	/* set MSB and LSB bit of the number of lines that the DTG
-		startup is vertically delayed with respect to VS input for
-		dedicated timing modes or the line counter value for
-		embedded timing.*/
+	   startup is vertically delayed with respect to VS input for
+	   dedicated timing modes or the line counter value for
+	   embedded timing.*/
 	ths8200_write_value(DTG2_VS_IN_DLY_MSB_REG, 0x00);
 	ths8200_write_value(DTG2_VS_IN_DLY_LSB_REG, 0x01);
 
@@ -635,8 +636,7 @@ static __init int ths8200_init(void)
 	FN_IN;
 
 	if (i2c_add_driver(&ths8200_driver)) {
-		DPRINTK("Driver registration failed, \
-		      module not inserted.\n");
+		DPRINTK("Driver registration failed, module not inserted.\n");
 		return -ENODEV;
 	}
 
