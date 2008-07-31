@@ -501,7 +501,7 @@ static void __devinit nand_davinci_flash_init(void)
 		/* Disable HPI and ATA mux */
 		davinci_mux_peripheral(DAVINCI_MUX_HPIEN, 0);
 		davinci_mux_peripheral(DAVINCI_MUX_ATAEN, 0);
-
+#ifndef CONFIG_MACH_NTOSD_644XA
 		/* Enable VLYNQ and AEAW */
 		davinci_mux_peripheral(DAVINCI_MUX_AEAW0, 1);
 		davinci_mux_peripheral(DAVINCI_MUX_AEAW1, 1);
@@ -510,7 +510,7 @@ static void __devinit nand_davinci_flash_init(void)
 		davinci_mux_peripheral(DAVINCI_MUX_AEAW4, 1);
 		davinci_mux_peripheral(DAVINCI_MUX_VLSCREN, 1);
 		davinci_mux_peripheral(DAVINCI_MUX_VLYNQEN, 1);
-
+#endif
 		regval = davinci_readl(DAVINCI_SYSTEM_MODULE_BASE + PINMUX0);
 
 		printk(KERN_WARNING "Warning: MUX config for NAND: Set " \
