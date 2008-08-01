@@ -330,7 +330,7 @@ static const struct tvp7000_video_std video_std[] = {
 		.plldiv_lsb = 0x00,
 		.pll_ctrl = 0x68,
 		.phase_select_bit0 = 0x01,
-    },
+	},
 	{ /* VGA standard: 640*480 resolution,72HZ refresh rate,
 			37.9kHZ Horizontal frequency,31.5MHZ pixel rate,
 		*/
@@ -521,7 +521,7 @@ static int tvp7000_detect_client(struct i2c_adapter *adapter,
 static inline int tvp7000_read_reg(u8 reg);
 static inline int tvp7000_write_reg(u8 reg, u8 value);
 
-static int tvp7000_setup_video_stardard(const struct tvp7000_video_std *std);
+static int tvp7000_setup_video_standard(const struct tvp7000_video_std *std);
 
 static int tvp7000_device_init(struct vpfe_capture_params *params);
 static int tvp7000_device_cmd(u32 cmd, void *arg);
@@ -545,7 +545,7 @@ static inline int tvp7000_write_reg(u8 reg, u8 value)
 	int ret;
 
 	ret = i2c_smbus_write_byte_data(tvp7000_client,
-							reg, value);
+									reg, value);
 	if (ret != 0)
 		DPRINTK("Write Error Address = %x\n", reg);
 
@@ -562,7 +562,7 @@ static int tvp7000_write_inittab(const struct i2c_reg_value *regs, int num)
 
 	for (i=0; i<num; i++)
 		err |= tvp7000_write_reg(regs[i].reg, regs[i].value);
-	
+
 	return err;
 }
 
@@ -576,7 +576,8 @@ static int tvp7000_detect_client(struct i2c_adapter *adapter,
 	FN_IN;
 
 	if (!i2c_check_functionality(adapter, I2C_FUNC_SMBUS_WORD_DATA |
-								 I2C_FUNC_SMBUS_WRITE_BYTE)) {
+								 I2C_FUNC_SMBUS_WRITE_BYTE))
+	{
 		DPRINTK("Functionality check failed for %s\n",
 				client_name);
 		return err;
@@ -584,7 +585,8 @@ static int tvp7000_detect_client(struct i2c_adapter *adapter,
 
 	tvp7000_client = kmalloc(sizeof(struct i2c_client),
 							 GFP_KERNEL);
-	if (tvp7000_client == NULL) {
+	if (tvp7000_client == NULL)
+	{
 		err = -ENOMEM;
 		DPRINTK("Couldn't allocate memory for %s\n",
 				client_name);
@@ -599,7 +601,8 @@ static int tvp7000_detect_client(struct i2c_adapter *adapter,
 	strlcpy(tvp7000_client->name, client_name, I2C_NAME_SIZE);
 
 	err = i2c_attach_client(tvp7000_client);
-	if (err) {
+	if (err)
+	{
 		DPRINTK("Couldn't attach %s\n", client_name);
 		kfree(tvp7000_client);
 		return err;
@@ -622,7 +625,8 @@ static int tvp7000_detach_client(struct i2c_client *client)
 	FN_IN;
 
 	err = i2c_detach_client(client);
-	if (err) {
+	if (err)
+	{
 		DPRINTK("Client deregistration failed, \
 		       client not detached.\n");
 		return err;
@@ -638,7 +642,7 @@ static void tvp7000_device_power_on(bool on)
 	/* enable the GPIO(39) direction mode as output */
 	gpio_direction_output(HD_CAP_GPIO, level);
 	/* when on == true */
-    /* set the Reset pin level as High for 5ms */
+	/* set the Reset pin level as High for 5ms */
 	gpio_set_value(HD_CAP_GPIO, level);
 	mdelay(5);
 	/* pull down the Reset pin level for 5us,
@@ -651,95 +655,91 @@ static void tvp7000_device_power_on(bool on)
 	udelay(5);
 }
 
-static int tvp7000_setup_video_stardard(
-    const struct tvp7000_video_std *std)
+static int tvp7000_setup_video_standard(const struct tvp7000_video_std *std)
 {
-    int err = 0;
-    int val;
+	int err = 0;
+	int val;
 
-    if (std == NULL)
-        return -EINVAL;
+	if (std == NULL)
+		return -EINVAL;
 
-    err |= tvp7000_write_reg(TVP7000_PLL_DIVIDE_MSB,
-                             std->plldiv_msb);
-    err |= tvp7000_write_reg(TVP7000_PLL_DIVIDE_LSB,
-                             std->plldiv_lsb);
-    err |= tvp7000_write_reg(TVP7000_PLL_CTRL,
-                             std->pll_ctrl);
+	err |= tvp7000_write_reg(TVP7000_PLL_DIVIDE_MSB, std->plldiv_msb);
+	err |= tvp7000_write_reg(TVP7000_PLL_DIVIDE_LSB, std->plldiv_lsb);
+	err |= tvp7000_write_reg(TVP7000_PLL_CTRL, std->pll_ctrl);
 
-    val = tvp7000_read_reg(TVP7000_PHASE_SELECT);
-    val &= ~0x01;
-    err |= tvp7000_write_reg(TVP7000_PHASE_SELECT,
-                             (std->phase_select_bit0 & 0x01) | val);
+	val = tvp7000_read_reg(TVP7000_PHASE_SELECT);
+	val &= ~0x01;
+	err |= tvp7000_write_reg(TVP7000_PHASE_SELECT, (std->phase_select_bit0 & 0x01) | val);
 
-    return err;
+	return err;
 }
 
 
 static int tvp7000_selmux(void)
 {
-    if(tvp7000_write_reg(TVP7000_INPUT_MUX_1, 0)) // set channel 1
-        return -1;
-    return 0;
+	if (tvp7000_write_reg(TVP7000_INPUT_MUX_1, 0)) // set channel 1
+		return -1;
+	return 0;
 }
 
 static int input_signal_exist(void)
 {
-    int val;
-    val = tvp7000_read_reg(TVP7000_SYNC_DETECT_STATUS);
-    if((val & 0x80) && (val & 0x10))
-    {
-        return 0;
-    }
-    return -1;
+	int val;
+	val = tvp7000_read_reg(TVP7000_SYNC_DETECT_STATUS);
+	if ((val & 0x80) && (val & 0x10))
+	{
+		return 0;
+	}
+	return -1;
 }
 
 static int tvp7000_device_cmd(u32 cmd, void *arg)
 {
-    int ret = 0;
+	int ret = 0;
 
-    switch (cmd) {
+	switch (cmd)
+	{
 	case 0:
 	case VIDIOC_INT_RESET:
 		tvp7000_device_init(NULL);
 		break;
 	case VIDIOC_G_INPUT:
-	{
-		if (!input_signal_exist())
-			*(int *)arg = VPFE_AMUX_COMPONENT;
-		else
-            ret = -EINVAL;
-		break;
-	}
+		{
+			if (!input_signal_exist())
+				*(int *)arg = VPFE_AMUX_COMPONENT;
+			else
+				ret	= -EINVAL;
+			break;
+		}
 	case VIDIOC_S_INPUT:
-	{
-		int input = *(int *)arg;
-		if (input == VPFE_AMUX_COMPONENT)
-        {
-            if(tvp7000_device_init(NULL))
-                ret = -EBUSY;
-        }
-		else
-            ret = -EINVAL;
-		break;
-	}
+		{
+			int input = *(int *)arg;
+			if (input == VPFE_AMUX_COMPONENT)
+			{
+				if (tvp7000_device_init(NULL))
+					ret = -EBUSY;
+			}
+			else
+				ret	= -EINVAL;
+			break;
+		}
 	case VPFE_CMD_CONFIG_CAPTURE:
 		{
 			struct vpfe_capture_params *params =
-				(struct vpfe_capture_params *)arg;
+			(struct vpfe_capture_params *)arg;
 
-			if (params->amuxmode == VPFE_AMUX_COMPONENT) 
-            {
-                ret = tvp7000_setup_video_stardard(STD(VIDEO480P60HZ));
-            }
-            else
-                ret = -1;
+			if (params->amuxmode == VPFE_AMUX_COMPONENT)
+			{
+				ret = tvp7000_setup_video_standard(STD(VIDEO480P60HZ));
+			}
+			else
+				ret	= -1;
 			break;
 		}
-    default:
-        break;
-    }
-    return ret;
+	default:
+		break;
+	}
+	return ret;
 }
 
 static int tvp7000_device_init(struct vpfe_capture_params *params)
@@ -753,20 +753,20 @@ static int tvp7000_device_init(struct vpfe_capture_params *params)
 	/* initialize TVP7000 as its default values */
 	tvp7000_write_inittab(tvp7000_init_default, NUM_OF_REGS(tvp7000_init_default));
 	tvp7000_write_inittab(tvp7000_init_component, NUM_OF_REGS(tvp7000_init_component));
-    if(tvp7000_selmux())
-        return -1;
+	if (tvp7000_selmux())
+		return -1;
 	return 0;
 }
 
 static int tvp7000_device_active(void)
 {
-    tvp7000_device_power_on(true);
+	tvp7000_device_power_on(true);
 	return 0;
 }
 
 static int tvp7000_device_deactive(void)
 {
-    tvp7000_device_power_on(false);
+	tvp7000_device_power_on(false);
 	return 0;
 }
 
@@ -776,11 +776,11 @@ static int tvp7000_device_cleanup(void)
 	return 0;
 }
 
-static struct vpfe_capture_device	tvp7000_capture_device = {
+static struct vpfe_capture_device   tvp7000_capture_device = {
 	.name = "TVP7000",
 	.id = VPFE_CAPTURE_ID_TVP7000,
 	.capture_device_init = tvp7000_device_init,
-    .capture_device_cmd = tvp7000_device_cmd,
+	.capture_device_cmd = tvp7000_device_cmd,
 	.capture_device_active = tvp7000_device_active,
 	.capture_device_deactive = tvp7000_device_deactive,
 	.capture_device_cleanup = tvp7000_device_cleanup,
@@ -788,30 +788,32 @@ static struct vpfe_capture_device	tvp7000_capture_device = {
 
 static __init int tvp7000_init(void)
 {
-    int i;
+	int i;
 	int err = 0;
 	FN_IN;
 
 	/* power on the tvp7000 Video decoder*/
 	tvp7000_device_power_on(true);
-    mdelay(500);
+	mdelay(500);
 
-    for (i = 0; i < TVP7000_I2C_RETRY; i++)
-    {
-        err = i2c_add_driver(&tvp7000_driver);
-        if (!err) 
-        {
-            break;
-        }
-    }
-    if (err) {
-        DPRINTK("I2C driver %s add failed\n",
-                tvp7000_driver.driver.name);
-        return err;
-    }
+	for (i = 0; i < TVP7000_I2C_RETRY; i++)
+	{
+		err = i2c_add_driver(&tvp7000_driver);
+		if (!err)
+		{
+			break;
+		}
+	}
+	if (err)
+	{
+		DPRINTK("I2C driver %s add failed\n",
+				tvp7000_driver.driver.name);
+		return err;
+	}
 
 	err = vpfe_capture_device_register(&tvp7000_capture_device);
-	if (err) {
+	if (err)
+	{
 		DPRINTK("VPFE Capture Device %s register failed\n",
 				tvp7000_capture_device.name);
 		return err;

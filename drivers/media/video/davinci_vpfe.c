@@ -96,8 +96,8 @@ static struct v4l2_fract sp_aspect = VPFE_PIXELASPECT_NTSC_SP;
 
 #define NTOSD_INPUTS	2
 static struct v4l2_input ntosd_inputs[NTOSD_INPUTS] = {
-     { 0, "COMPOSITE", V4L2_INPUT_TYPE_CAMERA, 2, 0, V4L2_STD_ALL, 0 },
-     { 1, "COMPONENT", V4L2_INPUT_TYPE_CAMERA, 2, 0, V4L2_STD_ALL, 0 },
+	{ 0, "COMPOSITE", V4L2_INPUT_TYPE_CAMERA, 2, 0, V4L2_STD_ALL, 0},
+	{ 1, "COMPONENT", V4L2_INPUT_TYPE_CAMERA, 2, 0, V4L2_STD_ALL, 0},
 };
 
 static vpfe_obj vpfe_device = {	/* the default format is NTSC */
@@ -127,7 +127,7 @@ static vpfe_obj vpfe_device = {	/* the default format is NTSC */
 		.enablebt656sync = TRUE,
 		.squarepixel = FALSE,
 	},
-        .irqlock = SPIN_LOCK_UNLOCKED
+	.irqlock = SPIN_LOCK_UNLOCKED
 };
 
 struct v4l2_capability vpfe_drvcap = {
@@ -138,86 +138,98 @@ struct v4l2_capability vpfe_drvcap = {
 	.capabilities = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING
 };
 
+
 static irqreturn_t vpfe_isr(int irq, void *dev_id)
 {
 	vpfe_obj *vpfe = &vpfe_device;
 	int fid;
 
-    if (ccdc_getfidmode()) // interlace mode
-    {
-        /* check which field we are in hardware */
-        fid = ccdc_getfid();
-        vpfe->field_id ^= 1;	/* switch the software maintained field id */
-        debug_print(KERN_INFO "field id = %x:%x.\n", fid, vpfe->field_id);
-        if (fid == vpfe->field_id) {	/* we are in-sync here, continue */
-            if (fid == 0) {
-                /*  One frame is just being captured. If the next frame
-                is available, release the current frame and move on */
-                if (vpfe->curFrm != vpfe->nextFrm) {
-                    vpfe->curFrm->state = STATE_DONE;
-                    wake_up_interruptible(&vpfe->curFrm->done);
-                    vpfe->curFrm = vpfe->nextFrm;
-                }
-                /* based on whether the two fields are stored interleavely      */
-                /* or separately in memory, reconfigure the CCDC memory address */
-                if (vpfe->field == V4L2_FIELD_SEQ_TB) {
-                    u32 addr = vpfe->curFrm->boff + vpfe->field_offset;
-                    ccdc_setfbaddr((unsigned long)addr);
-                }
-            } else if (fid == 1) {
-                /* if one field is just being captured */
-                /* configure the next frame */
-                /* get the next frame from the empty queue */
-                /* if no frame is available, hold on to the current buffer */
-                if (!list_empty(&vpfe->dma_queue)
-                    && vpfe->curFrm == vpfe->nextFrm) {
-                    vpfe->nextFrm = list_entry(vpfe->dma_queue.next,
-                                   struct videobuf_buffer, queue);
-                    list_del(&vpfe->nextFrm->queue);
-                    vpfe->nextFrm->state = STATE_ACTIVE;
-                    ccdc_setfbaddr((unsigned long)vpfe->nextFrm->boff);
-                }
-                if (vpfe->mode_changed) {
-                    ccdc_setwin(&vpfe->ccdc_params);
-                    /* update the field offset */
-                    vpfe->field_offset = (vpfe->vwin.height - 2) * vpfe->vwin.width;
-                    vpfe->mode_changed = FALSE;
-                }
-            }
-        } else if (fid == 0) {
-            /* recover from any hardware out-of-sync due to */
-            /* possible switch of video source              */
-            /* for fid == 0, sync up the two fids           */
-            /* for fid == 1, no action, one bad frame will  */
-            /* go out, but it is not a big deal             */
-            vpfe->field_id = fid;
-        }
-    }
-    else // progressive mode
-    {
-        vpfe->curFrm->state = STATE_DONE;
-        wake_up_interruptible(&vpfe->curFrm->done);
-        if (!list_empty(&vpfe->dma_queue)) 
-        {
-            vpfe->curFrm = list_entry(vpfe->dma_queue.next, struct videobuf_buffer, queue);
-            list_del(&vpfe->curFrm->queue);
-            vpfe->curFrm->state = STATE_ACTIVE;
-            ccdc_setfbaddr((unsigned long)vpfe->curFrm->boff);
-        }
-    }
-    debug_print(KERN_INFO "interrupt returned.\n");
-    return IRQ_RETVAL(1);
+	if (ccdc_getfidmode()) // interlace mode
+	{
+		/* check which field we are in hardware */
+		fid = ccdc_getfid();
+		vpfe->field_id ^= 1;	/* switch the software maintained field id */
+		debug_print(KERN_INFO "field id = %x:%x.\n", fid, vpfe->field_id);
+		if (fid == vpfe->field_id)
+		{	 /* we are in-sync here, continue */
+			if (fid == 0)
+			{
+				/*  One frame is just being captured. If the next frame
+				is available, release the current frame and move on */
+				if (vpfe->curFrm != vpfe->nextFrm)
+				{
+					vpfe->curFrm->state = STATE_DONE;
+					wake_up_interruptible(&vpfe->curFrm->done);
+					vpfe->curFrm = vpfe->nextFrm;
+				}
+				/* based on whether the two fields are stored interleavely      */
+				/* or separately in memory, reconfigure the CCDC memory address */
+				if (vpfe->field == V4L2_FIELD_SEQ_TB)
+				{
+					u32 addr = vpfe->curFrm->boff + vpfe->field_offset;
+					ccdc_setfbaddr((unsigned long)addr);
+				}
+			}
+			else if (fid == 1)
+			{
+				/* if one field is just being captured */
+				/* configure the next frame */
+				/* get the next frame from the empty queue */
+				/* if no frame is available, hold on to the current buffer */
+				if (!list_empty(&vpfe->dma_queue)
+					&& vpfe->curFrm == vpfe->nextFrm)
+				{
+					vpfe->nextFrm = list_entry(vpfe->dma_queue.next,
+											   struct videobuf_buffer, queue);
+					list_del(&vpfe->nextFrm->queue);
+					vpfe->nextFrm->state = STATE_ACTIVE;
+					ccdc_setfbaddr((unsigned long)vpfe->nextFrm->boff);
+				}
+				if (vpfe->mode_changed)
+				{
+					ccdc_setwin(&vpfe->ccdc_params);
+					/* update the field offset */
+					vpfe->field_offset = (vpfe->vwin.height - 2) * vpfe->vwin.width;
+					vpfe->mode_changed = FALSE;
+				}
+			}
+		}
+		else if (fid == 0)
+		{
+			/* recover from any hardware out-of-sync due to */
+			/* possible switch of video source              */
+			/* for fid == 0, sync up the two fids           */
+			/* for fid == 1, no action, one bad frame will  */
+			/* go out, but it is not a big deal             */
+			vpfe->field_id = fid;
+		}
+	}
+	else // progressive mode
+	{
+		vpfe->curFrm->state = STATE_DONE;
+		wake_up_interruptible(&vpfe->curFrm->done);
+		if (!list_empty(&vpfe->dma_queue))
+		{
+			vpfe->curFrm = list_entry(vpfe->dma_queue.next, struct videobuf_buffer, queue);
+			list_del(&vpfe->curFrm->queue);
+			vpfe->curFrm->state = STATE_ACTIVE;
+			ccdc_setfbaddr((unsigned long)vpfe->curFrm->boff);
+		}
+	}
+	debug_print(KERN_INFO "interrupt returned.\n");
+	return IRQ_RETVAL(1);
 }
 
 /* this is the callback function called from videobuf_qbuf() function */
 /* the buffer is prepared and queued into the dma queue */
 static int buffer_prepare(struct videobuf_queue *q,
-			  struct videobuf_buffer *vb,
-			  enum v4l2_field field)
+						  struct videobuf_buffer *vb,
+						  enum v4l2_field field)
 {
 	vpfe_obj *vpfe = &vpfe_device;
 
-	if (vb->state == STATE_NEEDS_INIT) {
+	if (vb->state == STATE_NEEDS_INIT)
+	{
 		vb->width  = vpfe->vwin.width;
 		vb->height = vpfe->vwin.height;
 		vb->size   = VPFE_MAX_FBUF_SIZE;
@@ -235,7 +247,8 @@ buffer_config(struct videobuf_queue *q, unsigned int count)
 	vpfe_obj *vpfe = &vpfe_device;
 	int i;
 
-	for(i = 0; i < count; i++) {
+	for (i = 0; i < count; i++)
+	{
 		q->bufs[i]->boff = virt_to_phys(vpfe->fbuffers[i]);
 		debug_print(KERN_INFO "buffer address: %x\n", q->bufs[i]->boff);
 	}
@@ -248,13 +261,16 @@ buffer_setup(struct videobuf_queue *q, unsigned int *count, unsigned int *size)
 	int i;
 	*size = VPFE_MAX_FBUF_SIZE;
 
-	for (i = VPFE_DEFNUM_FBUFS; i < *count; i++) {
+	for (i = VPFE_DEFNUM_FBUFS; i < *count; i++)
+	{
 		u32 size = PAGE_SIZE << VPFE_MAX_FBUF_ORDER;
 		void *mem = (void *)__get_free_pages(GFP_KERNEL |GFP_DMA,
-						     VPFE_MAX_FBUF_ORDER);
-		if (mem) {
+											 VPFE_MAX_FBUF_ORDER);
+		if (mem)
+		{
 			unsigned long adr = (unsigned long)mem;
-			while (size > 0) {
+			while (size > 0)
+			{
 				/* make sure the frame buffers are never
 				   swapped out of memory */
 				SetPageReserved(virt_to_page(adr));
@@ -262,7 +278,9 @@ buffer_setup(struct videobuf_queue *q, unsigned int *count, unsigned int *size)
 				size -= PAGE_SIZE;
 			}
 			vpfe->fbuffers[i] = mem;
-		} else {
+		}
+		else
+		{
 			break;
 		}
 	}
@@ -275,7 +293,7 @@ static void buffer_queue(struct videobuf_queue *q, struct videobuf_buffer *vb)
 {
 	vpfe_obj *vpfe = &vpfe_device;
 
-        /* add the buffer to the DMA queue */
+	/* add the buffer to the DMA queue */
 	list_add_tail(&vb->queue, &vpfe->dma_queue);
 	vb->state = STATE_QUEUED;
 }
@@ -283,11 +301,12 @@ static void buffer_queue(struct videobuf_queue *q, struct videobuf_buffer *vb)
 static void buffer_release(struct videobuf_queue *q, struct videobuf_buffer *vb)
 {
 	/* free the buffer if it is not one of the 3 allocated at initializaiton time */
-	if(vb->i < vpfe_device.numbuffers
-	   && vb->i >= VPFE_DEFNUM_FBUFS
-	   && vpfe_device.fbuffers[vb->i]){
+	if (vb->i < vpfe_device.numbuffers
+		&& vb->i >= VPFE_DEFNUM_FBUFS
+		&& vpfe_device.fbuffers[vb->i])
+	{
 		free_pages((unsigned long)vpfe_device.fbuffers[vb->i],
-			   VPFE_MAX_FBUF_ORDER);
+				   VPFE_MAX_FBUF_ORDER);
 		vpfe_device.fbuffers[vb->i] = NULL;
 	}
 }
@@ -329,8 +348,9 @@ static int vpfe_select_capture_device(int id)
 
 	down_interruptible(&vpfe_device.device_list_lock);
 	list_for_each_entry(device, &vpfe_device.capture_device_list,
-			    device_list){
-		if (device->id == id) {
+						device_list){
+		if (device->id == id)
+		{
 			err = vpfe_capture_device_active(device);
 			up(&vpfe_device.device_list_lock);
 			return err;
@@ -342,339 +362,404 @@ static int vpfe_select_capture_device(int id)
 }
 
 static int vpfe_doioctl(struct inode *inode, struct file *file,
-			unsigned int cmd, void *arg)
+						unsigned int cmd, void *arg)
 {
 	vpfe_obj *vpfe = &vpfe_device;
 	vpfe_fh *fh = file->private_data;
 
 	int ret = 0;
-	switch (cmd) {
+	switch (cmd)
+	{
 	case VIDIOC_S_CTRL:
 	case VIDIOC_S_CROP:
 	case VIDIOC_S_FMT:
 	case VIDIOC_S_STD:
 		ret = v4l2_prio_check(&vpfe->prio, &fh->prio);
-		if (0 != ret) {
+		if (0 != ret)
+		{
 			return ret;
-		}   
+		}
 		break;
-    }
-	switch (cmd) {
+	}
+	switch (cmd)
+	{
 	case VIDIOC_QUERYCAP:
-	{
-		struct v4l2_capability *cap = (struct v4l2_capability *)arg;
-		memset(cap, 0, sizeof(*cap));
-		*cap = vpfe_drvcap;
-		break;
-	}
+		{
+			struct v4l2_capability *cap = (struct v4l2_capability *)arg;
+			memset(cap, 0, sizeof(*cap));
+			*cap = vpfe_drvcap;
+			break;
+		}
 	case VIDIOC_ENUM_FMT:
-	{
-		struct v4l2_fmtdesc *fmt = (struct v4l2_fmtdesc *)arg;
-		u32 index = fmt->index;
-		memset(fmt, 0, sizeof(*fmt));
-		fmt->index = index;
-		if (index == 0) {
-			/* only yuv4:2:2 format is supported at this point */
-			fmt->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-			strcpy(fmt->description, "YCbCr4:2:2 Interleaved UYUV");
-			fmt->pixelformat = V4L2_PIX_FMT_UYVY;
-		} else if (index == 1) {
-			fmt->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-			strcpy(fmt->description, "YCbCr4:2:2 Interleaved YUYV");
-			fmt->pixelformat = V4L2_PIX_FMT_YUYV;
-		} else {
-			ret = -EINVAL;
-		}
-		break;
-	}
-	case VIDIOC_G_FMT:
-	{
-		struct v4l2_format *fmt = (struct v4l2_format *)arg;
-		if (fmt->type != V4L2_BUF_TYPE_VIDEO_CAPTURE) {
-			ret = -EINVAL;
-		} else {
-			struct v4l2_pix_format *pixfmt = &fmt->fmt.pix;
-			down_interruptible(&vpfe->lock);
-			pixfmt->width = vpfe->vwin.width;
-			pixfmt->height = vpfe->vwin.height;
-			pixfmt->field = vpfe->field;
-			pixfmt->pixelformat = vpfe->pixelfmt;
-			pixfmt->bytesperline = pixfmt->width * 2;
-			pixfmt->sizeimage = pixfmt->bytesperline * pixfmt->height;
-			pixfmt->colorspace = V4L2_COLORSPACE_SMPTE170M;
-			up(&vpfe->lock);
-		}
-		break;
-	}
-	case VIDIOC_S_FMT:
-	{
-		struct v4l2_format *fmt = (struct v4l2_format *)arg;
-		struct v4l2_pix_format *pixfmt = &fmt->fmt.pix;
-		ccdc_params_ycbcr *params = &vpfe->ccdc_params;
-		if (vpfe->started) {	/* make sure streaming is not started */
-			ret = -EBUSY;
-			break;
-		}
-
-		down_interruptible(&vpfe->lock);
-		if (fmt->type != V4L2_BUF_TYPE_VIDEO_CAPTURE) {
-			ret = -EINVAL;
-			up(&vpfe->lock);
-			break;
-		}
-		if ((pixfmt->width + vpfe->vwin.left <= vpfe->bounds.width) &
-		    (pixfmt->height + vpfe->vwin.top <= vpfe->bounds.height)) {
-			/* this is the case when no scaling is supported */
-			/* crop window is directed modified */
-			vpfe->vwin.height = pixfmt->height;
-			vpfe->vwin.width = pixfmt->width;
-			params->win.width = pixfmt->width;
-			params->win.height = pixfmt->height;
-		} else {
-			ret = -EINVAL;
-			up(&vpfe->lock);
-			break;
-		}
-		/* setup the CCDC parameters accordingly */
-		if (pixfmt->pixelformat == V4L2_PIX_FMT_YUYV) {
-			params->pix_order = CCDC_PIXORDER_YCBYCR;
-			vpfe->pixelfmt = pixfmt->pixelformat;
-		} else if (pixfmt->pixelformat == V4L2_PIX_FMT_UYVY) {
-			params->pix_order = CCDC_PIXORDER_CBYCRY;
-			vpfe->pixelfmt = pixfmt->pixelformat;
-		} else {
-			ret = -EINVAL;	/* not supported format */
-			up(&vpfe->lock);
-			break;
-		}
-		if (pixfmt->field == V4L2_FIELD_NONE ||
-		    pixfmt->field == V4L2_FIELD_INTERLACED) {
-			params->buf_type = CCDC_BUFTYPE_FLD_INTERLEAVED;
-			vpfe->field = pixfmt->field;
-		} else if (pixfmt->field == V4L2_FIELD_SEQ_TB) {
-			params->buf_type = CCDC_BUFTYPE_FLD_SEPARATED;
-			vpfe->field = pixfmt->field;
-		} else {
-			ret = -EINVAL;
-		}
-
-		ret = DEVICE_CMD(ACTIVE_DEVICE(), VIDIOC_S_FMT, arg);
-
-		up(&vpfe->lock);
-		break;
-	}
-	case VIDIOC_TRY_FMT:
-	{
-		struct v4l2_format *fmt = (struct v4l2_format *)arg;
-		if (fmt->type != V4L2_BUF_TYPE_VIDEO_CAPTURE) {
-			ret = -EINVAL;
-		} else {
-			struct v4l2_pix_format *pixfmt = &fmt->fmt.pix;
-			if (pixfmt->width > vpfe->bounds.width ||
-			    pixfmt->height > vpfe->bounds.height ||
-			    (pixfmt->pixelformat != V4L2_PIX_FMT_UYVY &&
-			     pixfmt->pixelformat != V4L2_PIX_FMT_YUYV)) {
+		{
+			struct v4l2_fmtdesc *fmt = (struct v4l2_fmtdesc *)arg;
+			u32 index = fmt->index;
+			memset(fmt, 0, sizeof(*fmt));
+			fmt->index = index;
+			if (index == 0)
+			{
+				/* only yuv4:2:2 format is supported at this point */
+				fmt->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+				strcpy(fmt->description, "YCbCr4:2:2 Interleaved UYUV");
+				fmt->pixelformat = V4L2_PIX_FMT_UYVY;
+			}
+			else if (index == 1)
+			{
+				fmt->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+				strcpy(fmt->description, "YCbCr4:2:2 Interleaved YUYV");
+				fmt->pixelformat = V4L2_PIX_FMT_YUYV;
+			}
+			else
+			{
 				ret = -EINVAL;
 			}
-		}
-		break;
-	}
-	case VIDIOC_G_STD:
-	{
-		v4l2_std_id *id = (v4l2_std_id *) arg;
-		*id = vpfe->std;
-		break;
-	}
-	case VIDIOC_S_STD:
-	{
-		v4l2_std_id id = *(v4l2_std_id *) arg;
-		int sqp = 0;
-
-		if (vpfe->started) {	/* make sure streaming is not started */
-			ret = -EBUSY;
 			break;
 		}
-		down_interruptible(&vpfe->lock);
-		if (id & V4L2_STD_625_50) {
-			vpfe->std = id;
-			vpfe->bounds = vpfe->vwin = pal_bounds;
-			vpfe->pixelaspect = pal_aspect;
-			vpfe->ccdc_params.win = pal_bounds;
-            vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_INTERLACED;
-            vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_8BIT;
-		} else if (id & V4L2_STD_525_60) {
-			vpfe->std = id;
-			vpfe->bounds = vpfe->vwin = ntsc_bounds;
-			vpfe->pixelaspect = ntsc_aspect;
-			vpfe->ccdc_params.win = ntsc_bounds;
-            vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_INTERLACED;
-            vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_8BIT;
-		} else if (id & VPFE_STD_625_50_SQP) {
-			vpfe->std = id;
-			vpfe->bounds = vpfe->vwin = palsp_bounds;
-			vpfe->pixelaspect = sp_aspect;
-            vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_INTERLACED;
-            vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_8BIT;
-			sqp = 1;
-			id >>= 32;
-		} else if (id & VPFE_STD_525_60_SQP) {
-			vpfe->std = id;
-			sqp = 1;
-			vpfe->std = id;
-			id >>= 32;
-			vpfe->bounds = vpfe->vwin = ntscsp_bounds;
-			vpfe->pixelaspect = sp_aspect;
-			vpfe->ccdc_params.win = ntscsp_bounds;
-            vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_INTERLACED;
-            vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_8BIT;
-		} else if (id & VPFE_STD_AUTO) {
-			vpfe->bounds = vpfe->vwin = pal_bounds;
-			vpfe->pixelaspect = pal_aspect;
-			vpfe->ccdc_params.win = pal_bounds;
-            vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_INTERLACED;
-            vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_8BIT;
-			vpfe->std = id;
-		} else if (id & VPFE_STD_AUTO_SQP) {
-			vpfe->std = id;
-			vpfe->bounds = vpfe->vwin = palsp_bounds;
-			vpfe->pixelaspect = sp_aspect;
-            vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_INTERLACED;
-            vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_8BIT;
-			sqp = 1;
-		} else if (id & V4L2_STD_HD_480P) {
-			vpfe->std = id;
-			vpfe->bounds = vpfe->vwin = hd_480p_bounds;
-			vpfe->pixelaspect = sp_aspect;
-			vpfe->ccdc_params.win = hd_480p_bounds;
-            vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_PROGRESSIVE;
-            vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_16BIT;
-		} else {
-			ret = -EINVAL;
-		}
-
-		vpfe->capture_params.mode = id;
-		vpfe->capture_params.squarepixel = sqp;
-
-		ret = DEVICE_CMD(ACTIVE_DEVICE(), VPFE_CMD_CONFIG_CAPTURE, &vpfe->capture_params);
-
-		up(&vpfe->lock);
-		break;
-	}
-	case VIDIOC_ENUMSTD:
-	{
-		struct v4l2_standard *std = (struct v4l2_standard *)arg;
-		u32 index = std->index;
-		memset(std, 0, sizeof(*std));
-		std->index = index;
-		if (index == 0) {
-			std->id = V4L2_STD_525_60;
-			strcpy(std->name, "SD-525line-30fps");
-			std->framelines = 525;
-			std->frameperiod.numerator = 1001;
-			std->frameperiod.denominator = 30000;
-		} else if (index == 1) {
-			std->id = V4L2_STD_625_50;
-			strcpy(std->name, "SD-625line-25fps");
-			std->framelines = 625;
-			std->frameperiod.numerator = 1;
-			std->frameperiod.denominator = 25;
-		} else if (index == 2) {
-			std->id = VPFE_STD_625_50_SQP;
-			strcpy(std->name,
-			       "SD-625line-25fps square pixel");
-			std->framelines = 625;
-			std->frameperiod.numerator = 1;
-			std->frameperiod.denominator = 25;
-		} else if (index == 3) {
-			std->id = VPFE_STD_525_60_SQP;
-			strcpy(std->name,
-			       "SD-525line-25fps square pixel");
-			std->framelines = 525;
-			std->frameperiod.numerator = 1001;
-			std->frameperiod.denominator = 30000;
-		} else if (index == 4) {
-			std->id = VPFE_STD_AUTO;
-			strcpy(std->name, "automatic detect");
-			std->framelines = 625;
-			std->frameperiod.numerator = 1;
-			std->frameperiod.denominator = 1;
-		} else if (index == 5) {
-			std->id = VPFE_STD_AUTO_SQP;
-			strcpy(std->name,
-			       "automatic detect square pixel");
-			std->framelines = 625;
-			std->frameperiod.numerator = 1;
-			std->frameperiod.denominator = 1;
-		} else {
-			ret = -EINVAL;
-		}
-		break;
-	}
-	case VIDIOC_ENUMINPUT:
-	{
-		struct v4l2_input *input = (struct v4l2_input *)arg;
-
-		if( input->index < 0 || input->index >= NTOSD_INPUTS)
-			ret = -EINVAL;
-
-		memcpy(input, &ntosd_inputs[input->index], sizeof(struct v4l2_input));
-		break;
-	}
-	case VIDIOC_G_INPUT:
-	{
-		int *index = (int *)arg;
-
-		*index = vpfe->capture_params.amuxmode;
-		break;
-	}
-	case VIDIOC_S_INPUT:
-	{
-		int *index = (int *)arg;
-		if (*index == VPFE_AMUX_COMPOSITE0 || *index == VPFE_AMUX_COMPOSITE1)
-			vpfe_select_capture_device(VPFE_CAPTURE_ID_TVP5150);
-		else if (*index == VPFE_AMUX_COMPONENT)
-			vpfe_select_capture_device(VPFE_CAPTURE_ID_TVP7000);
-		else
-			return -EINVAL;
-
-		vpfe->capture_params.amuxmode = *index;
-
-		ret = DEVICE_CMD(ACTIVE_DEVICE(), VIDIOC_S_INPUT, index);
-
-		break;
-	}
-	case VIDIOC_CROPCAP:
-	{
-		struct v4l2_cropcap *cropcap = (struct v4l2_cropcap *)arg;
-		cropcap->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-		down_interruptible(&vpfe->lock);
-		cropcap->bounds = cropcap->defrect = vpfe->vwin;
-		cropcap->pixelaspect = vpfe->pixelaspect;
-		up(&vpfe->lock);
-		break;
-	}
-	case VIDIOC_G_PARM:
-	{
-		struct v4l2_streamparm *parm = (struct v4l2_streamparm *)arg;
-		if (parm->type != V4L2_BUF_TYPE_VIDEO_CAPTURE) {
-			/* only capture is supported */
-			ret = -EINVAL;
-		} else {
-			struct v4l2_captureparm *capparm = &parm->parm.capture;
-			memset(capparm, 0, sizeof(struct v4l2_captureparm));
-			down_interruptible(&vpfe->lock);
-			if (vpfe->std & V4L2_STD_625_50) {
-				capparm->timeperframe.numerator = 1;
-				capparm->timeperframe.denominator = 25;	/* PAL 25fps */
-			} else {
-				capparm->timeperframe.numerator = 1001;
-				capparm->timeperframe.denominator = 30000;	/*NTSC 29.97fps */
+	case VIDIOC_G_FMT:
+		{
+			struct v4l2_format *fmt = (struct v4l2_format *)arg;
+			if (fmt->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+			{
+				ret = -EINVAL;
 			}
-			capparm->readbuffers = vpfe->numbuffers;
-			up(&vpfe->lock);
+			else
+			{
+				struct v4l2_pix_format *pixfmt = &fmt->fmt.pix;
+				down_interruptible(&vpfe->lock);
+				pixfmt->width = vpfe->vwin.width;
+				pixfmt->height = vpfe->vwin.height;
+				pixfmt->field = vpfe->field;
+				pixfmt->pixelformat = vpfe->pixelfmt;
+				pixfmt->bytesperline = pixfmt->width * 2;
+				pixfmt->sizeimage = pixfmt->bytesperline * pixfmt->height;
+				pixfmt->colorspace = V4L2_COLORSPACE_SMPTE170M;
+				up(&vpfe->lock);
+			}
+			break;
 		}
-		break;
-	}
+	case VIDIOC_S_FMT:
+		{
+			struct v4l2_format *fmt = (struct v4l2_format *)arg;
+			struct v4l2_pix_format *pixfmt = &fmt->fmt.pix;
+			ccdc_params_ycbcr *params = &vpfe->ccdc_params;
+			if (vpfe->started)
+			{	 /* make sure streaming is not started */
+				ret = -EBUSY;
+				break;
+			}
+
+			down_interruptible(&vpfe->lock);
+			if (fmt->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+			{
+				ret = -EINVAL;
+				up(&vpfe->lock);
+				break;
+			}
+			if ((pixfmt->width + vpfe->vwin.left <= vpfe->bounds.width) &
+				(pixfmt->height + vpfe->vwin.top <= vpfe->bounds.height))
+			{
+				/* this is the case when no scaling is supported */
+				/* crop window is directed modified */
+				vpfe->vwin.height = pixfmt->height;
+				vpfe->vwin.width = pixfmt->width;
+				params->win.width = pixfmt->width;
+				params->win.height = pixfmt->height;
+			}
+			else
+			{
+				ret = -EINVAL;
+				up(&vpfe->lock);
+				break;
+			}
+			/* setup the CCDC parameters accordingly */
+			if (pixfmt->pixelformat == V4L2_PIX_FMT_YUYV)
+			{
+				params->pix_order = CCDC_PIXORDER_YCBYCR;
+				vpfe->pixelfmt = pixfmt->pixelformat;
+			}
+			else if (pixfmt->pixelformat == V4L2_PIX_FMT_UYVY)
+			{
+				params->pix_order = CCDC_PIXORDER_CBYCRY;
+				vpfe->pixelfmt = pixfmt->pixelformat;
+			}
+			else
+			{
+				ret = -EINVAL;	/* not supported format */
+				up(&vpfe->lock);
+				break;
+			}
+			if (pixfmt->field == V4L2_FIELD_NONE ||
+				pixfmt->field == V4L2_FIELD_INTERLACED)
+			{
+				params->buf_type = CCDC_BUFTYPE_FLD_INTERLEAVED;
+				vpfe->field = pixfmt->field;
+			}
+			else if (pixfmt->field == V4L2_FIELD_SEQ_TB)
+			{
+				params->buf_type = CCDC_BUFTYPE_FLD_SEPARATED;
+				vpfe->field = pixfmt->field;
+			}
+			else
+			{
+				ret = -EINVAL;
+			}
+
+			ret = DEVICE_CMD(ACTIVE_DEVICE(), VIDIOC_S_FMT, arg);
+
+			up(&vpfe->lock);
+			break;
+		}
+	case VIDIOC_TRY_FMT:
+		{
+			struct v4l2_format *fmt = (struct v4l2_format *)arg;
+			if (fmt->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+			{
+				ret = -EINVAL;
+			}
+			else
+			{
+				struct v4l2_pix_format *pixfmt = &fmt->fmt.pix;
+				if (pixfmt->width > vpfe->bounds.width ||
+					pixfmt->height > vpfe->bounds.height ||
+					(pixfmt->pixelformat != V4L2_PIX_FMT_UYVY &&
+					 pixfmt->pixelformat != V4L2_PIX_FMT_YUYV))
+				{
+					ret = -EINVAL;
+				}
+			}
+			break;
+		}
+	case VIDIOC_G_STD:
+		{
+			v4l2_std_id *id = (v4l2_std_id *) arg;
+			*id = vpfe->std;
+			break;
+		}
+	case VIDIOC_S_STD:
+		{
+			v4l2_std_id id = *(v4l2_std_id *) arg;
+			int sqp = 0;
+
+			if (vpfe->started)
+			{	 /* make sure streaming is not started */
+				ret = -EBUSY;
+				break;
+			}
+			down_interruptible(&vpfe->lock);
+			if (id & V4L2_STD_625_50)
+			{
+				vpfe->std = id;
+				vpfe->bounds = vpfe->vwin = pal_bounds;
+				vpfe->pixelaspect = pal_aspect;
+				vpfe->ccdc_params.win = pal_bounds;
+				vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_INTERLACED;
+				vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_8BIT;
+			}
+			else if (id & V4L2_STD_525_60)
+			{
+				vpfe->std = id;
+				vpfe->bounds = vpfe->vwin = ntsc_bounds;
+				vpfe->pixelaspect = ntsc_aspect;
+				vpfe->ccdc_params.win = ntsc_bounds;
+				vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_INTERLACED;
+				vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_8BIT;
+			}
+			else if (id & VPFE_STD_625_50_SQP)
+			{
+				vpfe->std = id;
+				vpfe->bounds = vpfe->vwin = palsp_bounds;
+				vpfe->pixelaspect = sp_aspect;
+				vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_INTERLACED;
+				vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_8BIT;
+				sqp = 1;
+				id >>= 32;
+			}
+			else if (id & VPFE_STD_525_60_SQP)
+			{
+				vpfe->std = id;
+				sqp = 1;
+				vpfe->std = id;
+				id >>= 32;
+				vpfe->bounds = vpfe->vwin = ntscsp_bounds;
+				vpfe->pixelaspect = sp_aspect;
+				vpfe->ccdc_params.win = ntscsp_bounds;
+				vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_INTERLACED;
+				vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_8BIT;
+			}
+			else if (id & VPFE_STD_AUTO)
+			{
+				vpfe->bounds = vpfe->vwin = pal_bounds;
+				vpfe->pixelaspect = pal_aspect;
+				vpfe->ccdc_params.win = pal_bounds;
+				vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_INTERLACED;
+				vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_8BIT;
+				vpfe->std = id;
+			}
+			else if (id & VPFE_STD_AUTO_SQP)
+			{
+				vpfe->std = id;
+				vpfe->bounds = vpfe->vwin = palsp_bounds;
+				vpfe->pixelaspect = sp_aspect;
+				vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_INTERLACED;
+				vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_8BIT;
+				sqp = 1;
+			}
+			else if (id & V4L2_STD_HD_480P)
+			{
+				vpfe->std = id;
+				vpfe->bounds = vpfe->vwin = hd_480p_bounds;
+				vpfe->pixelaspect = sp_aspect;
+				vpfe->ccdc_params.win = hd_480p_bounds;
+				vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_PROGRESSIVE;
+				vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_16BIT;
+			}
+			else
+			{
+				ret = -EINVAL;
+			}
+
+			vpfe->capture_params.mode = id;
+			vpfe->capture_params.squarepixel = sqp;
+
+			ret = DEVICE_CMD(ACTIVE_DEVICE(), VPFE_CMD_CONFIG_CAPTURE, &vpfe->capture_params);
+
+			up(&vpfe->lock);
+			break;
+		}
+	case VIDIOC_ENUMSTD:
+		{
+			struct v4l2_standard *std = (struct v4l2_standard *)arg;
+			u32 index = std->index;
+			memset(std, 0, sizeof(*std));
+			std->index = index;
+			if (index == 0)
+			{
+				std->id = V4L2_STD_525_60;
+				strcpy(std->name, "SD-525line-30fps");
+				std->framelines = 525;
+				std->frameperiod.numerator = 1001;
+				std->frameperiod.denominator = 30000;
+			}
+			else if (index == 1)
+			{
+				std->id = V4L2_STD_625_50;
+				strcpy(std->name, "SD-625line-25fps");
+				std->framelines = 625;
+				std->frameperiod.numerator = 1;
+				std->frameperiod.denominator = 25;
+			}
+			else if (index == 2)
+			{
+				std->id = VPFE_STD_625_50_SQP;
+				strcpy(std->name,
+					   "SD-625line-25fps square pixel");
+				std->framelines = 625;
+				std->frameperiod.numerator = 1;
+				std->frameperiod.denominator = 25;
+			}
+			else if (index == 3)
+			{
+				std->id = VPFE_STD_525_60_SQP;
+				strcpy(std->name,
+					   "SD-525line-25fps square pixel");
+				std->framelines = 525;
+				std->frameperiod.numerator = 1001;
+				std->frameperiod.denominator = 30000;
+			}
+			else if (index == 4)
+			{
+				std->id = VPFE_STD_AUTO;
+				strcpy(std->name, "automatic detect");
+				std->framelines = 625;
+				std->frameperiod.numerator = 1;
+				std->frameperiod.denominator = 1;
+			}
+			else if (index == 5)
+			{
+				std->id = VPFE_STD_AUTO_SQP;
+				strcpy(std->name,
+					   "automatic detect square pixel");
+				std->framelines = 625;
+				std->frameperiod.numerator = 1;
+				std->frameperiod.denominator = 1;
+			}
+			else
+			{
+				ret = -EINVAL;
+			}
+			break;
+		}
+	case VIDIOC_ENUMINPUT:
+		{
+			struct v4l2_input *input = (struct v4l2_input *)arg;
+
+			if ( input->index < 0 || input->index >= NTOSD_INPUTS)
+				ret = -EINVAL;
+
+			memcpy(input, &ntosd_inputs[input->index], sizeof(struct v4l2_input));
+			break;
+		}
+	case VIDIOC_G_INPUT:
+		{
+			int *index = (int *)arg;
+
+			*index = vpfe->capture_params.amuxmode;
+			break;
+		}
+	case VIDIOC_S_INPUT:
+		{
+			int *index = (int *)arg;
+			if (*index == VPFE_AMUX_COMPOSITE0 || *index == VPFE_AMUX_COMPOSITE1)
+				vpfe_select_capture_device(VPFE_CAPTURE_ID_TVP5150);
+			else if (*index == VPFE_AMUX_COMPONENT)
+				vpfe_select_capture_device(VPFE_CAPTURE_ID_TVP7000);
+			else
+				return -EINVAL;
+
+			vpfe->capture_params.amuxmode = *index;
+
+			ret = DEVICE_CMD(ACTIVE_DEVICE(), VIDIOC_S_INPUT, index);
+
+			break;
+		}
+	case VIDIOC_CROPCAP:
+		{
+			struct v4l2_cropcap *cropcap = (struct v4l2_cropcap *)arg;
+			cropcap->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+			down_interruptible(&vpfe->lock);
+			cropcap->bounds = cropcap->defrect = vpfe->vwin;
+			cropcap->pixelaspect = vpfe->pixelaspect;
+			up(&vpfe->lock);
+			break;
+		}
+	case VIDIOC_G_PARM:
+		{
+			struct v4l2_streamparm *parm = (struct v4l2_streamparm *)arg;
+			if (parm->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+			{
+				/* only capture is supported */
+				ret = -EINVAL;
+			}
+			else
+			{
+				struct v4l2_captureparm *capparm = &parm->parm.capture;
+				memset(capparm, 0, sizeof(struct v4l2_captureparm));
+				down_interruptible(&vpfe->lock);
+				if (vpfe->std & V4L2_STD_625_50)
+				{
+					capparm->timeperframe.numerator = 1;
+					capparm->timeperframe.denominator = 25;	/* PAL 25fps */
+				}
+				else
+				{
+					capparm->timeperframe.numerator = 1001;
+					capparm->timeperframe.denominator = 30000;	/*NTSC 29.97fps */
+				}
+				capparm->readbuffers = vpfe->numbuffers;
+				up(&vpfe->lock);
+			}
+			break;
+		}
 	case VIDIOC_G_CTRL:
 		down_interruptible(&vpfe->lock);
 
@@ -697,72 +782,80 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		up(&vpfe->lock);
 		break;
 	case VIDIOC_G_CROP:
-	{
-		struct v4l2_crop *crop = arg;
-		if (crop->type != V4L2_BUF_TYPE_VIDEO_CAPTURE) {
-			ret = -EINVAL;
-		} else {
-			crop->c = vpfe->vwin;
-		}
-		break;
-	}
-	case VIDIOC_S_CROP:
-	{
-		struct v4l2_crop *crop = arg;
-		ccdc_params_ycbcr *params = &vpfe->ccdc_params;
-		if (vpfe->started) {	/* make sure streaming is not started */
-			ret = -EBUSY;
+		{
+			struct v4l2_crop *crop = arg;
+			if (crop->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+			{
+				ret = -EINVAL;
+			}
+			else
+			{
+				crop->c = vpfe->vwin;
+			}
 			break;
 		}
-		/*adjust the width to 16 pixel boundry */
-                crop->c.width = ((crop->c.width + 15 )/16 ) * 16;
+	case VIDIOC_S_CROP:
+		{
+			struct v4l2_crop *crop = arg;
+			ccdc_params_ycbcr *params = &vpfe->ccdc_params;
+			if (vpfe->started)
+			{	 /* make sure streaming is not started */
+				ret = -EBUSY;
+				break;
+			}
+			/*adjust the width to 16 pixel boundry */
+			crop->c.width = ((crop->c.width + 15 )/16 ) * 16;
 
-		/* make sure parameters are valid */
-		if (crop->type == V4L2_BUF_TYPE_VIDEO_CAPTURE &&
-		    (crop->c.left + crop->c.width <= vpfe->bounds.left + vpfe->bounds.width) &&
-		    (crop->c.top + crop->c.height <= vpfe->bounds.top + vpfe->bounds.height)) {
+			/* make sure parameters are valid */
+			if (crop->type == V4L2_BUF_TYPE_VIDEO_CAPTURE &&
+				(crop->c.left + crop->c.width <= vpfe->bounds.left + vpfe->bounds.width) &&
+				(crop->c.top + crop->c.height <= vpfe->bounds.top + vpfe->bounds.height))
+			{
 
-			down_interruptible(&vpfe->lock);
-			vpfe->vwin = crop->c;
-			params->win = vpfe->vwin;
-			up(&vpfe->lock);
-		} else {
-			ret = -EINVAL;
+				down_interruptible(&vpfe->lock);
+				vpfe->vwin = crop->c;
+				params->win = vpfe->vwin;
+				up(&vpfe->lock);
+			}
+			else
+			{
+				ret = -EINVAL;
+			}
+			break;
 		}
-		break;
-	}
 	case VIDIOC_QUERYSTD:
-	{
-		v4l2_std_id *id = (v4l2_std_id *) arg;
-		down_interruptible(&vpfe->lock);
+		{
+			v4l2_std_id *id = (v4l2_std_id *) arg;
+			down_interruptible(&vpfe->lock);
 
-		ret = DEVICE_CMD(ACTIVE_DEVICE(), VIDIOC_QUERYSTD, id);
+			ret = DEVICE_CMD(ACTIVE_DEVICE(), VIDIOC_QUERYSTD, id);
 
-		up(&vpfe->lock);
-		break;
-	}
+			up(&vpfe->lock);
+			break;
+		}
 	case VIDIOC_G_PRIORITY:
-	{
-		enum v4l2_priority *p = arg;
-		*p = v4l2_prio_max(&vpfe->prio);
-		break;
-	}
+		{
+			enum v4l2_priority *p = arg;
+			*p = v4l2_prio_max(&vpfe->prio);
+			break;
+		}
 	case VIDIOC_S_PRIORITY:
-	{
-		enum v4l2_priority *p = arg;
-		ret = v4l2_prio_change(&vpfe->prio, &fh->prio, *p);
-		break;
-	}
+		{
+			enum v4l2_priority *p = arg;
+			ret = v4l2_prio_change(&vpfe->prio, &fh->prio, *p);
+			break;
+		}
 
 	case VIDIOC_REQBUFS:
-		if (vpfe->io_usrs != 0) {
+		if (vpfe->io_usrs != 0)
+		{
 			ret = -EBUSY;
 			break;
 		}
 		down_interruptible(&vpfe->lock);
 		videobuf_queue_init(&vpfe->bufqueue, &video_qops, NULL,
-		&vpfe->irqlock, V4L2_BUF_TYPE_VIDEO_CAPTURE, vpfe->field,
-		sizeof(struct videobuf_buffer), fh);
+							&vpfe->irqlock, V4L2_BUF_TYPE_VIDEO_CAPTURE, vpfe->field,
+							sizeof(struct videobuf_buffer), fh);
 
 		videobuf_set_buftype(&vpfe->bufqueue, VIDEOBUF_BUF_LINEAR);
 
@@ -775,24 +868,26 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 	case VIDIOC_QUERYBUF:
 		ret = videobuf_querybuf(&vpfe->bufqueue, arg);
 		break;
-    case VIDIOC_QBUF:
+	case VIDIOC_QBUF:
 		if (!fh->io_allowed)
 			ret = -EACCES;
 		else
-			ret = videobuf_qbuf(&vpfe->bufqueue, arg);
+			ret	= videobuf_qbuf(&vpfe->bufqueue, arg);
 		break;
 	case VIDIOC_DQBUF:
 		if (!fh->io_allowed)
 			ret = -EACCES;
 		else
-			ret =  videobuf_dqbuf(&vpfe->bufqueue, arg, 0);
+			ret	=  videobuf_dqbuf(&vpfe->bufqueue, arg, 0);
 		break;
 	case VIDIOC_STREAMON:
-		if (!fh->io_allowed) {
+		if (!fh->io_allowed)
+		{
 			ret = -EACCES;
 			break;
 		}
-		if (vpfe->started){
+		if (vpfe->started)
+		{
 			ret = -EBUSY;
 			break;
 		}
@@ -803,14 +898,15 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		/* get the current and next frame buffers */
 		/* we expect at least one buffer is in driver at this point */
 		/* if not, error is returned */
-		if (list_empty(&vpfe->dma_queue)) {
+		if (list_empty(&vpfe->dma_queue))
+		{
 			ret = -EIO;
 			break;
 		}
 		debug_print(KERN_INFO "cur frame %x.\n",
-			    vpfe->dma_queue.next);
+					vpfe->dma_queue.next);
 		vpfe->nextFrm = vpfe->curFrm = list_entry(vpfe->dma_queue.next,
-							  struct videobuf_buffer, queue);
+												  struct videobuf_buffer, queue);
 		/* remove the buffer from the queue */
 		list_del(&vpfe->curFrm->queue);
 		vpfe->curFrm->state = STATE_ACTIVE;
@@ -834,88 +930,106 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		debug_print(KERN_INFO "started video streaming.\n");
 		break;
 	case VIDIOC_STREAMOFF:
-	{
-		if (!fh->io_allowed) {
-			ret = -EACCES;
+		{
+			if (!fh->io_allowed)
+			{
+				ret = -EACCES;
+				break;
+			}
+			if (!vpfe->started)
+			{
+				ret = -EINVAL;
+				break;
+			}
+			/* disable CCDC */
+			down_interruptible(&vpfe->lock);
+			ccdc_enable(FALSE);
+			vpfe->started = FALSE;
+			up(&vpfe->lock);
+			ret = videobuf_streamoff(&vpfe->bufqueue);
 			break;
 		}
-		if(!vpfe->started){
-			ret = -EINVAL;
-			break;
-		}
-		/* disable CCDC */
-		down_interruptible(&vpfe->lock);
-		ccdc_enable(FALSE);
-		vpfe->started = FALSE;
-		up(&vpfe->lock);
-		ret = videobuf_streamoff(&vpfe->bufqueue);
-		break;
-	}
 	case VPFE_CMD_CONFIG_CCDC:
-	{
-		/* this can be used directly and bypass the V4L2 APIs */
-		ccdc_params_ycbcr *params = &vpfe->ccdc_params;
-		if(vpfe->started){
-		/* only allowed if streaming is not started */
-			ret = -EBUSY;
+		{
+			/* this can be used directly and bypass the V4L2 APIs */
+			ccdc_params_ycbcr *params = &vpfe->ccdc_params;
+			if (vpfe->started)
+			{
+				/* only allowed if streaming is not started */
+				ret = -EBUSY;
+				break;
+			}
+			down_interruptible(&vpfe->lock);
+			/* make sure the other v4l2 related fields
+			   have consistant settings */
+			*params = (*(ccdc_params_ycbcr *) arg);
+			vpfe->vwin = params->win;
+			if (params->buf_type == CCDC_BUFTYPE_FLD_INTERLEAVED)
+			{
+				vpfe->field = V4L2_FIELD_INTERLACED;
+			}
+			else if (params->buf_type == CCDC_BUFTYPE_FLD_SEPARATED)
+			{
+				vpfe->field = V4L2_FIELD_SEQ_TB;
+			}
+			if (params->pix_order == CCDC_PIXORDER_YCBYCR)
+			{
+				vpfe->pixelfmt = V4L2_PIX_FMT_YUYV;
+			}
+			else if (params->pix_order == CCDC_PIXORDER_CBYCRY)
+			{
+				vpfe->pixelfmt = V4L2_PIX_FMT_UYVY;
+			}
+			up(&vpfe->lock);
 			break;
 		}
-		down_interruptible(&vpfe->lock);
-		/* make sure the other v4l2 related fields
-		   have consistant settings */
-		*params = (*(ccdc_params_ycbcr *) arg);
-		vpfe->vwin = params->win;
-		if (params->buf_type == CCDC_BUFTYPE_FLD_INTERLEAVED) {
-			vpfe->field = V4L2_FIELD_INTERLACED;
-		} else if (params->buf_type == CCDC_BUFTYPE_FLD_SEPARATED) {
-			vpfe->field = V4L2_FIELD_SEQ_TB;
-		}
-		if (params->pix_order == CCDC_PIXORDER_YCBYCR) {
-			vpfe->pixelfmt = V4L2_PIX_FMT_YUYV;
-		} else if (params->pix_order == CCDC_PIXORDER_CBYCRY) {
-			vpfe->pixelfmt = V4L2_PIX_FMT_UYVY;
-		}
-		up(&vpfe->lock);
-		break;
-	}
 	case VPFE_CMD_CONFIG_CAPTURE:
-	/* this can be used directly and bypass the V4L2 APIs */
-	{
-		/* the settings here must be consistant with that of the CCDC's,
-		   driver does not check the consistancy */
-		struct vpfe_capture_params *params = (struct vpfe_capture_param *) arg;
-		v4l2_std_id std = 0;
-		if(vpfe->started){
-		/* only allowed if streaming is not started */
-			ret = -EBUSY;
+		/* this can be used directly and bypass the V4L2 APIs */
+		{
+			/* the settings here must be consistant with that of the CCDC's,
+			   driver does not check the consistancy */
+			struct vpfe_capture_params *params = (struct vpfe_capture_param *) arg;
+			v4l2_std_id std = 0;
+			if (vpfe->started)
+			{
+				/* only allowed if streaming is not started */
+				ret = -EBUSY;
+				break;
+			}
+			down_interruptible(&vpfe->lock);
+
+			std = params->mode;
+			if (params->squarepixel)
+			{  /* square pixel mode */
+				std <<= 32;
+			}
+
+			if (std & V4L2_STD_625_50)
+			{
+				vpfe->bounds = pal_bounds;
+				vpfe->pixelaspect = pal_aspect;
+			}
+			else if (std & V4L2_STD_525_60)
+			{
+				vpfe->bounds = ntsc_bounds;
+				vpfe->pixelaspect = ntsc_aspect;
+			}
+			else if (std & VPFE_STD_625_50_SQP)
+			{
+				vpfe->bounds = palsp_bounds;
+				vpfe->pixelaspect = sp_aspect;
+			}
+			else if (std & VPFE_STD_525_60_SQP)
+			{
+				vpfe->bounds = ntscsp_bounds;
+				vpfe->pixelaspect = sp_aspect;
+			}
+			vpfe->std = std;
+			ret = DEVICE_CMD(ACTIVE_DEVICE(), VPFE_CMD_CONFIG_CAPTURE, params);
+			vpfe->capture_params = *params;
+			up(&vpfe->lock);
 			break;
 		}
-		down_interruptible(&vpfe->lock);
-
-		std = params->mode;
-		if (params->squarepixel) {	/* square pixel mode */
-			std <<= 32;
-		}
-
-		if (std & V4L2_STD_625_50) {
-			vpfe->bounds = pal_bounds;
-			vpfe->pixelaspect = pal_aspect;
-		} else if (std & V4L2_STD_525_60) {
-			vpfe->bounds = ntsc_bounds;
-			vpfe->pixelaspect = ntsc_aspect;
-		} else if (std & VPFE_STD_625_50_SQP) {
-			vpfe->bounds = palsp_bounds;
-			vpfe->pixelaspect = sp_aspect;
-		} else if (std & VPFE_STD_525_60_SQP) {
-			vpfe->bounds = ntscsp_bounds;
-			vpfe->pixelaspect = sp_aspect;
-		}
-		vpfe->std = std;
-		ret = DEVICE_CMD(ACTIVE_DEVICE(), VPFE_CMD_CONFIG_CAPTURE, params);
-		vpfe->capture_params = *params;
-		up(&vpfe->lock);
-		break;
-	}
 	default:
 		ret = -ENOIOCTLCMD;
 		break;
@@ -924,13 +1038,14 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 }
 
 static int vpfe_ioctl(struct inode *inode, struct file *file,
-		      unsigned int cmd, unsigned long arg)
+					  unsigned int cmd, unsigned long arg)
 {
 	int ret;
 	ret =  video_usercopy(inode, file, cmd, arg, vpfe_doioctl);
-	if( cmd == VIDIOC_S_FMT || cmd == VIDIOC_TRY_FMT ){
+	if ( cmd == VIDIOC_S_FMT || cmd == VIDIOC_TRY_FMT )
+	{
 		ret = video_usercopy(inode, file, VIDIOC_G_FMT,
-				     arg, vpfe_doioctl);
+							 arg, vpfe_doioctl);
 	}
 	return ret;
 }
@@ -949,14 +1064,18 @@ static int vpfe_open(struct inode *inode, struct file *filep)
 	debug_print(KERN_INFO "vpfe: open minor=%d\n", minor);
 
 	/* check to make sure the minor numbers match */
-	if (vpfe_device.video_dev && vpfe_device.video_dev->minor == minor) {
+	if (vpfe_device.video_dev && vpfe_device.video_dev->minor == minor)
+	{
 		vpfe = &vpfe_device;
-	} else {		/* device not found here */
+	}
+	else
+	{		 /* device not found here */
 		return -ENODEV;
 	}
 
 	/* allocate per filehandle data */
-	if ((fh = kmalloc(sizeof(*fh), GFP_KERNEL)) == NULL) {
+	if ((fh = kmalloc(sizeof(*fh), GFP_KERNEL)) == NULL)
+	{
 		return -ENOMEM;
 	}
 	filep->private_data = fh;
@@ -979,7 +1098,8 @@ static int vpfe_release(struct inode *inode, struct file *filep)
 	vpfe_obj *vpfe = fh->dev;
 
 	down_interruptible(&vpfe->lock);
-	if (fh->io_allowed) {
+	if (fh->io_allowed)
+	{
 		vpfe->io_usrs = 0;
 		ccdc_enable(FALSE);
 		vpfe->started = FALSE;
@@ -1022,15 +1142,16 @@ static int __init vpfe_probe(struct device *device)
 	vpfe_obj *vpfe = &vpfe_device;
 
 	/* alloc video device */
-	if ((vfd = video_device_alloc()) == NULL) {
+	if ((vfd = video_device_alloc()) == NULL)
+	{
 		return -ENOMEM;
 	}
 	*vfd = vpfe_video_template;
 	vfd->dev = device;
 	vfd->release = video_device_release;
 	snprintf(vfd->name, sizeof(vfd->name), "DM644X_VPFE_DRIVER_V%d.%d.%d",
-		 (VPFE_VERSION_CODE >> 16) & 0xff,
-		 (VPFE_VERSION_CODE >> 8) & 0xff, (VPFE_VERSION_CODE) & 0xff);
+			 (VPFE_VERSION_CODE >> 16) & 0xff,
+			 (VPFE_VERSION_CODE >> 8) & 0xff, (VPFE_VERSION_CODE) & 0xff);
 
 	vpfe->video_dev = vfd;
 	vpfe->usrs = 0;
@@ -1047,20 +1168,21 @@ static int __init vpfe_probe(struct device *device)
 	/* register video device */
 	debug_print(KERN_INFO "trying to register vpfe device.\n");
 	debug_print(KERN_INFO "vpfe=%x,vpfe->video_dev=%x\n", (int)vpfe,
-		    (int)&vpfe->video_dev);
-	if (video_register_device(vpfe->video_dev, VFL_TYPE_GRABBER, -1) < 0) {
+				(int)&vpfe->video_dev);
+	if (video_register_device(vpfe->video_dev, VFL_TYPE_GRABBER, -1) < 0)
+	{
 		video_device_release(vpfe->video_dev);
 		vpfe->video_dev = NULL;
 		return -1;
 	}
 
 	debug_print(KERN_INFO "DM644X vpfe: driver version V%d.%d.%d loaded\n",
-		    (VPFE_VERSION_CODE >> 16) & 0xff,
-		    (VPFE_VERSION_CODE >> 8) & 0xff,
-		    (VPFE_VERSION_CODE) & 0xff);
+				(VPFE_VERSION_CODE >> 16) & 0xff,
+				(VPFE_VERSION_CODE >> 8) & 0xff,
+				(VPFE_VERSION_CODE) & 0xff);
 
 	debug_print(KERN_INFO "vpfe: registered device video%d\n",
-		    vpfe->video_dev->minor & 0x1f);
+				vpfe->video_dev->minor & 0x1f);
 
 	/* all done */
 	return 0;
@@ -1082,7 +1204,7 @@ int vpfe_capture_device_register(struct vpfe_capture_device *device)
 	up(&vpfe_device.lock);
 
 	debug_print(KERN_INFO "VPFE Capture device %s registered, id = %d.\n",
-		    device->name, device->id);
+				device->name, device->id);
 	return 0;
 }
 EXPORT_SYMBOL(vpfe_capture_device_register);
@@ -1100,7 +1222,8 @@ int vpfe_capture_device_unregister(struct vpfe_capture_device *device)
 	down_interruptible(&vpfe_device.lock);
 	/* if the device to be unregistered is active,
 		deactivate it! */
-	if (IS_ACTIVE(device)) {
+	if (IS_ACTIVE(device))
+	{
 		DEVICE_DEACTIVATE(device);
 		SET_ACTIVE_DEVICE(NULL);
 	}
@@ -1109,7 +1232,7 @@ int vpfe_capture_device_unregister(struct vpfe_capture_device *device)
 	up(&vpfe_device.lock);
 
 	debug_print(KERN_INFO "VPFE Capture device %s unregistered, id = %d\n",
-		    device->name, device->id);
+				device->name, device->id);
 	return 0;
 }
 EXPORT_SYMBOL(vpfe_capture_device_unregister);
@@ -1121,7 +1244,7 @@ static int capture_device_all_unregister(void)
 
 	down_interruptible(&vpfe_device.lock);
 	list_for_each_entry(device, &vpfe_device.capture_device_list,
-			    device_list){
+						device_list){
 		ret = vpfe_capture_device_unregister(device);
 	}
 	up(&vpfe_device.lock);
@@ -1140,11 +1263,11 @@ static int vpfe_remove(struct device *device)
 #ifdef NEW
 static struct platform_driver vpfe_driver = {
 	.driver = {
-		.name		= "VPFE",
-		.owner		= THIS_MODULE,
+		.name       = "VPFE",
+		.owner      = THIS_MODULE,
 	},
-	.probe			= vpfe_probe,
-	.remove			= vpfe_remove,
+	.probe          = vpfe_probe,
+	.remove         = vpfe_remove,
 };
 
 #else
@@ -1170,12 +1293,15 @@ static int vpfe_init(void)
 	int result = 0;
 	void *mem;
 	/* allocate memory at initialization time to guarentee availability */
-	for (i = 0; i < VPFE_DEFNUM_FBUFS; i++) {
+	for (i = 0; i < VPFE_DEFNUM_FBUFS; i++)
+	{
 		mem = (void *)__get_free_pages(GFP_KERNEL | GFP_DMA, VPFE_MAX_FBUF_ORDER);
-		if (mem) {
+		if (mem)
+		{
 			unsigned long adr = (unsigned long)mem;
 			u32 size = PAGE_SIZE << VPFE_MAX_FBUF_ORDER;
-			while (size > 0) {
+			while (size > 0)
+			{
 				/* make sure the frame buffers
 				   are never swapped out of memory */
 				SetPageReserved(virt_to_page(adr));
@@ -1184,20 +1310,25 @@ static int vpfe_init(void)
 			}
 			vpfe_device.fbuffers[i] = (u8 *) mem;
 			debug_print(KERN_INFO "memory address %d\t%x\n", i, mem);
-		} else {
-			while (--i >= 0) {
+		}
+		else
+		{
+			while (--i >= 0)
+			{
 				free_pages((unsigned long)vpfe_device.fbuffers[i],
-					   VPFE_MAX_FBUF_ORDER);
+						   VPFE_MAX_FBUF_ORDER);
 			}
 			debug_print(KERN_INFO "frame buffer memory allocation failed.\n");
 			return -ENOMEM;
 		}
 	}
-	if (driver_register(&vpfe_driver) != 0) {
+	if (driver_register(&vpfe_driver) != 0)
+	{
 		debug_print(KERN_INFO "driver registration failed\n");
 		return -1;
 	}
-	if (platform_device_register(&_vpfe_device) != 0) {
+	if (platform_device_register(&_vpfe_device) != 0)
+	{
 		driver_unregister(&vpfe_driver);
 		debug_print(KERN_INFO "device registration failed\n");
 		return -1;
@@ -1206,8 +1337,9 @@ static int vpfe_init(void)
 	ccdc_reset();
 	/* setup interrupt handling */
 	result = request_irq(IRQ_VDINT0, vpfe_isr, IRQF_DISABLED,
-			     "dm644xv4l2", (void *)&vpfe_device);
-	if (result < 0) {
+						 "dm644xv4l2", (void *)&vpfe_device);
+	if (result < 0)
+	{
 		printk(KERN_ERR "DaVinci v4l2 capture driver: cannot initialize IRQ\n");
 		return result;
 	}
@@ -1227,9 +1359,10 @@ static void vpfe_cleanup(void)
 	/* disable interrupt */
 	free_irq(IRQ_VDINT0, &vpfe_device);
 
-	while (--i >= 0) {
+	while (--i >= 0)
+	{
 		free_pages((unsigned long)vpfe_device.fbuffers[i],
-			   VPFE_MAX_FBUF_ORDER);
+				   VPFE_MAX_FBUF_ORDER);
 	}
 	debug_print(KERN_INFO "vpfe: un-registered device video.\n");
 }
