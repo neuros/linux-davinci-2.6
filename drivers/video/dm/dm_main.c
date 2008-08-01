@@ -225,10 +225,8 @@ static const struct fb_videomode dmfb_modedb[] = {
 	 *  vmode, flag
 	 */
 	/* Standard Modes */
-	{ "576i", 50, 720, 576, LCD_PANEL_CLOCK, 0, 0, 0, 0, 127, 6, FB_SYNC_BROADCAST,
-		FB_VMODE_INTERLACED, 0},
-	{ "480i", 50, 720, 480, LCD_PANEL_CLOCK, 0, 0, 0, 0, 127, 5, FB_SYNC_BROADCAST,
-		FB_VMODE_INTERLACED, 0},
+	{ "576i", 50, 720, 576, LCD_PANEL_CLOCK, 0, 0, 0, 0, 127, 6, FB_SYNC_BROADCAST,	FB_VMODE_INTERLACED, 0},
+	{ "480i", 50, 720, 480, LCD_PANEL_CLOCK, 0, 0, 0, 0, 127, 5, FB_SYNC_BROADCAST,	FB_VMODE_INTERLACED, 0},
 	/* Modes provided by THS8200 */
 	{ "480p", 30, 720, 480, LCD_PANEL_CLOCK, 122, 15, 36, 8, 0x50, 0x5, FB_SYNC_BROADCAST, FB_VMODE_NONINTERLACED, 0},
 	{ "720p", 30, 1280, 720, LCD_PANEL_CLOCK, 300, 69, 26, 3, 0x50, 0x5, FB_SYNC_BROADCAST, FB_VMODE_NONINTERLACED, 0},
@@ -256,11 +254,11 @@ static int dm_venc_mode_set(struct dm_info *dm, const struct fb_videomode *mode)
 	dispc_reg_out(VENC_HSPLS, mode->hsync_len);
 	dispc_reg_out(VENC_VSPLS, mode->vsync_len);
 	dispc_reg_out(VENC_HINT, mode->xres + mode->left_margin +
-		mode->right_margin);
+		      mode->right_margin);
 	dispc_reg_out(VENC_HSTART, mode->left_margin);
 	dispc_reg_out(VENC_HVALID, mode->xres);
 	dispc_reg_out(VENC_VINT, mode->yres + mode->upper_margin +
-		mode->lower_margin);
+		      mode->lower_margin);
 	dispc_reg_out(VENC_VSTART, mode->upper_margin);
 	dispc_reg_out(VENC_VVALID, mode->yres);
 	/* TODO check vmode (interlaced / progressive)*/
@@ -283,34 +281,32 @@ static int dm_venc_mode_set(struct dm_info *dm, const struct fb_videomode *mode)
  */
 int dm_venc_set_state(struct output_device *od)
 {
-	struct dm_info *dm =
-		(struct dm_info *)class_get_devdata(&od->class_dev);
+	struct dm_info *dm = (struct dm_info *)class_get_devdata(&od->class_dev);
 	unsigned long state = od->request_state;
-
 
 	/* TODO check that the output is in standard mode */
 	switch (state)
 	{
-		case DAVINCIFB_OUT_COMPOSITE:
+	case DAVINCIFB_OUT_COMPOSITE:
 		dispc_reg_out(VENC_DACSEL, 0x0);
 		break;
 
-		case DAVINCIFB_OUT_COMPONENT:
+	case DAVINCIFB_OUT_COMPONENT:
 		/* Enable Component output; DAC A: Y, DAC B: Pb, DAC C: Pr  */
 		dispc_reg_out(VENC_DACSEL, 0x543);
 		break;
 
-		case DAVINCIFB_OUT_SVIDEO:
+	case DAVINCIFB_OUT_SVIDEO:
 		/* Enable S-Video Output; DAC B: S-Video Y, DAC C: S-Video C  */
 		dispc_reg_out(VENC_DACSEL, 0x210);
 		break;
 
-		case DAVINCIFB_OUT_RGB:
+	case DAVINCIFB_OUT_RGB:
 		/* TODO handle rgb */
 		printk("rgb!\n");
 		break;
 
-		default:
+	default:
 		return -EINVAL;
 
 	}
@@ -320,8 +316,7 @@ int dm_venc_set_state(struct output_device *od)
 /* Returns the current output mode selcted */
 int dm_venc_get_status(struct output_device *od)
 {
-	struct dm_info *dm =
-		(struct dm_info *)class_get_devdata(&od->class_dev);
+	struct dm_info *dm = (struct dm_info *)class_get_devdata(&od->class_dev);
 
 	return dm->output_sel;
 }
@@ -349,7 +344,7 @@ static void enable_digital_output(bool on)
 	if (on) {
 
 		/* Set PINMUX0 reg to enable LCD
-			(all other settings are kept per u-boot) */
+		   (all other settings are kept per u-boot) */
 		dispc_reg_merge(PINMUX0, PINMUX0_LOEEN, PINMUX0_LOEEN);
 
 		/* Set PCR register for FULL clock */
@@ -357,7 +352,7 @@ static void enable_digital_output(bool on)
 
 		/* Enable video clock output and inverse clock polarity */
 		dispc_reg_out(VENC_VIDCTL,
-				(VENC_VIDCTL_VLCKE | VENC_VIDCTL_VLCKP));
+			      (VENC_VIDCTL_VLCKE | VENC_VIDCTL_VLCKP));
 
 		/* Setting DRGB Matrix registers back to default values */
 		dispc_reg_out(VENC_DRGBX0, 0x00000400);
@@ -405,7 +400,7 @@ static void enable_digital_output(bool on)
 
 		/* turning on horizontal and vertical syncs */
 		dispc_reg_out(VENC_SYNCCTL,
-				(VENC_SYNCCTL_SYEV|VENC_SYNCCTL_SYEH));
+			      (VENC_SYNCCTL_SYEV|VENC_SYNCCTL_SYEH));
 
 		/* Set OSD clock and OSD Sync Adavance registers */
 		dispc_reg_out(VENC_OSDCLK0, 0);
@@ -427,91 +422,91 @@ static void enable_digital_output(bool on)
 		/* set VPSS clock */
 		dispc_reg_out(VPSS_CLKCTL, 0x0a);
 
-		} else {
+	} else {
 
-			/* Initialize the VPSS Clock Control register */
-			dispc_reg_out(VPSS_CLKCTL, 0x18);
+		/* Initialize the VPSS Clock Control register */
+		dispc_reg_out(VPSS_CLKCTL, 0x18);
 
-			/* Set PINMUX0 reg to enable LCD
-				(all other settings are kept per u-boot) */
-			dispc_reg_merge(PINMUX0, 0, PINMUX0_LOEEN);
-			dispc_reg_merge(PINMUX0, 0, PINMUX0_LFLDEN);
+		/* Set PINMUX0 reg to enable LCD
+		   (all other settings are kept per u-boot) */
+		dispc_reg_merge(PINMUX0, 0, PINMUX0_LOEEN);
+		dispc_reg_merge(PINMUX0, 0, PINMUX0_LFLDEN);
 
-			/* disable VCLK output pin enable */
-			dispc_reg_out(VENC_VIDCTL, 0x1101);
+		/* disable VCLK output pin enable */
+		dispc_reg_out(VENC_VIDCTL, 0x1101);
 
-			/* Disable output sync pins */
-			dispc_reg_out(VENC_SYNCCTL, 0);
+		/* Disable output sync pins */
+		dispc_reg_out(VENC_SYNCCTL, 0);
 
-			/* Disable DCLOCK */
-			dispc_reg_out(VENC_DCLKCTL, 0);
-			dispc_reg_out(VENC_DRGBX1, 0x0000057C);
+		/* Disable DCLOCK */
+		dispc_reg_out(VENC_DCLKCTL, 0);
+		dispc_reg_out(VENC_DRGBX1, 0x0000057C);
 
-			/* Disable LCD output control
-				(accepting default polarity) */
-			dispc_reg_out(VENC_LCDOUT, 0);
-			dispc_reg_out(VENC_CMPNT, 0x100);
+		/* Disable LCD output control
+		   (accepting default polarity) */
+		dispc_reg_out(VENC_LCDOUT, 0);
+		dispc_reg_out(VENC_CMPNT, 0x100);
 #if 0
-			/* Enable Video Window 1 / disable video window 0 */
-			dispc_reg_out(OSD_VIDWINMD, 0x302);
+		/* Enable Video Window 1 / disable video window 0 */
+		dispc_reg_out(OSD_VIDWINMD, 0x302);
 
-			/* Enable OSD Field Inversion for DAVINCIFB_WIN_VID1 Use */
-			dispc_reg_out(OSD_MODE, 0x200);
+		/* Enable OSD Field Inversion for DAVINCIFB_WIN_VID1 Use */
+		dispc_reg_out(OSD_MODE, 0x200);
 
-			/* Disable DAVINCIFB_WIN_OSD0 Window */
-			dispc_reg_out(OSD_OSDWIN0MD, 0x00002003);
+		/* Disable DAVINCIFB_WIN_OSD0 Window */
+		dispc_reg_out(OSD_OSDWIN0MD, 0x00002003);
 
-			/* Disable DAVINCIFB_WIN_OSD1 Window */
-			dispc_reg_out(OSD_OSDWIN1MD, 0x00008002);
+		/* Disable DAVINCIFB_WIN_OSD1 Window */
+		dispc_reg_out(OSD_OSDWIN1MD, 0x00008002);
 
-			/* Set DAVINCIFB_WIN_VID0 window  origin and size */
-			dispc_reg_out(OSD_VIDWIN0XP, 0);
-			dispc_reg_out(OSD_VIDWIN0YP, 0);
-			dispc_reg_out(OSD_VIDWIN0XL, 0x2d0);
-			dispc_reg_out(OSD_VIDWIN0YL, 0xf0);
+		/* Set DAVINCIFB_WIN_VID0 window  origin and size */
+		dispc_reg_out(OSD_VIDWIN0XP, 0);
+		dispc_reg_out(OSD_VIDWIN0YP, 0);
+		dispc_reg_out(OSD_VIDWIN0XL, 0x2d0);
+		dispc_reg_out(OSD_VIDWIN0YL, 0xf0);
 
-			/* Set DAVINCIFB_WIN_VID1 window  origin and size */
-			dispc_reg_out(OSD_VIDWIN1XP, 0);
-			dispc_reg_out(OSD_VIDWIN1YP, 0);
-			dispc_reg_out(OSD_VIDWIN1XL, 0x2d0);
-			dispc_reg_out(OSD_VIDWIN1YL, 0xf0);
+		/* Set DAVINCIFB_WIN_VID1 window  origin and size */
+		dispc_reg_out(OSD_VIDWIN1XP, 0);
+		dispc_reg_out(OSD_VIDWIN1YP, 0);
+		dispc_reg_out(OSD_VIDWIN1XL, 0x2d0);
+		dispc_reg_out(OSD_VIDWIN1YL, 0xf0);
 
-			/* Set DAVINCIFB_WIN_OSD0 window  origin and size */
-			dispc_reg_out(OSD_OSDWIN0XP, 0);
-			dispc_reg_out(OSD_OSDWIN0YP, 0);
-			dispc_reg_out(OSD_OSDWIN0XL, 0x2d0);
-			dispc_reg_out(OSD_OSDWIN0YL, 0xf0);
+		/* Set DAVINCIFB_WIN_OSD0 window  origin and size */
+		dispc_reg_out(OSD_OSDWIN0XP, 0);
+		dispc_reg_out(OSD_OSDWIN0YP, 0);
+		dispc_reg_out(OSD_OSDWIN0XL, 0x2d0);
+		dispc_reg_out(OSD_OSDWIN0YL, 0xf0);
 
-			/* Set DAVINCIFB_WIN_OSD1 window  origin and size */
-			dispc_reg_out(OSD_OSDWIN1XP, 0);
-			dispc_reg_out(OSD_OSDWIN1YP, 0);
-			dispc_reg_out(OSD_OSDWIN1XL, 0x2d0);
-			dispc_reg_out(OSD_OSDWIN1YL, 0xf0);
+		/* Set DAVINCIFB_WIN_OSD1 window  origin and size */
+		dispc_reg_out(OSD_OSDWIN1XP, 0);
+		dispc_reg_out(OSD_OSDWIN1YP, 0);
+		dispc_reg_out(OSD_OSDWIN1XL, 0x2d0);
+		dispc_reg_out(OSD_OSDWIN1YL, 0xf0);
 
-			/* Set DAVINCIFB_WIN_OSD1 window  origin and size */
-			dispc_reg_out(OSD_CURXP, 0);
-			dispc_reg_out(OSD_CURYP, 0);
-			dispc_reg_out(OSD_CURXL, 0x2d0);
-			dispc_reg_out(OSD_CURYL, 0xf0);
+		/* Set DAVINCIFB_WIN_OSD1 window  origin and size */
+		dispc_reg_out(OSD_CURXP, 0);
+		dispc_reg_out(OSD_CURYP, 0);
+		dispc_reg_out(OSD_CURXL, 0x2d0);
+		dispc_reg_out(OSD_CURYL, 0xf0);
 #endif
 
-			dispc_reg_out(VENC_HSPLS, 0);
-			dispc_reg_out(VENC_VSPLS, 0);
-			dispc_reg_out(VENC_HINT, 0);
-			dispc_reg_out(VENC_HSTART, 0);
-			dispc_reg_out(VENC_HVALID, 0);
-			dispc_reg_out(VENC_VINT, 0);
-			dispc_reg_out(VENC_VSTART, 0);
-			dispc_reg_out(VENC_VVALID, 0);
-			dispc_reg_out(VENC_HSDLY, 0);
-			dispc_reg_out(VENC_VSDLY, 0);
-			dispc_reg_out(VENC_YCCCTL, 0);
-			dispc_reg_out(VENC_VSTARTA, 0);
+		dispc_reg_out(VENC_HSPLS, 0);
+		dispc_reg_out(VENC_VSPLS, 0);
+		dispc_reg_out(VENC_HINT, 0);
+		dispc_reg_out(VENC_HSTART, 0);
+		dispc_reg_out(VENC_HVALID, 0);
+		dispc_reg_out(VENC_VINT, 0);
+		dispc_reg_out(VENC_VSTART, 0);
+		dispc_reg_out(VENC_VVALID, 0);
+		dispc_reg_out(VENC_HSDLY, 0);
+		dispc_reg_out(VENC_VSDLY, 0);
+		dispc_reg_out(VENC_YCCCTL, 0);
+		dispc_reg_out(VENC_VSTARTA, 0);
 
-			/* Set OSD clock and OSD Sync Adavance registers */
-			dispc_reg_out(VENC_OSDCLK0, 1);
-			dispc_reg_out(VENC_OSDCLK1, 2);
-		}
+		/* Set OSD clock and OSD Sync Adavance registers */
+		dispc_reg_out(VENC_OSDCLK0, 1);
+		dispc_reg_out(VENC_OSDCLK1, 2);
+	}
 }
 
 /* slow down the VCLK to 27MHZ from
@@ -529,8 +524,7 @@ static inline void slow_down_vclk(void)
 	/* select MXI mode. Use 27 MHz (from MXI27)
 	 * (DAC clock = 27 MHz).VPBE/Video encoder clock
 	 * is enabled*/
-	outl(VPSS_CLKCTL_ENABLE_VPBE_CLK,
-		 VPSS_CLKCTL);
+	outl(VPSS_CLKCTL_ENABLE_VPBE_CLK, VPSS_CLKCTL);
 }
 #if 0
 static void davincifb_480p_component_config(int on)
@@ -563,7 +557,7 @@ static void davincifb_480p_component_config(int on)
 		dispc_reg_out(OSD_OSDWIN1MD, 0x00008000);
 
 		/* Set Timing parameters for 480P frame
-			(must match what THS8200 expects) */
+		   (must match what THS8200 expects) */
 		dispc_reg_out(VENC_HSPLS, BASEX480P);
 		dispc_reg_out(VENC_VSPLS, BASEY480P);
 		dispc_reg_out(VENC_HINT, 858 - 1);
@@ -608,9 +602,9 @@ static void davincifb_480p_component_config(int on)
 		dispc_reg_out(OSD_CURYL, DISP_YRES480P);
 
 		/* Enable all VENC, non-standard timing mode,
-			master timing, HD, progressive */
+		   master timing, HD, progressive */
 		dispc_reg_out(VENC_VMOD,
-			(VENC_VMOD_VENC | VENC_VMOD_VMD | VENC_VMOD_HDMD));
+			      (VENC_VMOD_VENC | VENC_VMOD_VMD | VENC_VMOD_HDMD));
 
 		printk(KERN_INFO "Davinci set video mode as 480p\n");
 	} else {
@@ -693,8 +687,8 @@ static void davincifb_1080i_component_config(int on)
 
 		/* Enable all VENC, non-standard timing mode, master timing, HD, interlaced */
 		dispc_reg_out(VENC_VMOD,
-					  (VENC_VMOD_VENC | VENC_VMOD_VMD |
-					   VENC_VMOD_HDMD | VENC_VMOD_NSIT));
+			      (VENC_VMOD_VENC | VENC_VMOD_VMD |
+			       VENC_VMOD_HDMD | VENC_VMOD_NSIT));
 
 		printk(KERN_INFO "Davinci set video mode as 1080i\n");
 
@@ -731,7 +725,7 @@ static void davincifb_720p_component_config(int on)
 		dispc_reg_out(OSD_OSDWIN1MD, 0x00008000);
 
 		/* Set Timing parameters for 720P frame
-			(must match what THS8200 expects) */
+		   (must match what THS8200 expects) */
 		dispc_reg_out(VENC_HSPLS, BASEX720P);
 		dispc_reg_out(VENC_VSPLS, BASEY720P);
 		dispc_reg_out(VENC_HINT, 1649);
@@ -776,9 +770,9 @@ static void davincifb_720p_component_config(int on)
 		dispc_reg_out(OSD_CURYL, DISP_YRES720P);
 
 		/* Enable all VENC, non-standard timing mode,
-			master timing, HD, progressive */
+		   master timing, HD, progressive */
 		dispc_reg_out(VENC_VMOD,
-			(VENC_VMOD_VENC | VENC_VMOD_VMD | VENC_VMOD_HDMD));
+			      (VENC_VMOD_VENC | VENC_VMOD_VMD | VENC_VMOD_HDMD));
 
 		printk(KERN_INFO "Davinci set video mode as 720p\n");
 	} else{
@@ -845,7 +839,7 @@ static void set_sdram_params(const struct dm_win_info *w, u32 addr, u32 line_len
  * color parameter.
  */
 static int davincifb_set_attr_blend(struct dm_win_info *w,
-	struct fb_fillrect *r)
+				    struct fb_fillrect *r)
 {
 	struct fb_info *info = &w->info;
 	struct fb_var_screeninfo *var = &info->var;
@@ -865,8 +859,7 @@ static int davincifb_set_attr_blend(struct dm_win_info *w,
 	 * ... Do we want to return an error otherwise?
 	 */
 	width_bytes = r->width * var->bits_per_pixel / 8;
-	start = w->fb_base + r->dy * info->fix.line_length
-	    + r->dx * var->bits_per_pixel / 8;
+	start = w->fb_base + r->dy * info->fix.line_length + r->dx * var->bits_per_pixel / 8;
 
 	blend = (((u8) r->color & 0xf) << 4) | ((u8) r->color);
 	while (r->height--) {
@@ -1074,8 +1067,7 @@ static int window_overlap(struct dm_win_info *w, u32 xp, u32 yp, u32 xl, u32 yl)
 
 
 /* Returns 1 if the window parameters are within DAVINCIFB_WIN_VID0, 0 otherwise */
-static int within_vid0_limits(struct dm_win_info *vid0, u32 xp, u32 yp, u32 xl,
-	u32 yl)
+static int within_vid0_limits(struct dm_win_info *vid0, u32 xp, u32 yp, u32 xl, u32 yl)
 {
 	u32 vid0_xp = 0, vid0_yp = 0, vid0_xl = 0, vid0_yl = 0;
 
@@ -1090,7 +1082,7 @@ static int within_vid0_limits(struct dm_win_info *vid0, u32 xp, u32 yp, u32 xl,
 
 /* DAVINCIFB_WIN_VID0 must be large enough to hold all other windows */
 static int check_new_vid0_size(struct dm_win_info *vid0, u32 xp0, u32 yp0,
-	u32 xl0, u32 yl0)
+			       u32 xl0, u32 yl0)
 {
 	struct dm_win_info *owin;
 	u32 _xp = 0, _yp = 0, _xl = 0, _yl = 0;
@@ -1172,12 +1164,11 @@ static void dm_win_fix_set(struct dm_win_info *w)
 	struct fb_info *info = &w->info;
 
 	info->fix.smem_start = w->fb_base_phys;
-	info->fix.line_length =
-	    (info->var.xres_virtual * info->var.bits_per_pixel) / 8;
+	info->fix.line_length = (info->var.xres_virtual * info->var.bits_per_pixel) / 8;
 	info->fix.smem_len = w->fb_size;
 	info->fix.type = FB_TYPE_PACKED_PIXELS;
 	info->fix.visual = (info->var.bits_per_pixel <= 8) ?
-	    FB_VISUAL_PSEUDOCOLOR : FB_VISUAL_TRUECOLOR;
+	     FB_VISUAL_PSEUDOCOLOR : FB_VISUAL_TRUECOLOR;
 	/* some values might change based on check_var, set_par and pan */
 	info->fix.xpanstep = 0;
 	info->fix.ypanstep = 1;
@@ -1263,9 +1254,10 @@ static int dm_win_probe(struct dm_win_info *w)
 	dm_win_fix_set(w);
 	/* append the list modes */
 	fb_videomode_to_modelist(dmfb_modedb, ARRAY_SIZE(dmfb_modedb),
-		&info->modelist);
-	if (!fb_find_mode(vinfo, &w->info, NULL,
-		dmfb_modedb, ARRAY_SIZE(dmfb_modedb), NULL, is_win(w, DAVINCIFB_WIN_OSD1) ? 4 : 16)) {
+				 &info->modelist);
+	if (!fb_find_mode(vinfo, &w->info, NULL, dmfb_modedb,
+			  ARRAY_SIZE(dmfb_modedb), NULL,
+			  is_win(w, DAVINCIFB_WIN_OSD1) ? 4 : 16)) {
 		return -EINVAL;
 	}
 	/* create the fb device */
@@ -1280,8 +1272,7 @@ static int dm_win_probe(struct dm_win_info *w)
 	switch (info->var.bits_per_pixel) {
 		case 16:
 		/* yuv422 */
-		if (is_win(w, DAVINCIFB_WIN_VID0) ||
-			is_win(w, DAVINCIFB_WIN_VID1))
+		if (is_win(w, DAVINCIFB_WIN_VID0) || is_win(w, DAVINCIFB_WIN_VID1))
 			bg_color = 0x88;
 		break;
 
@@ -1467,15 +1458,15 @@ static int davincifb_check_var(struct fb_var_screeninfo *var,
 			v.xres, v.xres_virtual, v.bits_per_pixel);
 		return -EINVAL;
 	}
-	if ((w->fb_size) && (v.xres_virtual * v.yres_virtual * v.bits_per_pixel
-		 / 8 > w->fb_size)) {
+	if ((w->fb_size) &&
+	    (v.xres_virtual * v.yres_virtual * v.bits_per_pixel / 8 > w->fb_size)) {
 		dev_dbg(dev, "Requested resolution too big\n");
 		goto error;
 	}
 	if (!is_win(w, DAVINCIFB_WIN_VID0)) {
 		/* Rule 1 */
 		if (!within_vid0_limits(w->dm->windows[DAVINCIFB_WIN_VID0],
-			w->x, w->y, v.xres, v.yres)) {
+					w->x, w->y, v.xres, v.yres)) {
 			dev_dbg(dev, "Window %s isnt fully contained on vid0\n",
 				dm_win_names[w->win]);
 			//return -EINVAL;
@@ -1506,18 +1497,15 @@ static int davincifb_check_var(struct fb_var_screeninfo *var,
 	} else if (is_win(w, DAVINCIFB_WIN_VID0)) {
 		if (check_new_vid0_size((struct dm_info *)w, w->x, w->y,
 			v.xres, v.yres)) {
-			dev_dbg(dev, "vid0 isn't large enough to handle all "
-				"windows\n");
+			dev_dbg(dev, "vid0 isn't large enough to handle all windows\n");
 			goto error;
 		}
 		v.bits_per_pixel = 16;
 	} else if (is_win(w, DAVINCIFB_WIN_VID1)) {
 		/* Rule 11 */
 		if (w->dm->windows[DAVINCIFB_WIN_VID0] &&
-			((w->dm->windows[DAVINCIFB_WIN_VID0]->x - w->x)
-			% 16)) {
-			dev_dbg(dev, "vid1 x should be multiple of 16 from "
-				"vid0\n");
+		    ((w->dm->windows[DAVINCIFB_WIN_VID0]->x - w->x) % 16)) {
+			dev_dbg(dev, "vid1 x should be multiple of 16 from vid0\n");
 			return -EINVAL;
 		}
 		/* Video1 may be in YUV or RGB888 format */
@@ -1555,8 +1543,7 @@ static int davincifb_set_par(struct fb_info *info)
 	/* Memory offsets */
 	info->fix.line_length = v->xres_virtual * v->bits_per_pixel / 8;
 
-	offset = v->yoffset * info->fix.line_length +
-	    v->xoffset * v->bits_per_pixel / 8;
+	offset = v->yoffset * info->fix.line_length + v->xoffset * v->bits_per_pixel / 8;
 	start = (u32) w->fb_base_phys + offset;
 	set_sdram_params(w, start, info->fix.line_length);
 
@@ -1602,23 +1589,23 @@ static int davincifb_set_par(struct fb_info *info)
 			ths8200_set_480p_mode();
 			/* Enable all VENC, non-standard timing mode,
 			 * master timing, HD, progressive */
-			dispc_reg_out(VENC_VMOD, (VENC_VMOD_VENC |
-				VENC_VMOD_VMD | VENC_VMOD_HDMD));
+			dispc_reg_out(VENC_VMOD,
+				      (VENC_VMOD_VENC | VENC_VMOD_VMD | VENC_VMOD_HDMD));
 		}
 		else if (!strcmp(dmfb_modedb[mode].name, "720p")) {
 			ths8200_set_720p_mode();
 			/* Enable all VENC, non-standard timing mode,
 			 * master timing, HD, progressive */
-			dispc_reg_out(VENC_VMOD, (VENC_VMOD_VENC |
-				VENC_VMOD_VMD | VENC_VMOD_HDMD));
+			dispc_reg_out(VENC_VMOD,
+				      (VENC_VMOD_VENC |	VENC_VMOD_VMD | VENC_VMOD_HDMD));
 		}
 		else if (!strcmp(dmfb_modedb[mode].name, "1080i")) {
 			ths8200_set_1080i_mode();
 			/* Enable all VENC, non-standard timing mode,
 			 * master timing, HD, interlaced */
-			dispc_reg_out(VENC_VMOD, (VENC_VMOD_VENC |
-				VENC_VMOD_VMD | VENC_VMOD_HDMD |
-				VENC_VMOD_NSIT));
+			dispc_reg_out(VENC_VMOD,
+				      (VENC_VMOD_VENC |	VENC_VMOD_VMD |
+				       VENC_VMOD_HDMD |	VENC_VMOD_NSIT));
 		}
 #endif
 	}
@@ -1693,9 +1680,9 @@ static int davincifb_ioctl(struct fb_info *info, unsigned int cmd,
 	case FBIO_SETZOOM:
 		if (copy_from_user(&zoom, argp, sizeof(zoom)))
 			return -EFAULT;
-		if ((zoom.zoom_h == 2) || (zoom.zoom_h == 0)
-		    || (zoom.zoom_h == 1) || (zoom.zoom_v == 2)
-		    || (zoom.zoom_v == 0) || (zoom.zoom_v == 1)) {
+		if ((zoom.zoom_h == 2) || (zoom.zoom_h == 0) ||
+		    (zoom.zoom_h == 1) || (zoom.zoom_v == 2) ||
+		    (zoom.zoom_v == 0) || (zoom.zoom_v == 1)) {
 			if (!is_win(w, zoom.window_id))
 				return -EINVAL;
 			set_zoom(w, zoom.zoom_h, zoom.zoom_v);
@@ -1822,8 +1809,7 @@ static int davincifb_pan_display(struct fb_var_screeninfo *var,
 	if ((var->xres_virtual * var->bits_per_pixel / 8) % 32)
 		return -EINVAL;
 
-	offset = var->yoffset * info->fix.line_length +
-	    var->xoffset * var->bits_per_pixel / 8;
+	offset = var->yoffset * info->fix.line_length + var->xoffset * var->bits_per_pixel / 8;
 	start = (u32) w->fb_base_phys + offset;
 
 	if ((dispc_reg_in(VENC_VSTAT) & 0x00000010)==0x10)
@@ -1910,7 +1896,7 @@ static irqreturn_t davincifb_isr(int irq, void *arg)
 			xchg(&addr, w->sdram_address);
 			if (addr) {
 				set_sdram_params(w, w->sdram_address,
-					w->info.fix.line_length);
+						 w->info.fix.line_length);
 				w->sdram_address = 0;
 			}
 		}
@@ -1974,8 +1960,7 @@ static int davincifb_probe(struct platform_device *pdev)
 	}
 
 	/* map the regions */
-	dm->mmio_base =
-	    (unsigned long)ioremap(dm->mmio_base_phys, dm->mmio_size);
+	dm->mmio_base = (unsigned long)ioremap(dm->mmio_base_phys, dm->mmio_size);
 	if (!dm->mmio_base) {
 		dev_err(dm->dev, ": cannot map MMIO\n");
 		goto release_mmio;
@@ -2005,24 +1990,19 @@ static int davincifb_probe(struct platform_device *pdev)
 	/* Field Inversion Workaround */
 	dispc_reg_out(OSD_MODE, 0x200);
 
-	dm->windows_mask = (1 << DAVINCIFB_WIN_OSD0) |
-		(1 << DAVINCIFB_WIN_OSD1) |
-		(1 << DAVINCIFB_WIN_VID0) |
-		(1 << DAVINCIFB_WIN_VID1);
+	dm->windows_mask = (1 << DAVINCIFB_WIN_OSD0) |(1 << DAVINCIFB_WIN_OSD1) |
+			(1 << DAVINCIFB_WIN_VID0) | (1 << DAVINCIFB_WIN_VID1);
 	if (dm_wins_probe(dm) < 0)
 		goto probe_error;
 	/* install our interrupt service routine */
-	if (request_irq(IRQ_VENCINT, davincifb_isr, IRQF_SHARED, MODULE_NAME,
-			dm)) {
-		dev_err(dm->dev, MODULE_NAME
-			": could not install interrupt service routine\n");
+	if (request_irq(IRQ_VENCINT, davincifb_isr, IRQF_SHARED, MODULE_NAME, dm)) {
+		dev_err(dm->dev, MODULE_NAME ": could not install interrupt service routine\n");
 		goto irq_error;
 	}
 	/* TODO remove this */
 	//dm->output_device_config(1);
 
-	dm->output =
-		video_output_register("venc", dm->dev, dm, &dm_venc_props);
+	dm->output = video_output_register("venc", dm->dev, dm, &dm_venc_props);
 	if (!dm->output)
 		goto venc_error;
 	platform_set_drvdata(pdev, dm);
@@ -2104,10 +2084,8 @@ int __init davincifb_setup(char *options)
 				dmparams.format = COMPONENT;
 			}
 		} else if (!strncmp(this_opt, "format=", 7)) {
-			if (dmparams.output == LCD ||
-				 dmparams.output == HD720P ||
-				 dmparams.output == HD1080I ||
-				 dmparams.output == HD480P)
+			if (dmparams.output == LCD || dmparams.output == HD720P ||
+			    dmparams.output == HD1080I || dmparams.output == HD480P)
 				continue;
 			if (!strncmp(this_opt + 7, "composite", 9))
 				dmparams.format = COMPOSITE;
@@ -2121,8 +2099,7 @@ int __init davincifb_setup(char *options)
 			if (!strncmp(this_opt + 5, "off", 3))
 				dmparams.windows &= ~(1 << DAVINCIFB_WIN_VID0);
 			else if (!parse_win_params(this_opt + 5,
-						   &xres, &yres, &xpos,
-						   &ypos)) {
+						   &xres, &yres, &xpos, &ypos)) {
 				dmparams.vid0_xres = xres;
 				dmparams.vid0_yres = yres;
 				dmparams.vid0_xpos = xpos;
@@ -2132,8 +2109,7 @@ int __init davincifb_setup(char *options)
 			if (!strncmp(this_opt + 5, "off", 3))
 				dmparams.windows &= ~(1 << DAVINCIFB_WIN_VID1);
 			else if (!parse_win_params(this_opt + 5,
-						   &xres, &yres, &xpos,
-						   &ypos)) {
+						   &xres, &yres, &xpos, &ypos)) {
 				dmparams.vid1_xres = xres;
 				dmparams.vid1_yres = yres;
 				dmparams.vid1_xpos = xpos;
@@ -2143,8 +2119,7 @@ int __init davincifb_setup(char *options)
 			if (!strncmp(this_opt + 5, "off", 3))
 				dmparams.windows &= ~(1 << DAVINCIFB_WIN_OSD0);
 			else if (!parse_win_params(this_opt + 5,
-						   &xres, &yres, &xpos,
-						   &ypos)) {
+						   &xres, &yres, &xpos, &ypos)) {
 				dmparams.osd0_xres = xres;
 				dmparams.osd0_yres = yres;
 				dmparams.osd0_xpos = xpos;
@@ -2154,8 +2129,7 @@ int __init davincifb_setup(char *options)
 			if (!strncmp(this_opt + 5, "off", 3))
 				dmparams.windows &= ~(1 << DAVINCIFB_WIN_OSD1);
 			else if (!parse_win_params(this_opt + 5,
-						   &xres, &yres, &xpos,
-						   &ypos)) {
+						   &xres, &yres, &xpos, &ypos)) {
 				dmparams.osd1_xres = xres;
 				dmparams.osd1_yres = yres;
 				dmparams.osd1_xpos = xpos;
@@ -2163,12 +2137,11 @@ int __init davincifb_setup(char *options)
 			}
 		}
 	}
-	printk(KERN_INFO "DaVinci: "
-	       "Output on %s%s, Enabled windows: %s %s %s %s\n",
+	printk(KERN_INFO "DaVinci: " "Output on %s%s, Enabled windows: %s %s %s %s\n",
 	       (dmparams.output == LCD) ? "LCD" :
-		   (dmparams.output == HD720P) ? "HD720P":
-		   (dmparams.output == HD1080I) ? "HD1080I":
-		   (dmparams.output == HD480P) ? "HD480P":
+	       (dmparams.output == HD720P) ? "HD720P":
+	       (dmparams.output == HD1080I) ? "HD1080I":
+	       (dmparams.output == HD480P) ? "HD480P":
 	       (dmparams.output == NTSC) ? "NTSC" :
 	       (dmparams.output == PAL) ? "PAL" : "unknown device!",
 	       (dmparams.format == 0) ? "" :
@@ -2194,8 +2167,7 @@ int __init davincifb_setup(char *options)
 		format_xres = DISP_XRES480P;
 		format_yres = DISP_YRES480P;
 	} else {
-		printk(KERN_INFO
-		       "DaVinci:invalid format..defaulting width to 480\n");
+		printk(KERN_INFO "DaVinci:invalid format..defaulting width to 480\n");
 	}
 	dmparams.osd0_xres = osd0_default_var.xres = format_xres;
 	dmparams.osd1_xres = osd1_default_var.xres = format_xres;
@@ -2218,12 +2190,9 @@ int __init davincifb_setup(char *options)
 	vid1_default_var.yres_virtual = format_yres * TRIPLE_BUF;
 
 	dmparams.osd0_phys = DAVINCI_FB_RESERVE_MEM_BASE;
-	dmparams.osd1_phys = dmparams.osd0_phys +
-		fb_window_size(format_xres, format_yres, DOUBLE_BUF);
-	dmparams.vid0_phys = dmparams.osd1_phys +
-		fb_window_size(format_xres, format_yres, DOUBLE_BUF);
-	dmparams.vid1_phys = dmparams.vid0_phys +
-		fb_window_size(format_xres, format_yres, TRIPLE_BUF);
+	dmparams.osd1_phys = dmparams.osd0_phys + fb_window_size(format_xres, format_yres, DOUBLE_BUF);
+	dmparams.vid0_phys = dmparams.osd1_phys + fb_window_size(format_xres, format_yres, DOUBLE_BUF);
+	dmparams.vid1_phys = dmparams.vid0_phys + fb_window_size(format_xres, format_yres, TRIPLE_BUF);
 
 	if (dmparams.windows & (1 << DAVINCIFB_WIN_VID0))
 		printk(KERN_INFO "Setting Video0 size %dx%d, "
@@ -2267,12 +2236,11 @@ int __init davincifb_init(void)
 
 	for (i = 0; i < num_names && !done; i++) {
 		if (fb_get_options(names[i], &option)) {
-			printk(MODULE_NAME
-			       ": Disabled on command-line.\n");
+			printk(MODULE_NAME ": Disabled on command-line.\n");
 			return -ENODEV;
 		} else if (option) {
 			davincifb_setup(option);
-				done = 1;
+			done = 1;
 		}
 	}
 #endif

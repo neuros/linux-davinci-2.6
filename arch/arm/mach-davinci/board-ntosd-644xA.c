@@ -37,6 +37,12 @@
 
 #include <video/davincifb.h>
 
+#if defined(CONFIG_LEDS_GPIO) || defined(CONFIG_LEDS_GPIO_MODULE)
+#include <asm/arch/mux.h>
+#include <asm/arch/gpio.h>
+#include <linux/leds.h>
+#endif
+
 /* other misc. init functions */
 void __init davinci_psc_init(void);
 void __init davinci_irq_init(void);
@@ -246,6 +252,31 @@ static struct platform_device rtc_dev = {
 	.id             = -1,
 };
 
+/*
+ *  LEDS
+ */
+#if defined(CONFIG_LEDS_GPIO) || defined(CONFIG_LEDS_GPIO_MODULE)
+struct gpio_led leds[] = {
+	{ .name = "led1_green", .gpio = GPIO(10) },
+	{ .name = "led1_red", .gpio = GPIO(11) },
+	{ .name = "led2_green", .gpio = GPIO(12) },
+	{ .name = "led2_red", .gpio = GPIO(13) },
+};
+
+static struct gpio_led_platform_data leds_data = {
+	.num_leds = ARRAY_SIZE(leds),
+	.leds = (void *)leds,
+};
+
+static struct platform_device leds_dev = {
+	.name = "leds-gpio",
+	.id   = -1,
+	.dev = {
+		.platform_data 		= &leds_data,
+	},
+};
+#endif
+
 static struct platform_device *ntosd_644xa_devices[] __initdata = {
 	&ntosd_644xa_norflash_device,
 #if defined(CONFIG_MTD_NAND_DAVINCI) || defined(CONFIG_MTD_NAND_DAVINCI_MODULE)
@@ -259,6 +290,9 @@ defined(CONFIG_FB_DM) || defined(CONFIG_FB_DM_MODULE)
 	&usb_dev,
 #endif
 	&rtc_dev,
+#if defined(CONFIG_LEDS_GPIO) || defined(CONFIG_LEDS_GPIO_MODULE)
+	&leds_dev,
+#endif
 };
 
 static void __init
@@ -280,6 +314,14 @@ static __init void ntosd_644xa_init(void)
 			     ARRAY_SIZE(ntosd_644xa_devices));
 
 	setup_usb();
+#if defined(CONFIG_LEDS_GPIO) || defined(CONFIG_LEDS_GPIO_MODULE)
+	davinci_mux_peripheral(DAVINCI_MUX_AEAW0, 0);
+	davinci_mux_peripheral(DAVINCI_MUX_AEAW1, 0);
+	davinci_mux_peripheral(DAVINCI_MUX_AEAW2, 0);
+	davinci_mux_peripheral(DAVINCI_MUX_AEAW3, 0);
+	davinci_mux_peripheral(DAVINCI_MUX_AEAW4, 0);
+	davinci_mux_peripheral(DAVINCI_MUX_VLYNQEN, 0);
+#endif
 }
 
 static __init void ntosd_644xa_irq_init(void)
