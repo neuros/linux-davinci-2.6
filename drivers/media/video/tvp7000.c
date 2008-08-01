@@ -51,6 +51,7 @@
 	(sizeof(x) / sizeof(*x))
 #define STD(x)  \
     ((x) < TOTAL_STANDARD ? video_std + (x) : NULL)
+#define TVP7000_I2C_RETRY 3
 
 /* I2C Addresses to scan */
 static unsigned short normal_i2c[] = {
@@ -71,6 +72,126 @@ struct i2c_reg_value
 {
 	u8 reg;
 	u8 value;
+};
+
+static const struct i2c_reg_value tvp7000_init_component[] = {
+	{ /* 0x01 */
+		TVP7000_PLL_DIVIDE_MSB, 0x6b
+	},
+	{ /* 0x02 */
+		TVP7000_PLL_DIVIDE_LSB, 0x40
+	},
+	{ /* 0x03 */
+		TVP7000_PLL_CTRL, 0x68
+	},
+	{ /* 0x04 */
+		TVP7000_PHASE_SELECT, 0xb1
+	},
+	{ /* 0x05 */
+		TVP7000_CLAMP_START, 0x06
+	},
+	{ /* 0x06 */
+		TVP7000_CLAMP_WIDTH, 0x10
+	},
+	{ /* 0x07 */
+		TVP7000_HSYNC_OUTPUT_WIDTH, 0x60
+	},
+	{ /* 0x08 */
+		TVP7000_BLUE_FINE_GAIN, 0x80
+	},
+	{ /* 0x09 */
+		TVP7000_GREEN_FINE_GAIN, 0x80
+	},
+	{ /* 0x0A */
+		TVP7000_RED_FINE_GAIN, 0x80
+	},
+	{ /* 0x0B */
+		TVP7000_BLUE_FINE_OFFSET, 0x80
+	},
+	{ /* 0x0C */
+		TVP7000_GREEN_FINE_OFFSET, 0x80
+	},
+	{ /* 0x0D */
+		TVP7000_RED_FINE_OFFSET, 0x80
+	},
+	{ /* 0x0E */
+		TVP7000_SYNC_CTRL_1, 0x20
+	},
+	{ /* 0x0F */
+		TVP7000_PLL_CLAMP_CTRL, 0x2E
+	},
+	{ /* 0x10 */
+		TVP7000_SYNC_ON_GREEN, 0x85
+	},
+	{ /* 0x11 */
+		TVP7000_SYNC_SEPARATOR, 0x47
+	},
+	{ /* 0x12 */
+		TVP7000_PRE_COAST, 0x03
+	},
+	{ /* 0x13 */
+		TVP7000_POST_COAST, 0x0c
+	},
+	{ /* 0x15 */
+		TVP7000_OUTPUT_FORMATTER, 0x02
+	},
+	{ /* 0x16 */
+		TVP7000_TEST_REG, 0x25
+	},
+	{ /* 0x19 */
+		TVP7000_INPUT_MUX_1, 0x00
+	},
+	{ /* 0x1A */
+		TVP7000_INPUT_MUX_2, 0x85
+	},
+	{ /* 0x1B */
+		TVP7000_BLUE_GREEN_GAIN, 0x55
+	},
+	{ /* 0x1C */
+		TVP7000_RED_COARSE_GAIN, 0x05
+	},
+	{ /* 0x1D */
+		TVP7000_FINE_OFFSET_LSB, 0x00
+	},
+	{ /* 0x1E */
+		TVP7000_BLUE_COARSE_OFFSET, 0x1f
+	},
+	{ /* 0x1F */
+		TVP7000_GREEN_COARSE_OFFSET, 0x1f
+	},
+	{ /* 0x20 */
+		TVP7000_RED_COARSE_OFFSET, 0x1f
+	},
+	{ /* 0x21 */
+		TVP7000_HSOUT_OUTPUT_START, 0x08
+	},
+	{ /* 0x22 */
+		TVP7000_MISC_CTRL, 0x08
+	},
+	{ /* 0x26 */
+		TVP7000_AUTO_CTRL_ENABLE, 0x80
+	},
+	{ /* 0x28 */
+		TVP7000_AUTO_CTRL_FILTER, 0x03
+	},
+	{ /* 0x2A */
+		TVP7000_FINE_CLAMP_CTRL, 0x07
+	},
+	{ /* 0x2B */
+		TVP7000_POWER_CTRL, 0x00
+	},
+	{ /* 0x2C */
+		TVP7000_ADC_SETUP, 0x50
+	},
+	{ /* 0x2D */
+		TVP7000_COARSE_CLAMP_CTRL_1, 0x00
+	},
+	{ /* 0x2E */
+		TVP7000_SOG_CLAMP, 0x80
+	},
+	{ /* 0x31 */
+		TVP7000_ALC_PLACEMENT, 0x00
+	},
 };
 
 static const struct i2c_reg_value tvp7000_init_default[] = {
@@ -397,13 +518,9 @@ static int tvp7000_detach_client(struct i2c_client *client);
 static int tvp7000_detect_client(struct i2c_adapter *adapter,
 								 int addr, int kind);
 
-static void tvp7000_device_power_on(bool on);
-
 static inline int tvp7000_read_reg(u8 reg);
 static inline int tvp7000_write_reg(u8 reg, u8 value);
 
-static int tvp7000_write_inittab(const struct i2c_reg_value *regs,
-								 int num);
 static int tvp7000_setup_video_stardard(const struct tvp7000_video_std *std);
 
 static int tvp7000_device_init(struct vpfe_capture_params *params);
@@ -566,15 +683,6 @@ static int tvp7000_selmux(void)
     return 0;
 }
 
-static void tvp7000_reset(void)
-{
-	/* Initializes TVP7000 to its default values */
-	tvp7000_write_inittab(tvp7000_init_default, NUM_OF_REGS(tvp7000_init_default));
-
-	/* Selects decoder input */
-	tvp7000_selmux();
-}
-
 static int input_signal_exist(void)
 {
     int val;
@@ -593,7 +701,7 @@ static int tvp7000_device_cmd(u32 cmd, void *arg)
     switch (cmd) {
 	case 0:
 	case VIDIOC_INT_RESET:
-		tvp7000_reset();
+		tvp7000_device_init(NULL);
 		break;
 	case VIDIOC_G_INPUT:
 	{
@@ -608,16 +716,13 @@ static int tvp7000_device_cmd(u32 cmd, void *arg)
 		int input = *(int *)arg;
 		if (input == VPFE_AMUX_COMPONENT)
         {
-            if(tvp7000_selmux())
+            if(tvp7000_device_init(NULL))
                 ret = -EBUSY;
         }
 		else
             ret = -EINVAL;
 		break;
 	}
-    case VIDIOC_S_STD:
-        tvp7000_setup_video_stardard(STD(VIDEO480P60HZ));
-        break;
 	case VPFE_CMD_CONFIG_CAPTURE:
 		{
 			struct vpfe_capture_params *params =
@@ -625,8 +730,7 @@ static int tvp7000_device_cmd(u32 cmd, void *arg)
 
 			if (params->amuxmode == VPFE_AMUX_COMPONENT) 
             {
-                tvp7000_selmux();
-                //tvp7000_set_std(params->mode);
+                ret = tvp7000_setup_video_stardard(STD(VIDEO480P60HZ));
             }
             else
                 ret = -1;
@@ -643,24 +747,32 @@ static int tvp7000_device_init(struct vpfe_capture_params *params)
 	u8 ver = 0;
 
 	FN_IN;
-
 	ver = tvp7000_read_reg(TVP7000_CHIP_REVISION);
-	DPRINTK("TVP7000 detect! Revision: %d\n",
-			ver);
+	DPRINTK("TVP7000 detect! Revision: %d\n", ver);
 
 	/* initialize TVP7000 as its default values */
 	tvp7000_write_inittab(tvp7000_init_default, NUM_OF_REGS(tvp7000_init_default));
+	tvp7000_write_inittab(tvp7000_init_component, NUM_OF_REGS(tvp7000_init_component));
+    if(tvp7000_selmux())
+        return -1;
+	return 0;
+}
 
-	//tvp7000_write_reg(TVP7000_PLL_DIVIDE_MSB, 0x6B);
-	//tvp7000_write_reg(TVP7000_PLL_DIVIDE_LSB, 0x40);
-	//tvp7000_write_reg(TVP7000_PLL_CTRL, 0x68);
-	//tvp7000_write_reg(TVP7000_PHASE_SELECT, 0xB9);
-//	tvp7000_write_reg(TVP7000_SYNC_ON_GREEN, 0x80);
-	//tvp7000_write_reg(TVP7000_PRE_COAST, 0x03);
-	//tvp7000_write_reg(TVP7000_POST_COAST, 0x0C);
-	tvp7000_write_reg(TVP7000_MISC_CTRL, (1 << 3) | (1 << 1));
-	tvp7000_write_reg(TVP7000_SOG_CLAMP, 1<< 7);
+static int tvp7000_device_active(void)
+{
+    tvp7000_device_power_on(true);
+	return 0;
+}
 
+static int tvp7000_device_deactive(void)
+{
+    tvp7000_device_power_on(false);
+	return 0;
+}
+
+static int tvp7000_device_cleanup(void)
+{
+	/* do nothing */
 	return 0;
 }
 
@@ -669,22 +781,34 @@ static struct vpfe_capture_device	tvp7000_capture_device = {
 	.id = VPFE_CAPTURE_ID_TVP7000,
 	.capture_device_init = tvp7000_device_init,
     .capture_device_cmd = tvp7000_device_cmd,
+	.capture_device_active = tvp7000_device_active,
+	.capture_device_deactive = tvp7000_device_deactive,
+	.capture_device_cleanup = tvp7000_device_cleanup,
 };
 
 static __init int tvp7000_init(void)
 {
+    int i;
 	int err = 0;
 	FN_IN;
 
 	/* power on the tvp7000 Video decoder*/
 	tvp7000_device_power_on(true);
+    mdelay(500);
 
-	err = i2c_add_driver(&tvp7000_driver);
-	if (err) {
-		DPRINTK("I2C driver %s add failed\n",
-				tvp7000_driver.driver.name);
-		return err;
-	}
+    for (i = 0; i < TVP7000_I2C_RETRY; i++)
+    {
+        err = i2c_add_driver(&tvp7000_driver);
+        if (!err) 
+        {
+            break;
+        }
+    }
+    if (err) {
+        DPRINTK("I2C driver %s add failed\n",
+                tvp7000_driver.driver.name);
+        return err;
+    }
 
 	err = vpfe_capture_device_register(&tvp7000_capture_device);
 	if (err) {
@@ -692,6 +816,7 @@ static __init int tvp7000_init(void)
 				tvp7000_capture_device.name);
 		return err;
 	}
+	tvp7000_device_power_on(false);
 
 	return 0;
 }
