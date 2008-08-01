@@ -89,6 +89,9 @@ static struct v4l2_fract ntsc_aspect = VPFE_PIXELASPECT_NTSC;
 static struct v4l2_fract pal_aspect = VPFE_PIXELASPECT_PAL;
 static struct v4l2_rect ntscsp_bounds = VPFE_WIN_NTSC_SP;
 static struct v4l2_rect palsp_bounds = VPFE_WIN_PAL_SP;
+static struct v4l2_rect hd_480p_bounds = VPFE_WIN_HD480P;
+static struct v4l2_rect hd_720p_bounds = VPFE_WIN_HD720P;
+static struct v4l2_rect hd_1080i_bounds = VPFE_WIN_HD1080I;
 static struct v4l2_fract sp_aspect = VPFE_PIXELASPECT_NTSC_SP;
 
 #define NTOSD_INPUTS	2
@@ -140,55 +143,70 @@ static irqreturn_t vpfe_isr(int irq, void *dev_id)
 	vpfe_obj *vpfe = &vpfe_device;
 	int fid;
 
-	/* check which field we are in hardware */
-	fid = ccdc_getfid();
-	vpfe->field_id ^= 1;	/* switch the software maintained field id */
-	debug_print(KERN_INFO "field id = %x:%x.\n", fid, vpfe->field_id);
-	if (fid == vpfe->field_id) {	/* we are in-sync here, continue */
-		if (fid == 0) {
-			/*  One frame is just being captured. If the next frame
-			is available, release the current frame and move on */
-			if (vpfe->curFrm != vpfe->nextFrm) {
-				vpfe->curFrm->state = STATE_DONE;
-				wake_up_interruptible(&vpfe->curFrm->done);
-				vpfe->curFrm = vpfe->nextFrm;
-			}
-			/* based on whether the two fields are stored interleavely      */
-			/* or separately in memory, reconfigure the CCDC memory address */
-			if (vpfe->field == V4L2_FIELD_SEQ_TB) {
-				u32 addr = vpfe->curFrm->boff + vpfe->field_offset;
-				ccdc_setfbaddr((unsigned long)addr);
-			}
-		} else if (fid == 1) {
-			/* if one field is just being captured */
-			/* configure the next frame */
-			/* get the next frame from the empty queue */
-			/* if no frame is available, hold on to the current buffer */
-			if (!list_empty(&vpfe->dma_queue)
-			    && vpfe->curFrm == vpfe->nextFrm) {
-				vpfe->nextFrm = list_entry(vpfe->dma_queue.next,
-							   struct videobuf_buffer, queue);
-				list_del(&vpfe->nextFrm->queue);
-				vpfe->nextFrm->state = STATE_ACTIVE;
-				ccdc_setfbaddr((unsigned long)vpfe->nextFrm->boff);
-			}
-			if (vpfe->mode_changed) {
-				ccdc_setwin(&vpfe->ccdc_params);
-				/* update the field offset */
-				vpfe->field_offset = (vpfe->vwin.height - 2) * vpfe->vwin.width;
-				vpfe->mode_changed = FALSE;
-			}
-		}
-	} else if (fid == 0) {
-		/* recover from any hardware out-of-sync due to */
-		/* possible switch of video source              */
-		/* for fid == 0, sync up the two fids           */
-		/* for fid == 1, no action, one bad frame will  */
-		/* go out, but it is not a big deal             */
-		vpfe->field_id = fid;
-	}
-	debug_print(KERN_INFO "interrupt returned.\n");
-	return IRQ_RETVAL(1);
+    if (ccdc_getfidmode()) // interlace mode
+    {
+        /* check which field we are in hardware */
+        fid = ccdc_getfid();
+        vpfe->field_id ^= 1;	/* switch the software maintained field id */
+        debug_print(KERN_INFO "field id = %x:%x.\n", fid, vpfe->field_id);
+        if (fid == vpfe->field_id) {	/* we are in-sync here, continue */
+            if (fid == 0) {
+                /*  One frame is just being captured. If the next frame
+                is available, release the current frame and move on */
+                if (vpfe->curFrm != vpfe->nextFrm) {
+                    vpfe->curFrm->state = STATE_DONE;
+                    wake_up_interruptible(&vpfe->curFrm->done);
+                    vpfe->curFrm = vpfe->nextFrm;
+                }
+                /* based on whether the two fields are stored interleavely      */
+                /* or separately in memory, reconfigure the CCDC memory address */
+                if (vpfe->field == V4L2_FIELD_SEQ_TB) {
+                    u32 addr = vpfe->curFrm->boff + vpfe->field_offset;
+                    ccdc_setfbaddr((unsigned long)addr);
+                }
+            } else if (fid == 1) {
+                /* if one field is just being captured */
+                /* configure the next frame */
+                /* get the next frame from the empty queue */
+                /* if no frame is available, hold on to the current buffer */
+                if (!list_empty(&vpfe->dma_queue)
+                    && vpfe->curFrm == vpfe->nextFrm) {
+                    vpfe->nextFrm = list_entry(vpfe->dma_queue.next,
+                                   struct videobuf_buffer, queue);
+                    list_del(&vpfe->nextFrm->queue);
+                    vpfe->nextFrm->state = STATE_ACTIVE;
+                    ccdc_setfbaddr((unsigned long)vpfe->nextFrm->boff);
+                }
+                if (vpfe->mode_changed) {
+                    ccdc_setwin(&vpfe->ccdc_params);
+                    /* update the field offset */
+                    vpfe->field_offset = (vpfe->vwin.height - 2) * vpfe->vwin.width;
+                    vpfe->mode_changed = FALSE;
+                }
+            }
+        } else if (fid == 0) {
+            /* recover from any hardware out-of-sync due to */
+            /* possible switch of video source              */
+            /* for fid == 0, sync up the two fids           */
+            /* for fid == 1, no action, one bad frame will  */
+            /* go out, but it is not a big deal             */
+            vpfe->field_id = fid;
+        }
+    }
+    else // progressive mode
+    {
+        vpfe->curFrm->state = STATE_DONE;
+        wake_up_interruptible(&vpfe->curFrm->done);
+        if (!list_empty(&vpfe->dma_queue)) 
+        {
+            vpfe->curFrm = list_entry(vpfe->dma_queue.next, struct videobuf_buffer, queue);
+            list_del(&vpfe->curFrm->queue);
+            vpfe->curFrm->state = STATE_ACTIVE;
+            ccdc_setfbaddr((unsigned long)vpfe->curFrm->boff);
+        }
+    }
+    debug_print(KERN_INFO "interrupt returned.\n");
+    return IRQ_RETVAL(1);
 }
 
 /* this is the callback function called from videobuf_qbuf() function */
@@ -332,16 +350,15 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 	int ret = 0;
 	switch (cmd) {
 	case VIDIOC_S_CTRL:
+	case VIDIOC_S_CROP:
 	case VIDIOC_S_FMT:
 	case VIDIOC_S_STD:
-	case VIDIOC_S_CROP:
 		ret = v4l2_prio_check(&vpfe->prio, &fh->prio);
 		if (0 != ret) {
 			return ret;
-		}
+		}   
 		break;
-	}
-
+    }
 	switch (cmd) {
 	case VIDIOC_QUERYCAP:
 	{
@@ -483,16 +500,21 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 			vpfe->bounds = vpfe->vwin = pal_bounds;
 			vpfe->pixelaspect = pal_aspect;
 			vpfe->ccdc_params.win = pal_bounds;
-
+            vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_INTERLACED;
+            vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_8BIT;
 		} else if (id & V4L2_STD_525_60) {
 			vpfe->std = id;
 			vpfe->bounds = vpfe->vwin = ntsc_bounds;
 			vpfe->pixelaspect = ntsc_aspect;
 			vpfe->ccdc_params.win = ntsc_bounds;
+            vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_INTERLACED;
+            vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_8BIT;
 		} else if (id & VPFE_STD_625_50_SQP) {
 			vpfe->std = id;
 			vpfe->bounds = vpfe->vwin = palsp_bounds;
 			vpfe->pixelaspect = sp_aspect;
+            vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_INTERLACED;
+            vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_8BIT;
 			sqp = 1;
 			id >>= 32;
 		} else if (id & VPFE_STD_525_60_SQP) {
@@ -503,17 +525,29 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 			vpfe->bounds = vpfe->vwin = ntscsp_bounds;
 			vpfe->pixelaspect = sp_aspect;
 			vpfe->ccdc_params.win = ntscsp_bounds;
+            vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_INTERLACED;
+            vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_8BIT;
 		} else if (id & VPFE_STD_AUTO) {
 			vpfe->bounds = vpfe->vwin = pal_bounds;
 			vpfe->pixelaspect = pal_aspect;
 			vpfe->ccdc_params.win = pal_bounds;
+            vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_INTERLACED;
+            vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_8BIT;
 			vpfe->std = id;
 		} else if (id & VPFE_STD_AUTO_SQP) {
 			vpfe->std = id;
 			vpfe->bounds = vpfe->vwin = palsp_bounds;
 			vpfe->pixelaspect = sp_aspect;
+            vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_INTERLACED;
+            vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_8BIT;
 			sqp = 1;
+		} else if (id & V4L2_STD_HD_480P) {
+			vpfe->std = id;
+			vpfe->bounds = vpfe->vwin = hd_480p_bounds;
 			vpfe->pixelaspect = sp_aspect;
+			vpfe->ccdc_params.win = hd_480p_bounds;
+            vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_PROGRESSIVE;
+            vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_16BIT;
 		} else {
 			ret = -EINVAL;
 		}
@@ -596,7 +630,6 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 	case VIDIOC_S_INPUT:
 	{
 		int *index = (int *)arg;
-
 		if (*index == VPFE_AMUX_COMPOSITE0 || *index == VPFE_AMUX_COMPOSITE1)
 			vpfe_select_capture_device(VPFE_CAPTURE_ID_TVP5150);
 		else if (*index == VPFE_AMUX_COMPONENT)
@@ -742,7 +775,7 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 	case VIDIOC_QUERYBUF:
 		ret = videobuf_querybuf(&vpfe->bufqueue, arg);
 		break;
-	case VIDIOC_QBUF:
+    case VIDIOC_QBUF:
 		if (!fh->io_allowed)
 			ret = -EACCES;
 		else

@@ -53,6 +53,9 @@
 #define VPFE_WIN_QCIF    {0,0,176,144}
 #define VPFE_WIN_QVGA    {0,0,320,240}
 #define VPFE_WIN_SIF     {0,0,352,240}
+#define VPFE_WIN_HD480P    {0,0,720,480}
+#define VPFE_WIN_HD720P    {0,0,1280,720}
+#define VPFE_WIN_HD1080I    {0,0,1920,1080}
 
 #define VPFE_CAPTURE_ID_TVP5150		0
 #define VPFE_CAPTURE_ID_TVP7000		1

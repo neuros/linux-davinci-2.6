@@ -824,11 +824,11 @@ static int tvp5150_command(struct i2c_client *c,
 	{
 		int input = *(int *)arg;
 		if (input == 0)
-			decoder->route.input = TVP5150_COMPOSITE0;
+			decoder->route.input = VPFE_AMUX_COMPOSITE0;
 		else if (input == 1)
-			decoder->route.input = TVP5150_COMPOSITE1;
+			decoder->route.input = VPFE_AMUX_COMPOSITE1;
 		else
-			decoder->route.input = TVP5150_SVIDEO;
+            return -EINVAL;
 		tvp5150_selmux(c);
 		break;
 	}
@@ -1156,8 +1156,11 @@ static struct vpfe_capture_device tvp5150_device = {
 
 static int __init tvp5150_init(void)
 {
+    int ret;
 	i2c_add_driver(&driver);
-	return vpfe_capture_device_register(&tvp5150_device);
+	ret = vpfe_capture_device_register(&tvp5150_device);
+    tvp5150_device_deactive();
+    return ret;
 }
 
 static void __exit tvp5150_exit(void)

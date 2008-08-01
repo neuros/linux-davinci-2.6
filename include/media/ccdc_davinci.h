@@ -139,6 +139,12 @@ static inline int ccdc_getfid(void)
 	int fid = (regr(SYN_MODE) >> 15) & 0x1;
 	return fid;
 }
+
+static inline int ccdc_getfidmode(void)
+{
+	int fid = (regr(SYN_MODE) >> 7) & 0x1;
+	return fid;
+}
 #endif
 
 #endif /* CCDC_DAVINCI_H */
