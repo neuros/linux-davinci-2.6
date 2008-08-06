@@ -93,9 +93,9 @@
 #define SET_TREBLE                    8
 #define SET_MICBIAS		      9
 
-#define DEFAULT_OUTPUT_VOLUME         50
-#define DEFAULT_INPUT_VOLUME          20	/* 0 ==> mute line in */
-#define DEFAULT_INPUT_IGAIN	      20
+#define DEFAULT_OUTPUT_VOLUME         100
+#define DEFAULT_INPUT_VOLUME          100	/* 0 ==> mute line in */
+#define DEFAULT_INPUT_IGAIN	      100
 #define DEFAULT_INPUT_OGAIN	      100
 
 #define OUTPUT_VOLUME_MIN             LHV_MIN
