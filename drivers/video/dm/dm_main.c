@@ -75,6 +75,12 @@
 #include <asm/arch/davinci-ths8200.h>
 #endif /* CONFIG_THS8200 */
 
+#if 0
+/* TODO call the right function to enable LCD */
+#include <asm/arch/gpio.h>
+#include <asm/arch/mux.h>
+#endif
+
 #define MODULE_NAME "davincifb"
 
 /* needed prototypes */
@@ -133,6 +139,13 @@ struct dm_win_info {
 	unsigned int win;
 };
 
+struct dm_extended_mode {
+	char *name;
+	unsigned int basex;
+	unsigned int basey;
+	unsigned int vstarta;
+};
+
 struct dm_info {
 	/* to map the registers */
 	dma_addr_t mmio_base_phys;
@@ -154,6 +167,7 @@ struct dm_info {
 	struct output_device *output;
 	unsigned int output_sel;
 	struct davincifb_mach_info *mach_info;
+	int curr_mode; /* index on the modedb that we are using */
 };
 
 /* All window widths have to be rounded up to a multiple of 32 bytes */
@@ -219,17 +233,28 @@ static inline int is_win(const struct dm_win_info *w, unsigned int win)
 /* Random value chosen for now. Should be within the panel's supported range */
 #define LCD_PANEL_CLOCK	180000
 
+static const struct dm_extended_mode dm_extended_modedb[] = {
+	{ "576i", 0, 0, 0 },
+	{ "480i", 0, 0, 0 },
+	{ "480p", 0x50, 0x5, 0 },
+	{ "720p", 300, 30, 0 },
+	{ "1080i", 243, 20, 13 },
+};
+
 static const struct fb_videomode dmfb_modedb[] = {
 	/* name, refresh, xres, yres, pixclock, left_margin, right_margin
 	 * upper_margin, lower_margin, hsync_len, vsync_len, sync,
 	 *  vmode, flag
 	 */
 	/* Standard Modes */
-	{ "576i", 50, 720, 576, LCD_PANEL_CLOCK, 0, 0, 0, 0, 127, 6, FB_SYNC_BROADCAST,	FB_VMODE_INTERLACED, 0},
 	{ "480i", 50, 720, 480, LCD_PANEL_CLOCK, 0, 0, 0, 0, 127, 5, FB_SYNC_BROADCAST,	FB_VMODE_INTERLACED, 0},
+	{ "576i", 50, 720, 576, LCD_PANEL_CLOCK, 0, 0, 0, 0, 127, 6, FB_SYNC_BROADCAST,	FB_VMODE_INTERLACED, 0},	
 	/* Modes provided by THS8200 */
 	{ "480p", 30, 720, 480, LCD_PANEL_CLOCK, 122, 15, 36, 8, 0x50, 0x5, FB_SYNC_BROADCAST, FB_VMODE_NONINTERLACED, 0},
+	//{ "720p", 30, 1280, 720, LCD_PANEL_CLOCK, 300, 69, 26, 3, 0x50, 0x5, FB_SYNC_BROADCAST, FB_VMODE_NONINTERLACED, 0},
 	{ "720p", 30, 1280, 720, LCD_PANEL_CLOCK, 300, 69, 26, 3, 0x50, 0x5, FB_SYNC_BROADCAST, FB_VMODE_NONINTERLACED, 0},
+	{ "1080i", 30, 1920, 1080, LCD_PANEL_CLOCK, 200, 79, 13, 31, 0x58, 0x5, FB_SYNC_BROADCAST, FB_VMODE_INTERLACED, 0},
+
 };
 /*============================================================================*
  *                              VENC interface                                *
@@ -242,14 +267,30 @@ static int dm_venc_find_mode(const struct fb_var_screeninfo *var)
         /* only check the mode that has the same displayable size */
 	for (i = 0; i < ARRAY_SIZE(dmfb_modedb); i++) {
 		if (var->xres == dmfb_modedb[i].xres &&
-			var->yres == dmfb_modedb[i].yres)
+			var->yres == dmfb_modedb[i].yres &&
+			var->vmode == dmfb_modedb[i].vmode)
 			return i;
 	}
 	return -EINVAL;
 }
 
-/* Set the timings from a mode */
-static int dm_venc_mode_set(struct dm_info *dm, const struct fb_videomode *mode)
+/**
+ * Checks if a mode is a HD mode
+ * @return 0 if mode is SD, 1 if mode is HD
+ */
+static int dm_venc_mode_is_hd(struct fb_videomode *mode)
+{
+	if (!strcmp(mode->name, "576i") || !strcmp(mode->name, "480i"))
+		return 0;
+	else
+		return 1;
+}
+
+/**
+ * Set the timings from a mode
+ */
+static void dm_venc_mode_set(struct dm_info *dm, const struct fb_videomode *mode,
+	const struct dm_extended_mode *extmode)
 {
 	dispc_reg_out(VENC_HSPLS, mode->hsync_len);
 	dispc_reg_out(VENC_VSPLS, mode->vsync_len);
@@ -260,10 +301,13 @@ static int dm_venc_mode_set(struct dm_info *dm, const struct fb_videomode *mode)
 	dispc_reg_out(VENC_VINT, mode->yres + mode->upper_margin +
 		      mode->lower_margin);
 	dispc_reg_out(VENC_VSTART, mode->upper_margin);
-	dispc_reg_out(VENC_VVALID, mode->yres);
+	dispc_reg_out(VENC_VVALID, mode->vmode == FB_VMODE_INTERLACED ? mode->yres / 2 : mode->yres);
 	/* TODO check vmode (interlaced / progressive)*/
 	/* set the window field / frame mode */
 	dispc_reg_out(VENC_YCCCTL, 0x0);
+	dispc_reg_out(VENC_VSTARTA, extmode->vstarta);
+	dispc_reg_out(OSD_BASEPX, extmode->basex);
+	dispc_reg_out(OSD_BASEPY, extmode->basey);
 }
 
 /* Select the output on the venc mode. This outputs are only
@@ -526,7 +570,7 @@ static inline void slow_down_vclk(void)
 	 * is enabled*/
 	outl(VPSS_CLKCTL_ENABLE_VPBE_CLK, VPSS_CLKCTL);
 }
-#if 0
+#if 0 
 static void davincifb_480p_component_config(int on)
 {
 	if (on) {
@@ -612,175 +656,8 @@ static void davincifb_480p_component_config(int on)
 		dispc_reg_out(VENC_VMOD, 0);
 	}
 }
-
-static void davincifb_1080i_component_config(int on)
-{
-	if (on) {
-
-#ifdef CONFIG_THS8200
-		/* Enable THS8200 DAC output mode as 1080I */
-		ths8200_set_1080i_mode();
-#endif/* CONFIG_THS8200 */
-
-		/* Reset video encoder module */
-		dispc_reg_out(VENC_VMOD, 0);
-
-		/* Set new baseX and baseY */
-		dispc_reg_out(OSD_BASEPX, BASEX1080I);
-		dispc_reg_out(OSD_BASEPY, BASEY1080I);
-
-		enable_digital_output(true);
-
-		dispc_reg_merge(PINMUX0, PINMUX0_LFLDEN, PINMUX0_LFLDEN);
-
-		/* Enable DAVINCIFB_WIN_OSD0 Window */
-		dispc_reg_out(OSD_OSDWIN0MD, 0x00002003);
-
-		/* Enable DAVINCIFB_WIN_OSD1 Window */
-		dispc_reg_out(OSD_OSDWIN1MD, 0x00008002);
-
-		/* Set Timing parameters for 720P frame (must match what THS8200 expects) */
-		dispc_reg_out(VENC_HSPLS, BASEX1080I);
-		dispc_reg_out(VENC_VSPLS, BASEY1080I);
-		dispc_reg_out(VENC_HINT, 2200-1);
-		dispc_reg_out(VENC_HSTART, 200);
-		dispc_reg_out(VENC_HVALID, DISP_XRES1080I);
-		dispc_reg_out(VENC_VINT, 1125-1);
-		dispc_reg_out(VENC_VSTART, 13);
-		dispc_reg_out(VENC_VVALID, DISP_YRES1080I/2);
-		dispc_reg_out(VENC_HSDLY, 0);
-		dispc_reg_out(VENC_VSDLY, 0);
-		dispc_reg_out(VENC_YCCCTL, 0);
-		dispc_reg_out(VENC_VSTARTA, 13);
-
-		dispc_reg_out(OSD_VIDWINMD, 0x203);
-
-		/* Set DAVINCIFB_WIN_VID0 window  origin and size */
-		dispc_reg_out(OSD_VIDWIN0XP, 200 - BASEX1080I);
-		dispc_reg_out(OSD_VIDWIN0YP, 13);
-		dispc_reg_out(OSD_VIDWIN0XL, DISP_XRES1080I);
-		dispc_reg_out(OSD_VIDWIN0YL, DISP_YRES1080I/2);
-
-		/* Set DAVINCIFB_WIN_VID1 window  origin and size */
-		dispc_reg_out(OSD_VIDWIN1XP, 200 - BASEX1080I);
-		dispc_reg_out(OSD_VIDWIN1YP, 13);
-		dispc_reg_out(OSD_VIDWIN1XL, DISP_XRES1080I);
-		dispc_reg_out(OSD_VIDWIN1YL, DISP_YRES1080I/2);
-
-		/* Set DAVINCIFB_WIN_OSD0 window  origin and size */
-		dispc_reg_out(OSD_OSDWIN0XP, 200 - BASEX1080I);
-		dispc_reg_out(OSD_OSDWIN0YP, 13);
-		dispc_reg_out(OSD_OSDWIN0XL, DISP_XRES1080I);
-		dispc_reg_out(OSD_OSDWIN0YL, DISP_YRES1080I/2);
-
-		/* Set DAVINCIFB_WIN_OSD1 window  origin and size */
-		dispc_reg_out(OSD_OSDWIN1XP, 200 - BASEX1080I);
-		dispc_reg_out(OSD_OSDWIN1YP, 13);
-		dispc_reg_out(OSD_OSDWIN1XL, DISP_XRES1080I);
-		dispc_reg_out(OSD_OSDWIN1YL, DISP_YRES1080I/2);
-
-		/* Set DAVINCIFB_WIN_OSD1 window  origin and size */
-		dispc_reg_out(OSD_CURXP, 200 - BASEX1080I);
-		dispc_reg_out(OSD_CURYP, 13);
-		dispc_reg_out(OSD_CURXL, DISP_XRES1080I);
-		dispc_reg_out(OSD_CURYL, DISP_YRES1080I/2);
-
-		/* Enable all VENC, non-standard timing mode, master timing, HD, interlaced */
-		dispc_reg_out(VENC_VMOD,
-			      (VENC_VMOD_VENC | VENC_VMOD_VMD |
-			       VENC_VMOD_HDMD | VENC_VMOD_NSIT));
-
-		printk(KERN_INFO "Davinci set video mode as 1080i\n");
-
-	} else {
-		/* Reset video encoder module */
-		dispc_reg_out(VENC_VMOD, 0);
-	}
-}
-
-static void davincifb_720p_component_config(int on)
-{
-	if (on) {
-
-#ifdef CONFIG_THS8200
-		/* Enable the Ths8200 Video DAC to support 720p */
-		ths8200_set_720p_mode();
 #endif
-		/* Reset video encoder module */
-		dispc_reg_out(VENC_VMOD, 0);
 
-		/* Set new baseX and baseY */
-		dispc_reg_out(OSD_BASEPX, BASEX720P);
-		dispc_reg_out(OSD_BASEPY, BASEY720P);
-
-		/* Enable the digtal output */
-		enable_digital_output(true);
-
-		dispc_reg_merge(PINMUX0, 0, PINMUX0_LFLDEN);
-
-		/* Enable DAVINCIFB_WIN_OSD0 Window */
-		dispc_reg_out(OSD_OSDWIN0MD, 0x00002001);
-
-		/* Enable DAVINCIFB_WIN_OSD1 Window */
-		dispc_reg_out(OSD_OSDWIN1MD, 0x00008000);
-
-		/* Set Timing parameters for 720P frame
-		   (must match what THS8200 expects) */
-		dispc_reg_out(VENC_HSPLS, BASEX720P);
-		dispc_reg_out(VENC_VSPLS, BASEY720P);
-		dispc_reg_out(VENC_HINT, 1649);
-		dispc_reg_out(VENC_HSTART, 300);
-		dispc_reg_out(VENC_HVALID, DISP_XRES720P);
-		dispc_reg_out(VENC_VINT, 749);
-		dispc_reg_out(VENC_VSTART, 26);
-		dispc_reg_out(VENC_VVALID, DISP_YRES720P);
-		dispc_reg_out(VENC_HSDLY, 0);
-		dispc_reg_out(VENC_VSDLY, 0);
-		dispc_reg_out(VENC_YCCCTL, 0);
-		dispc_reg_out(VENC_VSTARTA, 0);
-
-		/* Set DAVINCIFB_WIN_VID0 window  origin and size */
-		dispc_reg_out(OSD_VIDWIN0XP, 220);
-		dispc_reg_out(OSD_VIDWIN0YP, 25);
-		dispc_reg_out(OSD_VIDWIN0XL, DISP_XRES720P);
-		dispc_reg_out(OSD_VIDWIN0YL, DISP_YRES720P);
-
-		/* Set DAVINCIFB_WIN_VID1 window  origin and size */
-		dispc_reg_out(OSD_VIDWIN1XP, 220);
-		dispc_reg_out(OSD_VIDWIN1YP, 25);
-		dispc_reg_out(OSD_VIDWIN1XL, DISP_XRES720P);
-		dispc_reg_out(OSD_VIDWIN1YL, DISP_YRES720P);
-
-		/* Set DAVINCIFB_WIN_OSD0 window  origin and size */
-		dispc_reg_out(OSD_OSDWIN0XP, 220);
-		dispc_reg_out(OSD_OSDWIN0YP, 25);
-		dispc_reg_out(OSD_OSDWIN0XL, DISP_XRES720P);
-		dispc_reg_out(OSD_OSDWIN0YL, DISP_YRES720P);
-
-		/* Set DAVINCIFB_WIN_OSD1 window  origin and size */
-		dispc_reg_out(OSD_OSDWIN1XP, 220);
-		dispc_reg_out(OSD_OSDWIN1YP, 25);
-		dispc_reg_out(OSD_OSDWIN1XL, DISP_XRES720P);
-		dispc_reg_out(OSD_OSDWIN1YL, DISP_YRES720P);
-
-		/* Set DAVINCIFB_WIN_OSD1 window  origin and size */
-		dispc_reg_out(OSD_CURXP, 220);
-		dispc_reg_out(OSD_CURYP, 25);
-		dispc_reg_out(OSD_CURXL, DISP_XRES720P);
-		dispc_reg_out(OSD_CURYL, DISP_YRES720P);
-
-		/* Enable all VENC, non-standard timing mode,
-		   master timing, HD, progressive */
-		dispc_reg_out(VENC_VMOD,
-			      (VENC_VMOD_VENC | VENC_VMOD_VMD | VENC_VMOD_HDMD));
-
-		printk(KERN_INFO "Davinci set video mode as 720p\n");
-	} else{
-		/* Reset video encoder module */
-		dispc_reg_out(VENC_VMOD, 0);
-	}
-}
-#endif
 /*============================================================================*
  *                          OSD controller interface                          *
  *============================================================================*/
@@ -833,6 +710,7 @@ static void dm_cbtest_enable(struct dm_info *i, int enable)
 /*============================================================================*
  *                           OSD windows interface                            *
  *============================================================================*/
+/* TODO OK, we should move all the logic here on the windows interfae */
 static void set_sdram_params(const struct dm_win_info *w, u32 addr, u32 line_length);
 /* Sets a uniform attribute value over a rectangular area on the attribute
  * window. The attribute value (0 to 7) is passed through the fb_fillrect's
@@ -962,25 +840,178 @@ static void set_sdram_params(const struct dm_win_info *w, u32 addr, u32 line_len
 		dispc_reg_out(OSD_OSDWIN1OFST, line_length);
 	}
 }
-
-static void set_win_enable(const struct dm_win_info *w, unsigned int on)
+/**
+ * Calculates the window bandwith:
+ * (x0 × y0) × b0 x FR
+ */
+static int dm_win_bandwith_get(struct dm_win_info *w)
 {
-	on = (on == 0) ? 0 : ~0;
+	int bandwith = 0;
+	
+	if (w) {
+		struct fb_var_screeninfo *var;
+		
+		var = &w->info.var;
+		bandwith = var->xres * var->yres * var->bits_per_pixel; 
+	}	
+	return bandwith;
+}
 
-	if (is_win(w, DAVINCIFB_WIN_VID0))
-		/* Turning off DAVINCIFB_WIN_VID0 use due to field inversion issue */
-		dispc_reg_merge(OSD_VIDWINMD, on, OSD_VIDWINMD_ACT0);
-	else if (is_win(w, DAVINCIFB_WIN_VID1))
+static inline void dm_win_position_get(const struct dm_win_info *w,
+				    u32 * xp, u32 * yp, u32 * xl, u32 * yl)
+{
+	struct fb_var_screeninfo *v = &(w->info.var);
+
+	*xp = w->x;
+	*yp = w->y;
+	*xl = v->xres;
+	*yl = v->yres;
+}
+
+/**
+ * Checks if the rectangle formed by the first four coordinates is inside the
+ * rectangle formed by the second four coordinates
+ * @return 1 if is inside, 0 if is outside
+ */ 
+static inline int rectangle_inside(int x1, int y1, int w1, int h1, int x2,
+		int y2, int w2, int h2)
+{
+	if ((x1 >= x2) && (y1 >= y2) && (x2 + w2 >= x1 + w1) && (y2 + h2 >= y1 + h1))
+		return 1;
+	else
+		return 0;
+}
+
+/*
+ * Checks if the coordinates are inside vid0 size
+ * @return 1 if the window parameters are within vid0, 0 otherwise
+ */
+static int dm_win_vid0_within(struct dm_win_info *vid0, int x, int y, int w, int h)
+{
+	int vx, vy, vw, vh;
+
+	/* if vid0 window is disabled, it is ok */
+	if (!vid0 || !vid0->enabled)
+		return 1;
+	dm_win_position_get(vid0, &vx, &vy, &vw, &vh);
+	return rectangle_inside(x, y, w, h, vx, vy, vw, vh);
+}
+
+/* Checks if the new size of vid0 include all other window sizes
+ * @param
+ * @param
+ * @param
+ * @param
+ * @return 1 if the new size includes the others, 0 otherwise
+ * @note If a window is disabled it wont check agains it
+ */
+static int dm_win_vid0_size_new(struct dm_win_info *vid0, int x, int y, int w, int h)
+{
+	int i, vx, vy, vw, vh;
+	
+	if (!vid0 || !vid0->enabled)
+		return 1;
+	dm_win_position_get(vid0, &vx, &vy, &vw, &vh);
+	for (i = 0; i < DAVINCIFB_WINDOWS; i++) {
+		struct dm_win_info *owin = vid0->dm->windows[i];
+		int x, y, w, h;
+		
+		if (!owin || !owin->enabled)
+			continue;
+		dm_win_position_get(owin, &x, &y, &w, &h);
+		if (!rectangle_inside(x, y, w, h, vx, vy, vw, vh)) {
+			printk("%s is too big %dx%d at %d %d\n", dm_win_names[owin->win],
+					x, y, w, h);
+			return 0;
+		}
+	}
+	return 1;
+}
+
+/**
+ * Enables a window
+ * @param w The window to enable
+ * @param on 1 to enable, 0 to disable 
+ * @note To enable a window we should follow several rules:
+ * 1. In HD mode, vid1 must be disabled
+ * 2. In HD mode, osd0 and osd1 total bandwith can't be greater than 25MB/s
+ * [(x0 × y0) × b0 + (x1 × y1) × b1] × FR < 25 Mbytes/second
+ * FR = Frame rate, 60 in progressive mode
+ * 3. The attribute window can't be disabled, you need to set the mode to RGB565
+ * and the disable it
+ * 4. A window to be enabled must be inside vid0
+ */
+static int dm_win_enable(struct dm_win_info *win, unsigned int on)
+{
+#define SZ_25MB (25 * 1024 * 1024)
+	struct dm_info *dm = win->dm;
+	struct fb_videomode *mode = &dmfb_modedb[dm->curr_mode];
+	int x, y, w, h;
+	
+	on = (on == 0) ? 0 : ~0;
+	dm_win_position_get(win, &x, &y, &w, &h);
+	
+	if (is_win(win, DAVINCIFB_WIN_VID0)) {
+		/* if you enable vid0, all the other windows must be inside */
+		if (on && dm_win_vid0_size_new(win, x, y, w, h)) {
+			/* Turning off DAVINCIFB_WIN_VID0 use due to field inversion issue */
+			dispc_reg_merge(OSD_VIDWINMD, on, OSD_VIDWINMD_ACT0);	
+		}
+		else {
+			dispc_reg_merge(OSD_VIDWINMD, 0, OSD_VIDWINMD_ACT0);
+		}
+	} else {
+		/* the other windows must be inside vid0 */
+		struct dm_win_info *vid0 = dm->windows[DAVINCIFB_WIN_VID0];
+		
+		if (on && !dm_win_vid0_within(vid0, x, y, w, h)) {
+			printk("Enabling a window that is not inside vid0\n");
+			return 0;
+		}
+	}
+	if (is_win(win, DAVINCIFB_WIN_VID1)) {
+		if (dm_venc_mode_is_hd(mode) && on) {
+			printk("Is not possible to enable vid1 window in hd mode\n");
+			return 0;
+		}
 		dispc_reg_merge(OSD_VIDWINMD, on, OSD_VIDWINMD_ACT1);
-	else if (is_win(w, DAVINCIFB_WIN_OSD0))
-		dispc_reg_merge(OSD_OSDWIN0MD, on, OSD_OSDWIN0MD_OACT0);
-	else if (is_win(w, DAVINCIFB_WIN_OSD1)) {
+	} else if (is_win(win, DAVINCIFB_WIN_OSD0)) {
+		int bandwith;
+		
+		bandwith = dm_win_bandwith_get(win);
+		bandwith += dm_win_bandwith_get(dm->windows[DAVINCIFB_WIN_OSD1]);
+		if (bandwith < SZ_25MB) {
+			dispc_reg_merge(OSD_OSDWIN0MD, on, OSD_OSDWIN0MD_OACT0);
+		}
+		else {
+			printk("Bandwith too high\n");
+			return 0;
+		}
+		
+	} else if (is_win(win, DAVINCIFB_WIN_OSD1)) { 
 		/* The OACT1 bit is applicable only if DAVINCIFB_WIN_OSD1 is not used as
 		 * the attribute window
 		 */
-		if (!(dispc_reg_in(OSD_OSDWIN1MD) & OSD_OSDWIN1MD_OASW))
-			dispc_reg_merge(OSD_OSDWIN1MD, on, OSD_OSDWIN1MD_OACT1);
+		if (!(dispc_reg_in(OSD_OSDWIN1MD) & OSD_OSDWIN1MD_OASW)) {
+			int bandwith;
+		
+			bandwith = dm_win_bandwith_get(win);
+			bandwith += dm_win_bandwith_get(dm->windows[DAVINCIFB_WIN_OSD1]);
+			if (bandwith < SZ_25MB) {
+				dispc_reg_merge(OSD_OSDWIN1MD, on, OSD_OSDWIN1MD_OACT1);
+			}
+			else {
+				printk("Bandwith too high\n");
+				return 0;
+			}
+		} else {
+			printk("Can't disable/enable the attribute window\n");
+			return 0;
+		}
 	}
+	win->enabled = on;
+	return 1;
+#undef SZ_25MB
 }
 
 /*
@@ -1003,11 +1034,11 @@ static void set_win_mode(const struct dm_win_info *w)
 		dispc_reg_merge(OSD_OSDWIN1MD, OSD_OSDWIN1MD_OASW,
 				OSD_OSDWIN1MD_OASW);
 	}
-
 }
 
-
-/* These position parameters are given through fb_var_screeninfo.
+/* 
+ * TODO remove this function to only receive the position not the window size
+ * These position parameters are given through fb_var_screeninfo.
  * xp = var.reserved[0], yp = var.reserved[1],
  * xl = var.xres, yl = var.yres
  */
@@ -1034,17 +1065,6 @@ static void set_win_position(const struct dm_win_info *w, u32 xp, u32 yp, u32 xl
 	dispc_reg_out(OSD_WINYL(i), yl);
 }
 
-static inline void get_win_position(const struct dm_win_info *w,
-				    u32 * xp, u32 * yp, u32 * xl, u32 * yl)
-{
-	struct fb_var_screeninfo *v = &w->info.var;
-
-	*xp = w->x;
-	*yp = w->y;
-	*xl = v->xres;
-	*yl = v->yres;
-}
-
 /* Returns 1 if the windows overlap, 0 otherwise */
 static int window_overlap(struct dm_win_info *w, u32 xp, u32 yp, u32 xl, u32 yl)
 {
@@ -1058,60 +1078,13 @@ static int window_overlap(struct dm_win_info *w, u32 xp, u32 yp, u32 xl, u32 yl)
 	if (!w)
 		return 0;
 
-	get_win_position(w, &_xp, &_yp, &_xl, &_yl);
+	dm_win_position_get(w, &_xp, &_yp, &_xl, &_yl);
 
 	return OVERLAP(xp, yp, xp + xl, yp + yl,
 		       _xp, _yp, _xp + _xl, _yp + _yl);
 #undef OVERLAP
 }
 
-
-/* Returns 1 if the window parameters are within DAVINCIFB_WIN_VID0, 0 otherwise */
-static int within_vid0_limits(struct dm_win_info *vid0, u32 xp, u32 yp, u32 xl, u32 yl)
-{
-	u32 vid0_xp = 0, vid0_yp = 0, vid0_xl = 0, vid0_yl = 0;
-
-	if (!vid0)
-		return 1;
-	get_win_position(vid0, &vid0_xp, &vid0_yp, &vid0_xl, &vid0_yl);
-	if ((xp >= vid0_xp) && (yp >= vid0_yp) &&
-	    (xp + xl <= vid0_xp + vid0_xl) && (yp + yl <= vid0_yp + vid0_yl))
-		return 1;
-	return 0;
-}
-
-/* DAVINCIFB_WIN_VID0 must be large enough to hold all other windows */
-static int check_new_vid0_size(struct dm_win_info *vid0, u32 xp0, u32 yp0,
-			       u32 xl0, u32 yl0)
-{
-	struct dm_win_info *owin;
-	u32 _xp = 0, _yp = 0, _xl = 0, _yl = 0;
-#define WITHIN_LIMITS 				\
-	((_xp >= xp0) && (_yp >= yp0) &&	\
-	(_xp + _xl <= xp0 + xl0) && (_yp + _yl <= yp0 + yl0))
-
-	owin = vid0->dm->windows[DAVINCIFB_WIN_OSD0];
-	if (owin) {
-		get_win_position(owin, &_xp, &_yp, &_xl, &_yl);
-		if (!WITHIN_LIMITS)
-			return -EINVAL;
-	}
-	owin = vid0->dm->windows[DAVINCIFB_WIN_OSD1];
-	if (owin) {
-		get_win_position(owin, &_xp, &_yp, &_xl, &_yl);
-		if (!WITHIN_LIMITS)
-			return -EINVAL;
-	}
-	owin = vid0->dm->windows[DAVINCIFB_WIN_VID1];
-	if (owin) {
-		get_win_position(owin, &_xp, &_yp, &_xl, &_yl);
-		if (!WITHIN_LIMITS)
-			return -EINVAL;
-	}
-	return 0;
-
-#undef WITHIN_LIMITS
-}
 /* enable the transparency on the plane based on the transparency color */
 static int dm_win_transp_enable(struct dm_win_info *w, int enable)
 {
@@ -1279,10 +1252,11 @@ static int dm_win_probe(struct dm_win_info *w)
 		/* attribute */
 		case 4:
 		if (is_win(w, DAVINCIFB_WIN_OSD1))
-			bg_color = 0xff;
+			bg_color = 0x77;
 		break;
 	}
 	memset((void *)w->fb_base, bg_color, w->fb_size);
+	dm_win_enable(w, 1);
 	return 0;
 
 register_error:
@@ -1393,6 +1367,7 @@ static int davincifb_check_var(struct fb_var_screeninfo *var,
 	struct device *dev = w->dm->dev;
 	unsigned int mod;
 	unsigned int line_length;
+	int mode;
 
 /* Rules:
  * 1) Vid1, DAVINCIFB_WIN_OSD0, DAVINCIFB_WIN_OSD1 and Cursor must be fully contained inside of Vid0.
@@ -1416,6 +1391,15 @@ static int davincifb_check_var(struct fb_var_screeninfo *var,
  */
 	memcpy(&v, var, sizeof(v));
 
+	mode = dm_venc_find_mode(var);
+	if (mode >= 0) {
+		printk("%s mode = %s\n", dm_win_names[w->win], dmfb_modedb[mode].name);
+	}
+	else {
+		printk("%s invalid mode\n", dm_win_names[w->win]);
+	}
+	dev_dbg(dev, "Trying to set <%d>%dx%d<%d>@%dbpp\n", v.xres_virtual, v.xres, v.yres,
+		v.yres_virtual, v.bits_per_pixel);
 	/* virtual size < display size */
 	if (v.xres_virtual < v.xres || v.yres_virtual < v.yres) {
 		dev_dbg(dev, "Virtual size > displayed size\n");
@@ -1463,13 +1447,19 @@ static int davincifb_check_var(struct fb_var_screeninfo *var,
 		dev_dbg(dev, "Requested resolution too big\n");
 		goto error;
 	}
+	/* positions relative to vid0 */
 	if (!is_win(w, DAVINCIFB_WIN_VID0)) {
 		/* Rule 1 */
-		if (!within_vid0_limits(w->dm->windows[DAVINCIFB_WIN_VID0],
+		if (!dm_win_vid0_within(w->dm->windows[DAVINCIFB_WIN_VID0],
 					w->x, w->y, v.xres, v.yres)) {
 			dev_dbg(dev, "Window %s isnt fully contained on vid0\n",
 				dm_win_names[w->win]);
-			//return -EINVAL;
+			goto error;
+		}
+	} else {
+		if (!dm_win_vid0_size_new(w, w->x, w->y, v.xres, v.yres)) {
+			dev_dbg(dev, "vid0 isn't large enough to handle all windows\n");
+			goto error;
 		}
 	}
 	if (is_win(w, DAVINCIFB_WIN_OSD0)) {
@@ -1495,24 +1485,47 @@ static int davincifb_check_var(struct fb_var_screeninfo *var,
 	} else if (is_win(w, DAVINCIFB_WIN_OSD1)) {
 		v.bits_per_pixel = 4;
 	} else if (is_win(w, DAVINCIFB_WIN_VID0)) {
-		if (check_new_vid0_size((struct dm_info *)w, w->x, w->y,
-			v.xres, v.yres)) {
-			dev_dbg(dev, "vid0 isn't large enough to handle all windows\n");
-			goto error;
-		}
 		v.bits_per_pixel = 16;
 	} else if (is_win(w, DAVINCIFB_WIN_VID1)) {
 		/* Rule 11 */
+#if 0
 		if (w->dm->windows[DAVINCIFB_WIN_VID0] &&
 		    ((w->dm->windows[DAVINCIFB_WIN_VID0]->x - w->x) % 16)) {
 			dev_dbg(dev, "vid1 x should be multiple of 16 from vid0\n");
 			return -EINVAL;
 		}
+#endif
 		/* Video1 may be in YUV or RGB888 format */
 		if ((v.bits_per_pixel != 16) && (v.bits_per_pixel != 32))
 			return -EINVAL;
 	} else
 		return -EINVAL;
+
+	/* if we are on hd mode, we should not enable vid1 */
+	/* normalize values */
+	/* check specific window contraints */
+	/* chek that the mode is valid */
+	if (is_win(w, DAVINCIFB_WIN_VID0)) {
+		int m;
+
+		m = dm_venc_find_mode(&v);
+		if (m < 0) {
+			dev_dbg(dev, "No such VENC mode\n");
+			return -EINVAL;
+		}
+		if (dm_venc_mode_is_hd(&dmfb_modedb[m])) {
+			//printk("ok hd mode\n");
+			if (w->dm->windows[DAVINCIFB_WIN_VID1] &&
+				w->dm->windows[DAVINCIFB_WIN_VID1]->enabled) {
+
+				dev_dbg(dev, "vid1 is enabled, disable it first\n");
+				return -EINVAL;
+			}
+		}
+	} else {
+		/* set timmings from video output mode */
+		v.vmode = dmfb_modedb[w->dm->curr_mode].vmode;
+	}
 
 	memcpy(var, &v, sizeof(v));
 	return 0;
@@ -1539,6 +1552,8 @@ static int davincifb_set_par(struct fb_info *info)
 	struct fb_var_screeninfo *v = &info->var;
 	u32 start = 0, offset = 0;
 	int mode;
+	int interlaced;
+	int i;
 
 	/* Memory offsets */
 	info->fix.line_length = v->xres_virtual * v->bits_per_pixel / 8;
@@ -1547,17 +1562,22 @@ static int davincifb_set_par(struct fb_info *info)
 	start = (u32) w->fb_base_phys + offset;
 	set_sdram_params(w, start, info->fix.line_length);
 
-	mode = dm_venc_find_mode(v);
-
-	/* TODO fix interlaced and position */
-	set_interlaced(w, 1);
-	set_win_position(w, w->x, w->y, v->xres, v->yres / 2);
+	interlaced = v->vmode == FB_VMODE_INTERLACED ? 1 : 0;
+	set_win_position(w, w->x, w->y, v->xres, v->yres / (interlaced + 1));
 	set_win_mode(w);
-	set_win_enable(w, 1);
 
 	if (!is_win(w, DAVINCIFB_WIN_VID0))
 		return 0;
 
+	/* we are going to change the mode */
+	mode = dm_venc_find_mode(v);
+	if (mode == w->dm->curr_mode)
+		return 0;
+	if (mode < 0)
+	{
+		printk("errorrrr\n");
+		return 0;
+	}
 	/* shutdown previous mode */
 	dispc_reg_out(VENC_VMOD, 0);
 	enable_digital_output(false);
@@ -1580,13 +1600,16 @@ static int davincifb_set_par(struct fb_info *info)
 	}
 	/* for non standard modes */
 	else {
+		printk("Setting mode %s\n", dmfb_modedb[mode].name);
 		enable_digital_output(true);
-		dm_venc_mode_set(w->dm, &dmfb_modedb[mode]);
+		dm_venc_mode_set(w->dm, &dmfb_modedb[mode],
+			&dm_extended_modedb[mode]);
 #ifdef CONFIG_THS8200
 		if (!strcmp(dmfb_modedb[mode].name, "480p")) {
 			/* slow down the vclk as 27MHZ */
 			slow_down_vclk();
 			ths8200_set_480p_mode();
+			dispc_reg_merge(PINMUX0, 0, PINMUX0_LFLDEN);
 			/* Enable all VENC, non-standard timing mode,
 			 * master timing, HD, progressive */
 			dispc_reg_out(VENC_VMOD,
@@ -1594,6 +1617,7 @@ static int davincifb_set_par(struct fb_info *info)
 		}
 		else if (!strcmp(dmfb_modedb[mode].name, "720p")) {
 			ths8200_set_720p_mode();
+			dispc_reg_merge(PINMUX0, 0, PINMUX0_LFLDEN);
 			/* Enable all VENC, non-standard timing mode,
 			 * master timing, HD, progressive */
 			dispc_reg_out(VENC_VMOD,
@@ -1601,6 +1625,7 @@ static int davincifb_set_par(struct fb_info *info)
 		}
 		else if (!strcmp(dmfb_modedb[mode].name, "1080i")) {
 			ths8200_set_1080i_mode();
+			dispc_reg_merge(PINMUX0, PINMUX0_LFLDEN, PINMUX0_LFLDEN);
 			/* Enable all VENC, non-standard timing mode,
 			 * master timing, HD, interlaced */
 			dispc_reg_out(VENC_VMOD,
@@ -1608,6 +1633,18 @@ static int davincifb_set_par(struct fb_info *info)
 				       VENC_VMOD_HDMD |	VENC_VMOD_NSIT));
 		}
 #endif
+	}
+	w->dm->curr_mode = mode;
+	interlaced = dmfb_modedb[mode].vmode == FB_VMODE_INTERLACED ? 1 : 0;
+	for (i = 0; i < DAVINCIFB_WINDOWS; i++) {
+		struct dm_win_info *w_tmp = w->dm->windows[i];
+		
+		if (!w_tmp)
+			continue;
+		/* set interlaced mode on al windows */
+		set_interlaced(w_tmp, interlaced);
+		/* set window position and size */
+		set_win_position(w_tmp, w_tmp->x, w_tmp->y, w_tmp->info.var.xres, w_tmp->info.var.yres / (interlaced + 1));
 	}
 	return 0;
 }
@@ -1648,34 +1685,40 @@ static int davincifb_ioctl(struct fb_info *info, unsigned int cmd,
 	case FBIO_SETPOSX:
 		if (copy_from_user(&pos, argp, sizeof(u_int32_t)))
 			return -EFAULT;
-		if (pos >= 0 && pos <= DISP_XRES) {
+		{
 			struct fb_var_screeninfo v;
+			int old_pos;
 
 			memcpy(&v, &w->info.var, sizeof(v));
-			if (davincifb_check_var(&v, &w->info) < 0)
+			old_pos = w->x;
+			w->x = pos;
+			if (davincifb_check_var(&v, &w->info) < 0) {
+				w->x = old_pos;
 				return -EINVAL;
+			}
 			memcpy(&w->info.var, &v, sizeof(v));
 			davincifb_set_par(&w->info);
-			w->x = pos;
 			return 0;
-		} else
-			return -EINVAL;
+		}
 		break;
 	case FBIO_SETPOSY:
 		if (copy_from_user(&pos, argp, sizeof(u_int32_t)))
 			return -EFAULT;
-		if (pos >= 0 && pos <= DISP_YRES) {
+		{
 			struct fb_var_screeninfo v;
+			int old_pos;
 
 			memcpy(&v, &w->info.var, sizeof(v));
-			if (davincifb_check_var(&v, &w->info) < 0)
+			old_pos = w->y;
+			w->y = pos;
+			if (davincifb_check_var(&v, &w->info) < 0) {
+				w->y = old_pos;
 				return -EINVAL;
+			}
 			memcpy(&w->info.var, &v, sizeof(v));
 			davincifb_set_par(&w->info);
-			w->y = pos;
 			return 0;
-		} else
-			return -EINVAL;
+		}
 		break;
 	case FBIO_SETZOOM:
 		if (copy_from_user(&zoom, argp, sizeof(zoom)))
@@ -1694,8 +1737,10 @@ static int davincifb_ioctl(struct fb_info *info, unsigned int cmd,
 	case FBIO_ENABLE:
 		if (copy_from_user(&enable, argp, sizeof(u_int32_t)))
 			return -EFAULT;
-		set_win_enable(w, enable);
-		return 0;
+		if (!dm_win_enable(w, enable))
+			return -EINVAL;
+		else
+			return 0;
 		break;
 	/* set the transparent rgb value this will affect all osd windows */
 	case FBIO_TRANSP_COLOR:
@@ -1945,7 +1990,7 @@ static int davincifb_probe(struct platform_device *pdev)
 {
 	struct dm_info *dm;
 
-	printk(MODULE_NAME "Initializing\n");
+	printk(MODULE_NAME " Initializing\n");
 	dm = kzalloc(sizeof(struct dm_info), GFP_KERNEL);
 
 	dm->dev = &pdev->dev;
@@ -2222,11 +2267,11 @@ int __init davincifb_setup(char *options)
 /*============================================================================*
  *                            Module Interface                                *
  *============================================================================*/
+extern void davinci_mux_peripheral(unsigned int mux, unsigned int enable);
 
 /* Register both the driver and the device */
 int __init davincifb_init(void)
 {
-	int ret;
 #ifndef MODULE
 	/* boot-line options */
 	/* handle options for "dm64xxfb" for backwards compatability */
