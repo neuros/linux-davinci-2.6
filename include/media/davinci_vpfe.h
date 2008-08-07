@@ -54,6 +54,7 @@
 #define VPFE_WIN_QVGA    {0,0,320,240}
 #define VPFE_WIN_SIF     {0,0,352,240}
 #define VPFE_WIN_HD480P    {0,0,720,480}
+#define VPFE_WIN_HD576P    {0,0,720,576}
 #define VPFE_WIN_HD720P    {0,0,1280,720}
 #define VPFE_WIN_HD1080I    {0,0,1920,1080}
 
@@ -81,8 +82,8 @@
 #define VPFE_PIXELASPECT_PAL_SP     {1, 1}
 #define VPFE_PIXELASPECT_DEFAULT    {1, 1}
 
-#define VPFE_MAX_FRAME_WIDTH      768	/* account for PAL Square pixel mode */
-#define VPFE_MAX_FRAME_HEIGHT     576	/* account for PAL                   */
+#define VPFE_MAX_FRAME_WIDTH      1920	/* account for PAL Square pixel mode */
+#define VPFE_MAX_FRAME_HEIGHT     1080	/* account for PAL                   */
 /* 4:2:2 data */
 #define VPFE_MAX_FBUF_SIZE       (VPFE_MAX_FRAME_WIDTH*VPFE_MAX_FRAME_HEIGHT*2)
 /* frame buffers allocate at driver initialization time */

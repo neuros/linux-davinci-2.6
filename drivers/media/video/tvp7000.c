@@ -190,7 +190,7 @@ static const struct i2c_reg_value tvp7000_init_component[] = {
 		TVP7000_SOG_CLAMP, 0x80
 	},
 	{ /* 0x31 */
-		TVP7000_ALC_PLACEMENT, 0x00
+		TVP7000_ALC_PLACEMENT, 0x18
 	},
 };
 
@@ -320,6 +320,11 @@ struct tvp7000_video_std
 	u8 plldiv_lsb;
 	u8 pll_ctrl;
 	u8 phase_select_bit0;
+	u8 pre_coast;
+	u8 post_coast;
+	u8 clamp_start;
+	u8 clamp_width;
+	u8 alc_placement;
 };
 
 static const struct tvp7000_video_std video_std[] = {
@@ -450,6 +455,11 @@ static const struct tvp7000_video_std video_std[] = {
 		.plldiv_lsb = 0x40,
 		.pll_ctrl = 0x68,
 		.phase_select_bit0 = 0x01,
+		.pre_coast = 0x03,
+		.post_coast = 0x0c,
+		.clamp_start = 0x06,
+		.clamp_width = 0x10,
+		.alc_placement = 0x18,
 	},
 	{ /* Video standard: 720*576p resolution,50HZ refresh rate,
 			31.25kHZ Horizontal frequency,27MHZ pixel rate.
@@ -458,6 +468,11 @@ static const struct tvp7000_video_std video_std[] = {
 		.plldiv_lsb = 0x00,
 		.pll_ctrl = 0x68,
 		.phase_select_bit0 = 0x01,
+		.pre_coast = 0x03,
+		.post_coast = 0x0c,
+		.clamp_start = 0x06,
+		.clamp_width = 0x10,
+		.alc_placement = 0x18,
 	},
 	{ /* Video standard: 1280*720p resolution,60HZ refresh rate,
 			45kHZ Horizontal frequency,74.25MHZ pixel rate.
@@ -466,6 +481,11 @@ static const struct tvp7000_video_std video_std[] = {
 		.plldiv_lsb = 0x20,
 		.pll_ctrl = 0xA8,
 		.phase_select_bit0 = 0x00,
+		.pre_coast = 0x0,
+		.post_coast = 0x0,
+		.clamp_start = 0x32,
+		.clamp_width = 0x20,
+		.alc_placement = 0x5a,
 	},
 	{ /* Video standard: 1280*720p resolution,50HZ refresh rate,
 			37.5kHZ Horizontal frequency,74.25MHZ pixel rate.
@@ -474,6 +494,11 @@ static const struct tvp7000_video_std video_std[] = {
 		.plldiv_lsb = 0xC0,
 		.pll_ctrl = 0xA8,
 		.phase_select_bit0 = 0x00,
+		.pre_coast = 0x0,
+		.post_coast = 0x0,
+		.clamp_start = 0x32,
+		.clamp_width = 0x20,
+		.alc_placement = 0x5a,
 	},
 	{ /* Video standard: 1920*1080i resolution,60HZ refresh rate,
 			33.75kHZ Horizontal frequency,74.25MHZ pixel rate.
@@ -482,6 +507,11 @@ static const struct tvp7000_video_std video_std[] = {
 		.plldiv_lsb = 0x80,
 		.pll_ctrl = 0xA8,
 		.phase_select_bit0 = 0x00,
+		.pre_coast = 0x03,
+		.post_coast = 0x0,
+		.clamp_start = 0x32,
+		.clamp_width = 0x20,
+		.alc_placement = 0x5a,
 	},
 	{ /* Video standard: 1920*1080i resolution,50HZ refresh rate,
 			28.125kHZ Horizontal frequency,74.25MHZ pixel rate.
@@ -490,6 +520,11 @@ static const struct tvp7000_video_std video_std[] = {
 		.plldiv_lsb = 0x00,
 		.pll_ctrl = 0xA8,
 		.phase_select_bit0 = 0x00,
+		.pre_coast = 0x03,
+		.post_coast = 0x0,
+		.clamp_start = 0x32,
+		.clamp_width = 0x20,
+		.alc_placement = 0x5a,
 	},
 	{ /* Video standard: 1920*1080p resolution,60HZ refresh rate,
 			67.5kHZ Horizontal frequency,148.5MHZ pixel rate.
@@ -498,6 +533,11 @@ static const struct tvp7000_video_std video_std[] = {
 		.plldiv_lsb = 0x80,
 		.pll_ctrl = 0xD8,
 		.phase_select_bit0 = 0x00,
+		.pre_coast = 0x0,
+		.post_coast = 0x0,
+		.clamp_start = 0x32,
+		.clamp_width = 0x20,
+		.alc_placement = 0x5a,
 	},
 	{ /* Video standard: 1920*1080p resolution,50HZ refresh rate,
 			56.25kHZ Horizontal frequency,148.5MHZ pixel rate.
@@ -506,11 +546,13 @@ static const struct tvp7000_video_std video_std[] = {
 		.plldiv_lsb = 0x00,
 		.pll_ctrl = 0xD8,
 		.phase_select_bit0 = 0x00,
+		.pre_coast = 0x0,
+		.post_coast = 0x0,
+		.clamp_start = 0x32,
+		.clamp_width = 0x20,
+		.alc_placement = 0x5a,
 	},
 };
-
-static __init int tvp7000_init(void);
-static __exit void tvp7000_exit(void);
 
 static int tvp7000_attach_adapter(struct i2c_adapter *adapter);
 static int tvp7000_detach_client(struct i2c_client *client);
@@ -671,6 +713,12 @@ static int tvp7000_setup_video_standard(const struct tvp7000_video_std *std)
 	val &= ~0x01;
 	err |= tvp7000_write_reg(TVP7000_PHASE_SELECT, (std->phase_select_bit0 & 0x01) | val);
 
+	err |= tvp7000_write_reg(TVP7000_PRE_COAST, std->pre_coast);
+	err |= tvp7000_write_reg(TVP7000_POST_COAST, std->post_coast);
+	err |= tvp7000_write_reg(TVP7000_CLAMP_START, std->clamp_start);
+	err |= tvp7000_write_reg(TVP7000_CLAMP_WIDTH, std->clamp_width);
+	err |= tvp7000_write_reg(TVP7000_ALC_PLACEMENT, std->alc_placement);
+
 	return err;
 }
 
@@ -728,12 +776,23 @@ static int tvp7000_device_cmd(u32 cmd, void *arg)
 			struct vpfe_capture_params *params =
 			(struct vpfe_capture_params *)arg;
 
-			if (params->amuxmode == VPFE_AMUX_COMPONENT)
+			switch (params->mode)
 			{
+			case V4L2_STD_HD_480P:
 				ret = tvp7000_setup_video_standard(STD(VIDEO480P60HZ));
-			}
-			else
+				break;
+			case V4L2_STD_HD_576P:
+				ret = tvp7000_setup_video_standard(STD(VIDEO576P50HZ));
+				break;
+			case V4L2_STD_HD_720P:
+				ret = tvp7000_setup_video_standard(STD(VIDEO720P60HZ));
+				break;
+			case V4L2_STD_HD_1080I:
+				ret = tvp7000_setup_video_standard(STD(VIDEO1080I60HZ));
+				break;
+			default:
 				ret	= -1;
+			}
 			break;
 		}
 	default:
