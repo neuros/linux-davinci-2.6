@@ -136,11 +136,10 @@ void ccdc_config_ycbcr(ccdc_params_ycbcr * params)
     else
     {
         /* configure ccdc register for progressive mode */
-
-        regw(0x5a0,HSIZE_OFF);
         ccdc_setwin(params);
+        regw(((params->win.width * 2) + 31) & 0xffffffe0, HSIZE_OFF);
         regw((params->pix_order << 11) | 0x8000, CCDCFG);
 
-        regw((0x00031000)|(0x1 << 17)|(0x1 << 16)|(0x1 << 3)|(0x1 << 4), SYN_MODE);
+        regw((0x1 << 12)|(0x1 << 17)|(0x1 << 16)|(0x1 << 3)|(0x1 << 4), SYN_MODE);
     }
 }

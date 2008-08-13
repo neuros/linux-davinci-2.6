@@ -90,6 +90,7 @@ static struct v4l2_fract pal_aspect = VPFE_PIXELASPECT_PAL;
 static struct v4l2_rect ntscsp_bounds = VPFE_WIN_NTSC_SP;
 static struct v4l2_rect palsp_bounds = VPFE_WIN_PAL_SP;
 static struct v4l2_rect hd_480p_bounds = VPFE_WIN_HD480P;
+static struct v4l2_rect hd_576p_bounds = VPFE_WIN_HD576P;
 static struct v4l2_rect hd_720p_bounds = VPFE_WIN_HD720P;
 static struct v4l2_rect hd_1080i_bounds = VPFE_WIN_HD1080I;
 static struct v4l2_fract sp_aspect = VPFE_PIXELASPECT_NTSC_SP;
@@ -611,6 +612,33 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 				vpfe->pixelaspect = sp_aspect;
 				vpfe->ccdc_params.win = hd_480p_bounds;
 				vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_PROGRESSIVE;
+				vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_16BIT;
+			}
+			else if (id & V4L2_STD_HD_576P)
+			{
+				vpfe->std = id;
+				vpfe->bounds = vpfe->vwin = hd_576p_bounds;
+				vpfe->pixelaspect = sp_aspect;
+				vpfe->ccdc_params.win = hd_576p_bounds;
+				vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_PROGRESSIVE;
+				vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_16BIT;
+			}
+			else if (id & V4L2_STD_HD_720P)
+			{
+				vpfe->std = id;
+				vpfe->bounds = vpfe->vwin = hd_720p_bounds;
+				vpfe->pixelaspect = sp_aspect;
+				vpfe->ccdc_params.win = hd_720p_bounds;
+				vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_PROGRESSIVE;
+				vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_16BIT;
+			}
+			else if (id & V4L2_STD_HD_1080I)
+			{
+				vpfe->std = id;
+				vpfe->bounds = vpfe->vwin = hd_1080i_bounds;
+				vpfe->pixelaspect = sp_aspect;
+				vpfe->ccdc_params.win = hd_1080i_bounds;
+				vpfe->ccdc_params.frm_fmt = CCDC_FRMFMT_INTERLACED;
 				vpfe->ccdc_params.pix_fmt = CCDC_PIXFMT_YCBCR_16BIT;
 			}
 			else

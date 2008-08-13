@@ -234,8 +234,8 @@ static inline int is_win(const struct dm_win_info *w, unsigned int win)
 #define LCD_PANEL_CLOCK	180000
 
 static const struct dm_extended_mode dm_extended_modedb[] = {
-	{ "576i", 0, 0, 0 },
 	{ "480i", 0, 0, 0 },
+	{ "576i", 0, 0, 0 },
 	{ "480p", 0x50, 0x5, 0 },
 	{ "720p", 300, 30, 0 },
 	{ "1080i", 243, 20, 13 },
@@ -1137,7 +1137,6 @@ static void dm_win_fix_set(struct dm_win_info *w)
 	struct fb_info *info = &w->info;
 
 	info->fix.smem_start = w->fb_base_phys;
-	info->fix.line_length = (info->var.xres_virtual * info->var.bits_per_pixel) / 8;
 	info->fix.smem_len = w->fb_size;
 	info->fix.type = FB_TYPE_PACKED_PIXELS;
 	info->fix.visual = (info->var.bits_per_pixel <= 8) ?
@@ -1233,14 +1232,6 @@ static int dm_win_probe(struct dm_win_info *w)
 			  is_win(w, DAVINCIFB_WIN_OSD1) ? 4 : 16)) {
 		return -EINVAL;
 	}
-	/* create the fb device */
-	if (register_framebuffer(info) < 0) {
-		dev_err(dev, "Unable to register %s framebuffer\n",
-			dm_win_names[w->win]);
-		ret = -EINVAL;
-		goto register_error;
-	}
-	davincifb_set_par(info);
 	/* clear the memory */
 	switch (info->var.bits_per_pixel) {
 		case 16:
@@ -1256,6 +1247,14 @@ static int dm_win_probe(struct dm_win_info *w)
 		break;
 	}
 	memset((void *)w->fb_base, bg_color, w->fb_size);
+	/* create the fb device */
+	if (register_framebuffer(info) < 0) {
+		dev_err(dev, "Unable to register %s framebuffer\n",
+			dm_win_names[w->win]);
+		ret = -EINVAL;
+		goto register_error;
+	}
+	davincifb_set_par(info);
 	dm_win_enable(w, 1);
 	return 0;
 
@@ -1270,6 +1269,8 @@ static int dm_wins_probe(struct dm_info *info)
 	int windows_ok = 0;
 	int i = 0;
 
+	/* Set an initial invalid mode */
+	info->curr_mode = -1;
 	/* Setup DAVINCIFB_WIN_VID0 framebuffer */
 	if (!(info->windows_mask & (1 << DAVINCIFB_WIN_VID0))) {
 		printk(KERN_WARNING "No video/osd windows will be enabled "
@@ -1571,8 +1572,10 @@ static int davincifb_set_par(struct fb_info *info)
 
 	/* we are going to change the mode */
 	mode = dm_venc_find_mode(v);
-	if (mode == w->dm->curr_mode)
+	if (mode == w->dm->curr_mode) {
+		printk("same mode, do nothing!!\n");
 		return 0;
+	}
 	if (mode < 0)
 	{
 		printk("errorrrr\n");
