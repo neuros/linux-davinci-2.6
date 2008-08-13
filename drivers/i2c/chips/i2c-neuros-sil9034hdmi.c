@@ -27,6 +27,9 @@
  * 3) system ioctl support. ----------------------------- 2008-06-30 JChen
  * 3) 1080i support. ------------------------------------ 2008-06-30 JChen
  * 4) hdcp support.  ------------------------------------ 2008-07-09 JChen
+ * 5) fix hdcp auth. ------------------------------------ 2008-08-11 JChen
+ * 6) support line auth. -------------------------------- 2008-08-11 JChen
+ * 7) fix var mode into struct. ------------------------- 2008-08-12 JChen
  *
  */
 
@@ -69,23 +72,16 @@
 #define SIL9034_HDMI_NAME "sil9034hdmi"
 /* Si9034 use 2 i2c to control the chip 0x39 & 0x3A */
 #define SLAVE_SIZE 2
-#define	TIMER_JIFFIES	(1 * HZ)
+#define	TIMER_JIFFIES	(3 * HZ)
 
 /* Timer only could cause the kernel busy, we push it into schedule */
 #define SIL9034_TIMER 1
 #define SIL9034_SCHED 1
 
-/* YCBCR MODE */
-#define YCBCR_480I 0
-#define YCBCR_480P 0
-#define YCBCR_720P 0
-#define YCBCR_1080I 1
-
 /* Silicon Image provide 2 slave address to control. */
 static int slave_num = 0 ;
 static int sil9034_attach_adapter(struct i2c_adapter * adapter);
 static int sil9034_detach_client(struct i2c_client * client);
-static struct input_dev *sil9034_hdmi_dev;
 
 static unsigned short normal_i2c[] = {
 	/* Jchen: should probe this address if real physical device is mount */
@@ -97,53 +93,57 @@ static unsigned short normal_i2c[] = {
 /* Macro need by addr_data */
 I2C_CLIENT_INSMOD;
 
-/* bus mapping struct */
-typedef struct bus_mapping_sil9034
+/* video mapping struct */
+typedef struct sil9034_video_mapping
 {
-	u8 bus_reg ;
+	u8 video_reg ;
 	u16 value ;
-} bus_mapping_sil9034 ;
+} sil9034_video_mapping ;
 
-/* bus mapping for 480p YCbCr 4:2:2 Separate Sync Input*/
-bus_mapping_sil9034 sil9034_480p_setting[] =
+/* video mapping for 480p YCbCr 4:2:2 Separate Sync Input*/
+sil9034_video_mapping sil9034_480p_setting[] =
 {
-	{DE_CTRL_ADDR,0x41},
+	{DE_CTRL_ADDR,(DE_GEN_ENABLE|0x70)},
+	{DE_DELAY_ADDR,0x7A},
+	{DE_TOP_ADDR,0x24},
+	{DE_CNTH_ADDR,0x2},
+	{DE_CNTL_ADDR,0xD0},
+	{DEL_H_ADDR,0x1},
+	{DEL_L_ADDR,0xE0},
+	{TX_VID_CTRL_ADDR,CSCSEL_BT709|SET_EXTN_12BIT},
+	{TX_VID_MODE_ADDR,UPSMP_ENABLE|CSC_ENABLE},
+	{0,0}
+};
+
+/* video mapping for 720p YCbCr 4:2:2 Separate Sync Input*/
+sil9034_video_mapping sil9034_720p_setting[] =
+{
+	{DE_CTRL_ADDR,(DE_GEN_ENABLE|0x1)},
 	{DE_DELAY_ADDR,0x04},
 	{DE_TOP_ADDR,0x19},
 	{DE_CNTH_ADDR,0x5},
 	{DE_CNTL_ADDR,0x00},
 	{DEL_H_ADDR,0x2},
 	{DEL_L_ADDR,0xD0},
-	{TX_VID_CTRL_ADDR,0x20},
-	{TX_VID_MODE_ADDR,0x00}
+	{TX_VID_CTRL_ADDR,CSCSEL_BT709|SET_EXTN_12BIT},
+	{TX_VID_MODE_ADDR,UPSMP_ENABLE|CSC_ENABLE},
+	{0,0}
 };
-
-/* bus mapping for 720p YCbCr 4:2:2 Separate Sync Input*/
-bus_mapping_sil9034 sil9034_720p_setting[] =
+/* video mapping for 1080i YCbCr 4:2:2 Separate Sync Input*/
+sil9034_video_mapping sil9034_1080i_setting[] =
 {
-	{DE_CTRL_ADDR,0x41},
-	{DE_DELAY_ADDR,0x2B},
-	{DE_TOP_ADDR,0x19},
-	{DE_CNTH_ADDR,0x5},
-	{DE_CNTL_ADDR,0x00},
-	{DEL_H_ADDR,0x2},
-	{DEL_L_ADDR,0xD0},
-	{TX_VID_CTRL_ADDR,0x30},
-	{TX_VID_MODE_ADDR,0x3C}
-};
-/* bus mapping for 1080i YCbCr 4:2:2 Separate Sync Input*/
-bus_mapping_sil9034 sil9034_1080i_setting[] =
-{
-	{DE_CTRL_ADDR,0x40},
+	{DE_CTRL_ADDR,(DE_GEN_ENABLE|0x0)},
 	{DE_DELAY_ADDR,0xC0},
 	{DE_TOP_ADDR,0x14},
 	{DE_CNTH_ADDR,0x07},
 	{DE_CNTL_ADDR,0x80},
 	{DEL_H_ADDR,0x2},
 	{DEL_L_ADDR,0x1C},
-	{TX_VID_CTRL_ADDR,0x30},
-	{TX_VID_MODE_ADDR,0x3C}
+	{TX_VID_CTRL_ADDR,CSCSEL_BT709|SET_EXTN_12BIT},
+	{TX_VID_MODE_ADDR,UPSMP_ENABLE|CSC_ENABLE},
+	{0,0}
 };
+
 
 /* i2c private data */
 typedef struct davinci6446_sil9034
@@ -157,9 +157,12 @@ typedef struct davinci6446_sil9034
 #endif
 	spinlock_t              lock;
 	/* pointer to different setting according to system */
-	bus_mapping_sil9034 *sil9034_setting ;
-	unsigned char sil9034_setting_num ;
+	sil9034_video_mapping *sil9034_setting ;
 	unsigned char work_flag ;
+	unsigned char auth_state ;
+	u8 an_ksv_data[8] ;
+	char r0rx[2] ;
+	char r0tx[2] ;
 } davinci6446_sil9034 ;
 
 static davinci6446_sil9034 ds ;
@@ -331,6 +334,7 @@ out:
        	return ret;
 }
 
+
 static int sil9034_write(davinci6446_sil9034 *priv,u8 slave,u8 reg, u16 value)
 {
        	int retry = I2C_RETRY_COUNT;
@@ -371,16 +375,200 @@ static int sil9034_read(davinci6446_sil9034 *priv,u8 slave,u8 reg)
 	       	return 0xff;
 }
 
+static char *sil9034_ddc_write(davinci6446_sil9034 *priv,u8 *value,u8 reg, u8 length)
+{
+	u8 count = 0 ;
+
+	while(sil9034_read(priv,SLAVE0,DDC_STATUS_ADDR)&BIT_MDDC_ST_IN_PROGR)
+		mdelay(10) ;
+
+	sil9034_write(priv,SLAVE0,DDC_ADDR,HDCP_RX_SLAVE) ;
+	sil9034_write(priv,SLAVE0,DDC_OFFSET_ADDR,reg) ;
+	sil9034_write(priv,SLAVE0,DDC_CNT1_ADDR,length) ;
+	sil9034_write(priv,SLAVE0,DDC_CNT2_ADDR,0) ;
+	sil9034_write(priv,SLAVE0,DDC_CMD_ADDR,MASTER_CMD_CLEAR_FIFO) ;
+
+	for(count=0 ;count < length ; count++)
+	{
+		sil9034_write(priv,SLAVE0,DDC_DATA_ADDR,value[count]) ;
+	}
+	sil9034_write(priv,SLAVE0,DDC_CMD_ADDR,MASTER_CMD_SEQ_WR) ;
+
+	while(sil9034_read(priv,SLAVE0,DDC_STATUS_ADDR)&BIT_MDDC_ST_IN_PROGR)
+		mdelay(10) ;
+
+	sil9034_dbg("DDC WRITE FIFO is %d\n",sil9034_read(priv,SLAVE0,DDC_FIFOCNT_ADDR)) ;
+	sil9034_write(priv,SLAVE0,DDC_CMD_ADDR,MASTER_CMD_ABORT) ;
+	sil9034_write(priv,SLAVE0,DDC_CMD_ADDR,MASTER_CMD_CLOCK) ;
+	sil9034_write(priv,SLAVE0,DDC_MAN_ADDR,0) ;
+	return NULL ;
+}
+
+static char *sil9034_ddc_read(davinci6446_sil9034 *priv,u8 *value,u8 reg, u8 length)
+{
+	u8 count = 0 ;
+
+	sil9034_write(priv,SLAVE0,DDC_ADDR,HDCP_RX_SLAVE) ;
+	sil9034_write(priv,SLAVE0,DDC_OFFSET_ADDR,reg) ;
+	sil9034_write(priv,SLAVE0,DDC_CNT1_ADDR,length) ;
+	sil9034_write(priv,SLAVE0,DDC_CNT2_ADDR,0) ;
+	sil9034_write(priv,SLAVE0,DDC_CMD_ADDR,MASTER_CMD_CLEAR_FIFO) ;
+	sil9034_write(priv,SLAVE0,DDC_CMD_ADDR,MASTER_CMD_SEQ_RD) ;
+
+	while(sil9034_read(priv,SLAVE0,DDC_STATUS_ADDR)&BIT_MDDC_ST_IN_PROGR)
+		mdelay(10) ;
+	sil9034_dbg("DDC READ FIFO is %d\n",sil9034_read(priv,SLAVE0,DDC_FIFOCNT_ADDR)) ;
+	for(count=0 ;count < length ; count++)
+	{
+		value[count] = sil9034_read(priv,SLAVE0,DDC_DATA_ADDR) ;
+	}
+
+	while(sil9034_read(priv,SLAVE0,DDC_STATUS_ADDR)&BIT_MDDC_ST_IN_PROGR)
+		mdelay(10) ;
+
+	sil9034_write(priv,SLAVE0,DDC_CMD_ADDR,MASTER_CMD_ABORT) ;
+	sil9034_write(priv,SLAVE0,DDC_CMD_ADDR,MASTER_CMD_CLOCK) ;
+	sil9034_write(priv,SLAVE0,DDC_MAN_ADDR,0) ;
+	return NULL ;
+}
 //--------------------------  INIT / EXIT ---------------------------------------------------------
 static int sil9034_chipInfo(davinci6446_sil9034 *priv)
 {
-	u8 device_info[3] = {255,255,255} ;
+ 	u8 device_info[3] = {255,255,255} ;
 
 	device_info[1] = sil9034_read(priv,SLAVE0,DEV_IDL) ;
 	device_info[0] = sil9034_read(priv,SLAVE0,DEV_IDH) ;
 	device_info[2] = sil9034_read(priv,SLAVE0,DEV_REV) ;
 	printk(KERN_INFO "Silicon Image Device Driver Id 0x%02X%02X. Rev %02i.\n",device_info[0],device_info[1],device_info[2]) ;
 
+	return 0 ;
+}
+
+static int sil9034_powerDown(davinci6446_sil9034 *priv,u8 enable)
+{
+	/* power down internal oscillator
+	 * disable internal read of HDCP keys and KSV
+	 * disable master DDC block
+	 * page 4,50,113
+	 */
+	u8 reg_value ;
+
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
+	reg_value = sil9034_read(priv,SLAVE0,TX_SYS_CTRL1_ADDR) ;
+	if(enable)
+	{
+		sil9034_write(priv,SLAVE1,DIAG_PD_ADDR,PDIDCK_NORMAL|PDOSC_NORMAL|PDTOT_NORMAL) ;
+		sil9034_write(priv,SLAVE0,TX_SYS_CTRL1_ADDR,reg_value & ~(SET_PD)) ;
+	}
+	else
+	{
+		sil9034_write(priv,SLAVE1,DIAG_PD_ADDR,~(PDIDCK_NORMAL|PDOSC_NORMAL|PDTOT_NORMAL)) ;
+		sil9034_write(priv,SLAVE0,TX_SYS_CTRL1_ADDR,(reg_value | SET_PD)) ;
+	}
+	reg_value = sil9034_read(priv,SLAVE0,TX_SYS_CTRL1_ADDR) ;
+	sil9034_dbg("System control register #1 0x%x = 0x%x\n",TX_SYS_CTRL1_ADDR,reg_value) ;
+
+	reg_value = sil9034_read(priv,SLAVE1,DIAG_PD_ADDR) ;
+	sil9034_dbg("Diagnostic power down register 0x%x = 0x%x\n",DIAG_PD_ADDR,reg_value) ;
+	return 0 ;
+}
+
+static int sil9034_hdmiTmdsConfig(davinci6446_sil9034 *priv)
+{
+	u8 reg_value ;
+
+	/* TMDS control register
+	 * FPLL is 1.0*IDCK.
+	 * Internal source termination enabled.
+	 * Driver level shifter bias enabled.
+	 * page 27
+	 */
+	reg_value = sil9034_read(priv,SLAVE0,TX_TMDS_CTRL_ADDR) ;
+	sil9034_write(priv,SLAVE0,TX_TMDS_CTRL_ADDR,reg_value|(LVBIAS_ENABLE|STERM_ENABLE)) ;
+	reg_value = sil9034_read(priv,SLAVE0,TX_TMDS_CTRL_ADDR) ;
+	sil9034_dbg("TMDS control register 0x%x = 0x%x\n",TX_TMDS_CTRL_ADDR,reg_value) ;
+}
+static int sil9034_audioInputConfig(davinci6446_sil9034 *priv)
+{
+	u8 reg_value ;
+
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
+	/* Audio mode register */
+	sil9034_write(priv,SLAVE1,AUD_MODE_ADDR,SPDIF_ENABLE|AUD_ENABLE) ;
+	reg_value = sil9034_read(priv,SLAVE1,AUD_MODE_ADDR) ;
+	sil9034_dbg("Audio in mode register 0x%x = 0x%x\n",AUD_MODE_ADDR,reg_value) ;
+
+	/* ACR N software value */
+	sil9034_write(priv,SLAVE1,N_SVAL1_ADDR,0) ;
+	sil9034_write(priv,SLAVE1,N_SVAL2_ADDR,0x18) ;
+	sil9034_write(priv,SLAVE1,N_SVAL3_ADDR,0) ;
+
+	/* ACR ctrl */
+	sil9034_write(priv,SLAVE1,ACR_CTRL_ADDR,NCTSPKT_ENABLE) ;
+
+	/* ACR audio frequency register: * MCLK=128 Fs */
+	sil9034_write(priv,SLAVE1,FREQ_SVAL_ADDR,0x4) ;
+	reg_value = sil9034_read(priv,SLAVE1,FREQ_SVAL_ADDR) ;
+	sil9034_dbg("Audio frequency register 0x%x = 0x%x\n",FREQ_SVAL_ADDR,reg_value) ;
+	
+	return 0 ;
+}
+
+static int sil9034_videoInputConfig(davinci6446_sil9034 *priv)
+{
+	u8 count = 0 ;
+
+	/* Auto setting by the sil9034_video_mapping struct */
+	while(priv->sil9034_setting[count++].video_reg != 0)
+	{
+		sil9034_dbg("setting count %d 0x%x-0x%x\n",count,\
+				priv->sil9034_setting[count].video_reg,\
+				priv->sil9034_setting[count].value) ;
+
+		sil9034_write(priv,SLAVE0,priv->sil9034_setting[count].video_reg,\
+				priv->sil9034_setting[count].value) ;
+	}
+
+	return 0 ;
+}
+
+static int sil9034_swReset(davinci6446_sil9034 *priv)
+{
+	/* use to temporary save inf_ctrl */
+	u8 temp1 ;
+	u8 temp2 ;
+
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
+
+	temp1 = sil9034_read(priv,SLAVE1,INF_CTRL1) ;
+	temp2 = sil9034_read(priv,SLAVE1,INF_CTRL2) ;
+	/*
+	 * audio fifo reset enable
+	 * software reset enable
+	 */
+	while(!sil9034_read(priv,SLAVE0,TX_STAT_ADDR)&P_STABLE)
+		mdelay(10) ;
+	sil9034_write(priv,SLAVE0,TX_SWRST_ADDR,(BIT_TX_SW_RST|BIT_TX_FIFO_RST)) ;
+	mdelay(10) ;
+	sil9034_write(priv,SLAVE0,TX_SWRST_ADDR,0) ;
+	mdelay(64) ; // allow TCLK (sent to Rx across the HDMS link) to stabilize
+
+	/* restore */
+	sil9034_write(priv,SLAVE1,INF_CTRL1,temp1) ;
+	sil9034_write(priv,SLAVE1,INF_CTRL2,temp2) ;
+	return 0 ;
+}
+static int sil9034_triggerRom(davinci6446_sil9034 *priv)
+{
+	u8 reg_value ;
+
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
+	reg_value = sil9034_read(priv,SLAVE0,KEY_COMMAND_ADDR) ;
+	sil9034_write(priv,SLAVE0,KEY_COMMAND_ADDR,reg_value & ~LD_KSV) ;
+	mdelay(10) ;
+	sil9034_write(priv,SLAVE0,KEY_COMMAND_ADDR,reg_value |LD_KSV) ;
+	mdelay(10) ;
+	sil9034_write(priv,SLAVE0,KEY_COMMAND_ADDR,reg_value & ~LD_KSV) ;
 	return 0 ;
 }
 
@@ -427,53 +615,26 @@ static int sil9034_audioInfoFrameSetting(davinci6446_sil9034 *priv)
 
 	return 0 ;
 }
-
-static int sil9034_cea861InfoFrameControl1(davinci6446_sil9034 *priv,u8 enable)
-{
-	u8 reg_value ;
-
-	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
-	/* enable the avi repeat transmission */
-	reg_value = sil9034_read(priv,SLAVE1,INF_CTRL1) ;
-	if(enable)
-		sil9034_write(priv,SLAVE1,INF_CTRL1,(reg_value | (BIT_AVI_REPEAT |BIT_AUD_ENABLE |BIT_AUD_REPEAT))) ;
-	else
-		sil9034_write(priv,SLAVE1,INF_CTRL1,0) ;
-	reg_value = sil9034_read(priv,SLAVE1,INF_CTRL1) ;
-	sil9034_dbg("InfoFrame control#1 register 0x%x = 0x%x\n",INF_CTRL1,reg_value) ;
-
-
-	return 0 ;
-}
-
-static int sil9034_cea861InfoFrameControl2(davinci6446_sil9034 *priv,u8 enable)
-{
-	u8 reg_value ;
-
-	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
-	/* Generic packet transmittion & repeat mode enable */
-	reg_value = sil9034_read(priv,SLAVE1,INF_CTRL2) ;
-	if(enable)
-	{
-		/* enable GCP_RPT , GCP_EN */
-		sil9034_write(priv,SLAVE1,INF_CTRL2,(GCP_EN|GCP_RPT)) ;
-	}
-	else
-	{
-		sil9034_write(priv,SLAVE1,INF_CTRL2,reg_value & ~(GCP_EN|GCP_RPT)) ;
-	}
-	reg_value = sil9034_read(priv,SLAVE1,INF_CTRL2) ;
-	sil9034_dbg("InfoFrame control#2 register 0x%x = 0x%x\n",INF_CTRL2,reg_value) ;
-
-	return 0 ;
-}
-
-
 static int sil9034_cea861InfoFrameSetting(davinci6446_sil9034 *priv)
 {
 	u8 avi_info_addr ;
+	u8 reg_value ;
 
 	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
+
+	reg_value = sil9034_read(priv,SLAVE1,INF_CTRL1) ;
+	sil9034_write(priv,SLAVE1,INF_CTRL1,reg_value & (~BIT_AVI_REPEAT)) ;
+	mdelay(64) ; // Delay VSync for unlock DATA buffer
+	if(sil9034_read(priv,SLAVE1,INF_CTRL1)&BIT_AVI_ENABLE)
+		sil9034_dbg("Sent AVI error\n") ;
+	else
+		sil9034_dbg("Silicon Image sending AVI success.\n") ;
+
+	if(sil9034_read(priv,SLAVE1,INF_CTRL1)&BIT_AUD_ENABLE)
+		sil9034_dbg("Sent AUD error\n") ;
+	else
+		sil9034_dbg("Silicon Image sending AUD success.\n") ;
+
 
 	/* set the info frame type according to CEA-861 datasheet */
 	avi_info_addr = AVI_IF_ADDR ;
@@ -485,16 +646,16 @@ static int sil9034_cea861InfoFrameSetting(davinci6446_sil9034 *priv)
 	sil9034_write(priv,SLAVE1,avi_info_addr++,0x02) ;
 
 	/* AVI length */
-	sil9034_write(priv,SLAVE1,avi_info_addr++,0x0D) ;
+	sil9034_write(priv,SLAVE1,avi_info_addr++,0x13) ;
 
 	/* AVI CRC */
-	sil9034_write(priv,SLAVE1,avi_info_addr++,(0x82 + 0x02 + 0x0D + 0x3D)) ;
+	sil9034_write(priv,SLAVE1,avi_info_addr++,(0x82 + 0x02 + 0x13 + 0x1D)) ;
 
 	/* AVI DATA BYTE , according to Sil FAE, 3 byte is enought.
 	 * page 102
 	 */
 	/* 0 | Y1 | Y0 | A0 | B1 | B0 | S1 | S0 */
-	sil9034_write(priv,SLAVE1,avi_info_addr++,0x3D) ;
+	sil9034_write(priv,SLAVE1,avi_info_addr++,0x1D) ;
 
 	/* C1 | C0 | M1 | M0 | R3 | R2 | R1 | R0 */
 	sil9034_write(priv,SLAVE1,avi_info_addr++,0x68) ;
@@ -502,111 +663,55 @@ static int sil9034_cea861InfoFrameSetting(davinci6446_sil9034 *priv)
 	/*  0 | 0 | 0 | 0 | 0 | 0 | SC1 | SC0 */
 	sil9034_write(priv,SLAVE1,avi_info_addr++,0x3) ;
 
+	reg_value = sil9034_read(priv,SLAVE1,INF_CTRL1) ;
+	sil9034_write(priv,SLAVE1,INF_CTRL1,reg_value | (BIT_AVI_ENABLE|BIT_AVI_REPEAT)) ;
 	return 0 ;
 }
-
-static int sil9034_ddcSetting(davinci6446_sil9034 *priv)
+static int sil9034_wakeupHdmiTx(davinci6446_sil9034 *priv)
 {
-	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
-	return 0 ;
-}
-
-static int sil9034_powerDown(davinci6446_sil9034 *priv,u8 enable)
-{
-	/* power down internal oscillator
-	 * disable internal read of HDCP keys and KSV
-	 * disable master DDC block
-	 * page 4,50,113
-	 */
 	u8 reg_value ;
 
-	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
 	reg_value = sil9034_read(priv,SLAVE0,TX_SYS_CTRL1_ADDR) ;
+	sil9034_write(priv,SLAVE0,TX_SYS_CTRL1_ADDR,reg_value|SET_PD) ;
+	sil9034_write(priv,SLAVE0,INT_CNTRL_ADDR,0) ;
+	reg_value = sil9034_read(priv,SLAVE1,INF_CTRL1) ;
+	sil9034_write(priv,SLAVE1,INF_CTRL1,reg_value |BIT_AVI_REPEAT|BIT_AUD_REPEAT) ;
+
+	return 0 ;
+}
+static int sil9034_sentCPPackage(davinci6446_sil9034 *priv,u8 enable)
+{
+	u8 reg_value ;
+	u8 timeout = 64 ;
+
+	reg_value = sil9034_read(priv,SLAVE1,INF_CTRL2) ;
+	sil9034_write(priv,SLAVE1,INF_CTRL2,reg_value &~BIT_CP_REPEAT) ;
 	if(enable)
-	{
-		sil9034_write(priv,SLAVE1,DIAG_PD_ADDR,~(PDIDCK_NORMAL|PDOSC_NORMAL|PDTOT_NORMAL)) ;
-		sil9034_write(priv,SLAVE0,TX_SYS_CTRL1_ADDR,reg_value & ~(SET_PD)) ;
-	}
+		sil9034_write(priv,SLAVE1,CP_IF_ADDR,BIT_CP_AVI_MUTE_SET) ;
 	else
+		sil9034_write(priv,SLAVE1,CP_IF_ADDR,BIT_CP_AVI_MUTE_CLEAR) ;
+
+	while(timeout--)
 	{
-		sil9034_write(priv,SLAVE1,DIAG_PD_ADDR,PDIDCK_NORMAL|PDOSC_NORMAL|PDTOT_NORMAL) ;
-		sil9034_write(priv,SLAVE0,TX_SYS_CTRL1_ADDR,(reg_value | SET_PD)) ;
+		if(!sil9034_read(priv,SLAVE1,INF_CTRL2)&BIT_CP_REPEAT)
+			break ;
 	}
-	reg_value = sil9034_read(priv,SLAVE0,TX_SYS_CTRL1_ADDR) ;
-	sil9034_dbg("System control register #1 0x%x = 0x%x\n",TX_SYS_CTRL1_ADDR,reg_value) ;
 
-	reg_value = sil9034_read(priv,SLAVE1,DIAG_PD_ADDR) ;
-	sil9034_dbg("Diagnostic power down register 0x%x = 0x%x\n",DIAG_PD_ADDR,reg_value) ;
+	if(timeout)
+		sil9034_write(priv,SLAVE1,INF_CTRL2,reg_value |(BIT_CP_REPEAT|BIT_CP_ENABLE)) ;
+
 	return 0 ;
 }
-
-static int sil9034_swReset(davinci6446_sil9034 *priv)
+int sil9034_unmaskInterruptStatus(davinci6446_sil9034 *priv)
 {
-	/*
-	 * audio fifo reset enable
-	 * software reset enable
-	 */
-	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
-	sil9034_write(priv,SLAVE0,TX_SWRST_ADDR,(BIT_TX_SW_RST|BIT_TX_FIFO_RST)) ;
-	udelay(100) ;
-	sil9034_write(priv,SLAVE0,TX_SWRST_ADDR,~(BIT_TX_SW_RST|BIT_TX_FIFO_RST)) ;
-	return 0 ;
-}
+	u8 reg_value = 0xFF ;
 
-static int sil9034_generalControlPacket(davinci6446_sil9034 *priv,u8 enable)
-{
-	u8 reg_value ;
-	/*
-	 * mute the video & audio
-	 */
-	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
-	reg_value = sil9034_read(priv,SLAVE1,GCP_BYTE1) ;
-	if(enable)
-	{
-		/* set avmute flag */
-		sil9034_write(priv,SLAVE1,GCP_BYTE1,(reg_value | SET_AVMUTE)) ;
-	}
-	else
-	{
-		/* clear avmute flag */
-		sil9034_write(priv,SLAVE1,GCP_BYTE1,(reg_value | CLR_AVMUTE)) ;
-	}
-	reg_value = sil9034_read(priv,SLAVE1,GCP_BYTE1) ;
-	sil9034_dbg("General control packet register 0x%x = 0x%x\n",GCP_BYTE1,reg_value) ;
+	sil9034_write(priv,SLAVE0,HDMI_INT1_MASK,reg_value) ;
+	sil9034_write(priv,SLAVE0,HDMI_INT2_MASK,reg_value) ;
+	sil9034_write(priv,SLAVE0,HDMI_INT3_MASK,reg_value) ;
 
 	return 0 ;
 }
-
-static int sil9034_audioInputConfig(davinci6446_sil9034 *priv)
-{
-	u8 reg_value ;
-
-	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
-	/* Audio mode register */
-	sil9034_write(priv,SLAVE1,AUD_MODE_ADDR,0xF9) ;
-	reg_value = sil9034_read(priv,SLAVE1,AUD_MODE_ADDR) ;
-	sil9034_dbg("Audio in mode register 0x%x = 0x%x\n",AUD_MODE_ADDR,reg_value) ;
-
-	/* ACR audio frequency register: * MCLK=128 Fs */
-	sil9034_write(priv,SLAVE1,FREQ_SVAL_ADDR,0) ;
-	reg_value = sil9034_read(priv,SLAVE1,FREQ_SVAL_ADDR) ;
-	sil9034_dbg("Audio frequency register 0x%x = 0x%x\n",FREQ_SVAL_ADDR,reg_value) ;
-	
-	return 0 ;
-}
-
-static int sil9034_hdmiVideoEmbSyncDec(davinci6446_sil9034 *priv)
-{
-	u8 reg_value ;
-
-	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
-	reg_value = sil9034_read(priv,SLAVE0,INTERLACE_ADJ_MODE) ;
-	sil9034_write(priv,SLAVE0,INTERLACE_ADJ_MODE,(reg_value & ~(AVI_RPT_ENABLE|AVI_ENABLE|SPD_RPT_ENABLE))) ;
-	reg_value = sil9034_read(priv,SLAVE0,INTERLACE_ADJ_MODE) ;
-	sil9034_dbg("Interlace Adjustment register 0x%x = 0x%x\n",INTERLACE_ADJ_MODE,reg_value) ;
-	return 0 ;
-}
-
 static int sil9034_hdmiOutputConfig(davinci6446_sil9034 *priv)
 {
 	u8 reg_value ;
@@ -621,23 +726,31 @@ static int sil9034_hdmiOutputConfig(davinci6446_sil9034 *priv)
 	return 0 ;
 }
 
-static int sil9034_hdmiTmdsConfig(davinci6446_sil9034 *priv)
+static int sil9034_ddcSetting(davinci6446_sil9034 *priv)
+{
+	sil9034_write(priv,SLAVE0,DDC_ADDR,HDCP_RX_SLAVE) ;
+	return 0 ;
+}
+static int sil9034_cea861InfoFrameControl2(davinci6446_sil9034 *priv,u8 enable)
 {
 	u8 reg_value ;
 
-	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
-	/* TMDS control register
-	 * FPLL is 1.0*IDCK.
-	 * Internal source termination enabled.
-	 * Driver level shifter bias enabled.
-	 * page 27
-	 */
-	reg_value = sil9034_read(priv,SLAVE0,TX_TMDS_CTRL_ADDR) ;
-	sil9034_write(priv,SLAVE0,TX_TMDS_CTRL_ADDR,reg_value|(LVBIAS_ENABLE|STERM_ENABLE)) ;
-	reg_value = sil9034_read(priv,SLAVE0,TX_TMDS_CTRL_ADDR) ;
-	sil9034_dbg("TMDS control register 0x%x = 0x%x\n",TX_TMDS_CTRL_ADDR,reg_value) ;
-}
+	/* Generic packet transmittion & repeat mode enable */
+	reg_value = sil9034_read(priv,SLAVE1,INF_CTRL2) ;
+	if(enable)
+	{
+		/* enable GCP_RPT , GCP_EN */
+		sil9034_write(priv,SLAVE1,INF_CTRL2,(reg_value |(GCP_EN|GCP_RPT))) ;
+	}
+	else
+	{
+		sil9034_write(priv,SLAVE1,INF_CTRL2,reg_value & ~(GCP_EN|GCP_RPT)) ;
+	}
+	reg_value = sil9034_read(priv,SLAVE1,INF_CTRL2) ;
+	sil9034_dbg("InfoFrame control#2 register 0x%x = 0x%x\n",INF_CTRL2,reg_value) ;
 
+	return 0 ;
+}
 static int sil9034_hdmiHdcpConfig(davinci6446_sil9034 *priv,u8 enable)
 {
 	u8 reg_value ;
@@ -647,16 +760,13 @@ static int sil9034_hdmiHdcpConfig(davinci6446_sil9034 *priv,u8 enable)
 	reg_value = sil9034_read(priv,SLAVE0,HDCP_CTRL_ADDR) ;
 	if(enable)
 	{
-		sil9034_write(priv,SLAVE0,DDC_ADDR,0x74) ;
-		sil9034_write(priv,SLAVE0,DDC_CNT1_ADDR,0x1) ;
-		sil9034_write(priv,SLAVE0,DDC_OFFSET_ADDR,0x40) ;
-		sil9034_write(priv,SLAVE0,RI_CMD_ADDR,SET_RI_ENABLE) ;
-		sil9034_write(priv,SLAVE0,HDCP_CTRL_ADDR,(reg_value | (SET_ENC_EN|SET_CP_RESTN|TX_ANSTOP_ENABLE))) ;
+		sil9034_write(priv,SLAVE0,HDCP_CTRL_ADDR,(reg_value | SET_ENC_EN)) ;
+		priv->auth_state = AUTH_NEED ;
 	}
 	else
 	{
-		sil9034_write(priv,SLAVE0,RI_CMD_ADDR,~SET_RI_ENABLE) ;
-		sil9034_write(priv,SLAVE0,HDCP_CTRL_ADDR,(reg_value & ~((SET_ENC_EN)|RX_RPTR_ENABLE))) ;
+		sil9034_write(priv,SLAVE0,HDCP_CTRL_ADDR,(reg_value & ~(SET_ENC_EN))) ;
+		priv->auth_state = AUTH_DONE ;
 	}
 
 	reg_value = sil9034_read(priv,SLAVE0,HDCP_CTRL_ADDR) ;
@@ -664,291 +774,203 @@ static int sil9034_hdmiHdcpConfig(davinci6446_sil9034 *priv,u8 enable)
 
 	return 0 ;
 }
-
-static int sil9034_480i_VideoInputConfig(davinci6446_sil9034 *priv)
+char sil9034_hotplugEvent(davinci6446_sil9034 *priv)
 {
-	/* Output Mode YcbCr 4:2:2 */
-	u8 reg_value = 0 ;
+	u8 reg_value ;
 
-	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
-
-	/* 480i YCbCr 4:2:2 Mux YC Separate Sync Input */
-	/* Video DE control register : DE_DLY 3:0=0x0
-	 * 			       HS_POL 4 = 1
-	 * 			       VS_POL 5 = 1
-	 * 			       DE_GEN 6 = 1
-	 * 			       Note: DM320 input diverse, so change below:
-	 * 			       HS_POL 4 = 0
-	 * 			       VS_POL 5 = 0
-	 * 			       DE_GEN 6 = 1
-	 */
-	sil9034_write(priv,SLAVE0,DE_CTRL_ADDR,0x30) ;
-	reg_value = sil9034_read(priv,SLAVE0,DE_CTRL_ADDR) ;
-	sil9034_dbg("Video DE control register 0x%x = 0x%x\n",DE_CTRL_ADDR,reg_value) ;
-
-	/* Video DE delay register */
-	sil9034_write(priv,SLAVE0,DE_DELAY_ADDR,0x77) ;
-	reg_value = sil9034_read(priv,SLAVE0,DE_DELAY_ADDR) ;
-	sil9034_dbg("Video DE delay register 0x%x = 0x%x\n",DE_DELAY_ADDR,reg_value) ;
-
-	/* Video DE top register, DE_TOP 6:0=0x12*/
-	reg_value = sil9034_read(priv,SLAVE0,DE_TOP_ADDR) ;
-	sil9034_write(priv,SLAVE0,DE_TOP_ADDR,reg_value|0x12) ;
-	reg_value = sil9034_read(priv,SLAVE0,DE_TOP_ADDR) ;
-	sil9034_dbg("Video DE top register 0x%x = 0x%x\n",DE_TOP_ADDR,reg_value) ;
-
-	/* Video DE cnt high byte register, DE_CNT 3:0=0x2*/
-	reg_value = sil9034_read(priv,SLAVE0,DE_CNTH_ADDR) ;
-	sil9034_write(priv,SLAVE0,DE_CNTH_ADDR,(reg_value | 0x2)) ;
-	reg_value = sil9034_read(priv,SLAVE0,DE_CNTH_ADDR) ;
-	sil9034_dbg("Video DE cnt high register 0x%x = 0x%x\n",DE_CNTH_ADDR,reg_value) ;
-
-	/* Video DE cnt low byte register, DE_CNT 7:0=0xD0*/
-	sil9034_write(priv,SLAVE0,DE_CNTL_ADDR,0xD0) ;
-	reg_value = sil9034_read(priv,SLAVE0,DE_CNTL_ADDR) ;
-	sil9034_dbg("Video DE cnt low register 0x%x = 0x%x\n",DE_CNTL_ADDR,reg_value) ;
-
-	/* Video DE line high byte register, DE_LIN 2:0=0x0*/
-	reg_value = sil9034_read(priv,SLAVE0,DEL_H_ADDR) ;
-	sil9034_write(priv,SLAVE0,DEL_H_ADDR,(reg_value & ~(0x7))) ;
-	reg_value = sil9034_read(priv,SLAVE0,DEL_H_ADDR) ;
-	sil9034_dbg("Video DE line high register 0x%x = 0x%x\n",DEL_H_ADDR,reg_value) ;
-
-	/* Video DE line low byte register, DE_LIN 7:0=0xF0*/
-	sil9034_write(priv,SLAVE0,DEL_L_ADDR,0xF0) ;
-	reg_value = sil9034_read(priv,SLAVE0,DEL_L_ADDR) ;
-	sil9034_dbg("Video DE line high register 0x%x = 0x%x\n",DEL_L_ADDR,reg_value) ;
-
-	/* Video control register , ICLK = 00 EXTN = 1*/
-	reg_value = sil9034_read(priv,SLAVE0,TX_VID_CTRL_ADDR) ;
-	sil9034_write(priv,SLAVE0,TX_VID_CTRL_ADDR,(reg_value|0x20)) ;
-	reg_value = sil9034_read(priv,SLAVE0,TX_VID_CTRL_ADDR) ;
-	sil9034_dbg("Video control register 0x%x = 0x%x\n",TX_VID_CTRL_ADDR,reg_value) ;
-
-	/* Video mode register , SYNCEXT=0 DEMUX=1 UPSMP=0 CSC=0 DITHER = 0*/
-	sil9034_write(priv,SLAVE0,TX_VID_MODE_ADDR,0x2) ;
-	reg_value = sil9034_read(priv,SLAVE0,TX_VID_MODE_ADDR) ;
-	sil9034_dbg("Video mode register 0x%x = 0x%x\n",TX_VID_MODE_ADDR,reg_value) ;
-
-	return 0 ;
+	reg_value = sil9034_read(priv,SLAVE0,TX_STAT_ADDR) ;
+	if(reg_value&SET_HPD)
+		return 1 ;
+	else
+		return 0 ;
 }
-
-static int sil9034_720p_VideoInputConfig(davinci6446_sil9034 *priv)
+static int sil9034_checkHdcpDevice(davinci6446_sil9034 *priv)
 {
-	/* Output Mode YcbCr 4:2:2 */
-	u8 reg_value = 0 ;
-
-	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
-
-	reg_value = sil9034_read(priv,SLAVE0,DE_CTRL_ADDR) ;
-	sil9034_write(priv,SLAVE0,DE_CTRL_ADDR,(reg_value|(DE_GEN_ENABLE|0x1))) ;
-	reg_value = sil9034_read(priv,SLAVE0,DE_CTRL_ADDR) ;
-	sil9034_dbg("Video DE control register 0x%x = 0x%x\n",DE_CTRL_ADDR,reg_value) ;
-
-	/* Video DE delay register */
-	sil9034_write(priv,SLAVE0,DE_DELAY_ADDR,0x04) ;
-	reg_value = sil9034_read(priv,SLAVE0,DE_DELAY_ADDR) ;
-	sil9034_dbg("Video DE delay register 0x%x = 0x%x\n",DE_DELAY_ADDR,reg_value) ;
-
-	/* Video DE top register */
-	reg_value = sil9034_read(priv,SLAVE0,DE_TOP_ADDR) ;
-	sil9034_write(priv,SLAVE0,DE_TOP_ADDR,reg_value|0x19) ;
-	reg_value = sil9034_read(priv,SLAVE0,DE_TOP_ADDR) ;
-	sil9034_dbg("Video DE top register 0x%x = 0x%x\n",DE_TOP_ADDR,reg_value) ;
-
-	/* Video DE cnt high byte register */
-	reg_value = sil9034_read(priv,SLAVE0,DE_CNTH_ADDR) ;
-	sil9034_write(priv,SLAVE0,DE_CNTH_ADDR,(reg_value | 0x5)) ;
-	reg_value = sil9034_read(priv,SLAVE0,DE_CNTH_ADDR) ;
-	sil9034_dbg("Video DE cnt high register 0x%x = 0x%x\n",DE_CNTH_ADDR,reg_value) ;
-
-	/* Video DE cnt low byte register */
-	sil9034_write(priv,SLAVE0,DE_CNTL_ADDR,0x00) ;
-	reg_value = sil9034_read(priv,SLAVE0,DE_CNTL_ADDR) ;
-	sil9034_dbg("Video DE cnt low register 0x%x = 0x%x\n",DE_CNTL_ADDR,reg_value) ;
-
-	/* Video DE line high byte register */
-	sil9034_write(priv,SLAVE0,DEL_H_ADDR,0x2) ;
-	reg_value = sil9034_read(priv,SLAVE0,DEL_H_ADDR) ;
-	sil9034_dbg("Video DE line high register 0x%x = 0x%x\n",DEL_H_ADDR,reg_value) ;
-
-	/* Video DE line low byte register */
-	sil9034_write(priv,SLAVE0,DEL_L_ADDR,0xD0) ;
-	reg_value = sil9034_read(priv,SLAVE0,DEL_L_ADDR) ;
-	sil9034_dbg("Video DE line high register 0x%x = 0x%x\n",DEL_L_ADDR,reg_value) ;
-
-	/* Video control register , ICLK = 00 EXTN = 1*/
-	reg_value = sil9034_read(priv,SLAVE0,TX_VID_CTRL_ADDR) ;
-	sil9034_write(priv,SLAVE0,TX_VID_CTRL_ADDR,(reg_value|(CSCSEL_BT709|SET_EXTN_12BIT))) ;
-	reg_value = sil9034_read(priv,SLAVE0,TX_VID_CTRL_ADDR) ;
-	sil9034_dbg("Video control register 0x%x = 0x%x\n",TX_VID_CTRL_ADDR,reg_value) ;
-
-	/* Video mode register , SYNCEXT=0 DEMUX=0 UPSMP=1 CSC=1 DITHER = 0*/
-	sil9034_write(priv,SLAVE0,TX_VID_MODE_ADDR,(UPSMP_ENABLE|CSC_ENABLE)) ;
-	reg_value = sil9034_read(priv,SLAVE0,TX_VID_MODE_ADDR) ;
-	sil9034_dbg("Video mode register 0x%x = 0x%x\n",TX_VID_MODE_ADDR,reg_value) ;
-
-	return 0 ;
-}
-
-static int sil9034_1080i_VideoInputConfig(davinci6446_sil9034 *priv)
-{
-	/* Output Mode YcbCr 4:2:2 */
-	u8 reg_value = 0 ;
-
-	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
-
-	reg_value = sil9034_read(priv,SLAVE0,DE_CTRL_ADDR) ;
-	sil9034_write(priv,SLAVE0,DE_CTRL_ADDR,(reg_value|DE_GEN_ENABLE)) ;
-	reg_value = sil9034_read(priv,SLAVE0,DE_CTRL_ADDR) ;
-	sil9034_dbg("Video DE control register 0x%x = 0x%x\n",DE_CTRL_ADDR,reg_value) ;
-
-	/* Video DE delay register */
-	sil9034_write(priv,SLAVE0,DE_DELAY_ADDR,0xC0) ;
-	reg_value = sil9034_read(priv,SLAVE0,DE_DELAY_ADDR) ;
-	sil9034_dbg("Video DE delay register 0x%x = 0x%x\n",DE_DELAY_ADDR,reg_value) ;
-
-	/* Video DE top register */
-	reg_value = sil9034_read(priv,SLAVE0,DE_TOP_ADDR) ;
-	sil9034_write(priv,SLAVE0,DE_TOP_ADDR,reg_value|0x14) ;
-	reg_value = sil9034_read(priv,SLAVE0,DE_TOP_ADDR) ;
-	sil9034_dbg("Video DE top register 0x%x = 0x%x\n",DE_TOP_ADDR,reg_value) ;
-
-	/* Video DE cnt high byte register */
-	reg_value = sil9034_read(priv,SLAVE0,DE_CNTH_ADDR) ;
-	sil9034_write(priv,SLAVE0,DE_CNTH_ADDR,(reg_value | 0x7)) ;
-	reg_value = sil9034_read(priv,SLAVE0,DE_CNTH_ADDR) ;
-	sil9034_dbg("Video DE cnt high register 0x%x = 0x%x\n",DE_CNTH_ADDR,reg_value) ;
-
-	/* Video DE cnt low byte register */
-	sil9034_write(priv,SLAVE0,DE_CNTL_ADDR,0x80) ;
-	reg_value = sil9034_read(priv,SLAVE0,DE_CNTL_ADDR) ;
-	sil9034_dbg("Video DE cnt low register 0x%x = 0x%x\n",DE_CNTL_ADDR,reg_value) ;
-
-	/* Video DE line high byte register */
-	reg_value = sil9034_read(priv,SLAVE0,DEL_H_ADDR) ;
-	sil9034_write(priv,SLAVE0,DEL_H_ADDR,(reg_value)|0x2) ;
-	reg_value = sil9034_read(priv,SLAVE0,DEL_H_ADDR) ;
-	sil9034_dbg("Video DE line high register 0x%x = 0x%x\n",DEL_H_ADDR,reg_value) ;
-
-	/* Video DE line low byte register */
-	sil9034_write(priv,SLAVE0,DEL_L_ADDR,0x1C) ;
-	reg_value = sil9034_read(priv,SLAVE0,DEL_L_ADDR) ;
-	sil9034_dbg("Video DE line high register 0x%x = 0x%x\n",DEL_L_ADDR,reg_value) ;
-
-	/* Video control register , ICLK = 00 EXTN = 1*/
-	reg_value = sil9034_read(priv,SLAVE0,TX_VID_CTRL_ADDR) ;
-	sil9034_write(priv,SLAVE0,TX_VID_CTRL_ADDR,(reg_value|SET_EXTN_12BIT)) ;
-	reg_value = sil9034_read(priv,SLAVE0,TX_VID_CTRL_ADDR) ;
-	sil9034_dbg("Video control register 0x%x = 0x%x\n",TX_VID_CTRL_ADDR,reg_value) ;
-
-	/* Video mode register , SYNCEXT=0 DEMUX=0 UPSMP=1 CSC=1 DITHER = 0*/
-	sil9034_write(priv,SLAVE0,TX_VID_MODE_ADDR,(UPSMP_ENABLE|CSC_ENABLE)) ;
-	reg_value = sil9034_read(priv,SLAVE0,TX_VID_MODE_ADDR) ;
-	sil9034_dbg("Video mode register 0x%x = 0x%x\n",TX_VID_MODE_ADDR,reg_value) ;
-
-	return 0 ;
-}
-static int sil9034_Auto_VideoInputConfig(davinci6446_sil9034 *priv)
-{
-	u8 reg_value = 0 ;
+	u8 total = 0 ;
+	u8 bits = 0 ;
 	u8 count = 0 ;
 
-	/* Auto setting by the bus_mapping_sil9034 struct */
-	for(count=0 ;count<(priv->sil9034_setting_num) ;count++)
+	/* read 5 byte from ddc */
+	sil9034_ddc_read(priv,&priv->an_ksv_data[0],DDC_BKSV_ADDR,5) ;
+
+	/* calculate bits */
+	for(count=0 ;count<5 ; count++)
 	{
-		reg_value = sil9034_read(priv,SLAVE0,\
-				priv->sil9034_setting[count].bus_reg) ;
-		sil9034_write(priv,SLAVE0,priv->sil9034_setting[count].bus_reg,\
-				(reg_value|priv->sil9034_setting[count].value)) ;
-		reg_value = sil9034_read(priv,SLAVE0,\
-				priv->sil9034_setting[count].bus_reg) ;
-		sil9034_dbg("bus mapping regster 0x%x = 0x%x\n",\
-				priv->sil9034_setting[count].bus_reg,reg_value) ;
+		sil9034_dbg("bksv %d,0x%x\n",count,priv->an_ksv_data[count]) ;
+		for(bits=0 ;bits<8 ; bits++)
+			if(priv->an_ksv_data[count] & (1<<bits))
+				total++ ;
+	}
+
+	if(total == HDCP_ACC)
+		return TRUE ;
+	else
+		return FALSE ;
+}
+
+static int sil9034_toggleRepeatBit(davinci6446_sil9034 *priv)
+{ 
+	u8 reg_value ;
+
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
+	reg_value = sil9034_read(priv,SLAVE0,HDCP_CTRL_ADDR) ;
+	if(reg_value & RX_RPTR_ENABLE)
+		sil9034_write(priv,SLAVE0,HDCP_CTRL_ADDR,reg_value&~RX_RPTR_ENABLE) ;
+	else
+		sil9034_write(priv,SLAVE0,HDCP_CTRL_ADDR,reg_value|RX_RPTR_ENABLE) ;
+
+	return 0 ;
+}
+
+static int sil9034_releaseCPReset(davinci6446_sil9034 *priv)
+{ 
+	u8 reg_value ;
+
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
+	reg_value = sil9034_read(priv,SLAVE0,HDCP_CTRL_ADDR) ;
+	sil9034_write(priv,SLAVE0,HDCP_CTRL_ADDR,reg_value|SET_CP_RESTN) ;
+
+	return 0 ;
+}
+
+static int sil9034_StopRepeatBit(davinci6446_sil9034 *priv)
+{ 
+	u8 reg_value ;
+
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
+	reg_value = sil9034_read(priv,SLAVE0,HDCP_CTRL_ADDR) ;
+	sil9034_write(priv,SLAVE0,HDCP_CTRL_ADDR,reg_value&~RX_RPTR_ENABLE) ;
+	return 0 ;
+}
+
+static int sil9034_writeAnHdcpRx(davinci6446_sil9034 *priv)
+{ 
+	/* write 8 byte to ddc hdcp rx*/
+	sil9034_ddc_write(priv,&priv->an_ksv_data[0],DDC_AN_ADDR,8) ;
+
+	return 0 ;
+}
+static int sil9034_writeBksvHdcpTx(davinci6446_sil9034 *priv)
+{ 
+	u8 count = 0 ;
+
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
+
+	for(count=0; count<5; count++)
+	{
+		 sil9034_write(priv,SLAVE0,HDCP_BKSV1_ADDR+count,priv->an_ksv_data[count]) ;
+		 sil9034_dbg("write bksv to tx 0x%x\n",priv->an_ksv_data[count]) ;
+	}
+
+	return 0 ;
+}
+static int sil9034_readBksvHdcpRx(davinci6446_sil9034 *priv)
+{ 
+	u8 count = 0 ;
+
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
+
+	/* read 5 byte from ddc */
+	sil9034_ddc_read(priv,&priv->an_ksv_data[0],DDC_BKSV_ADDR,5) ;
+	for(count=0; count<5; count++)
+	{
+		sil9034_dbg("bksv data %d 0x%x\n",count,priv->an_ksv_data[count]) ;
 	}
 
 	return 0 ;
 }
 
-static int sil9034_480p_VideoInputConfig(davinci6446_sil9034 *priv)
-{
-	/* Output Mode YcbCr 4:2:2 */
-	u8 reg_value = 0 ;
-
-	sil9034_write(priv,SLAVE0,DE_CTRL_ADDR,0x70) ;
-	reg_value = sil9034_read(priv,SLAVE0,DE_CTRL_ADDR) ;
-	sil9034_dbg("Video DE control register 0x%x = 0x%x\n",DE_CTRL_ADDR,reg_value) ;
-
-	/* Video DE delay register */
-	sil9034_write(priv,SLAVE0,DE_DELAY_ADDR,0x7A) ;
-	reg_value = sil9034_read(priv,SLAVE0,DE_DELAY_ADDR) ;
-	sil9034_dbg("Video DE delay register 0x%x = 0x%x\n",DE_DELAY_ADDR,reg_value) ;
-
-	/* Video DE top register */
-	sil9034_write(priv,SLAVE0,DE_TOP_ADDR,0x24) ;
-	reg_value = sil9034_read(priv,SLAVE0,DE_TOP_ADDR) ;
-	sil9034_dbg("Video DE top register 0x%x = 0x%x\n",DE_TOP_ADDR,reg_value) ;
-
-	/* Video DE cnt high byte register */
-	reg_value = sil9034_read(priv,SLAVE0,DE_CNTH_ADDR) ;
-	sil9034_write(priv,SLAVE0,DE_CNTH_ADDR,(reg_value|0x2)) ;
-	reg_value = sil9034_read(priv,SLAVE0,DE_CNTH_ADDR) ;
-	sil9034_dbg("Video DE cnt high register 0x%x = 0x%x\n",DE_CNTH_ADDR,reg_value) ;
-
-	/* Video DE cnt low byte register */
-	sil9034_write(priv,SLAVE0,DE_CNTL_ADDR,0xD0) ;
-	reg_value = sil9034_read(priv,SLAVE0,DE_CNTL_ADDR) ;
-	sil9034_dbg("Video DE cnt low register 0x%x = 0x%x\n",DE_CNTL_ADDR,reg_value) ;
-
-	/* Video DE line high byte register */
-	reg_value = sil9034_read(priv,SLAVE0,DEL_H_ADDR) ;
-	sil9034_write(priv,SLAVE0,DEL_H_ADDR,(reg_value|0x1)) ;
-	reg_value = sil9034_read(priv,SLAVE0,DEL_H_ADDR) ;
-	sil9034_dbg("Video DE line high register 0x%x = 0x%x\n",DEL_H_ADDR,reg_value) ;
-
-	/* Video DE line low byte register */
-	sil9034_write(priv,SLAVE0,DEL_L_ADDR,0xE0) ;
-	reg_value = sil9034_read(priv,SLAVE0,DEL_L_ADDR) ;
-	sil9034_dbg("Video DE line high register 0x%x = 0x%x\n",DEL_L_ADDR,reg_value) ;
-
-	/* Video control register , ICLK = 00 EXTN = 1*/
-	sil9034_write(priv,SLAVE0,TX_VID_CTRL_ADDR,0x20) ;
-	reg_value = sil9034_read(priv,SLAVE0,TX_VID_CTRL_ADDR) ;
-	sil9034_dbg("Video control register 0x%x = 0x%x\n",TX_VID_CTRL_ADDR,reg_value) ;
-
-	/* Video mode register , SYNCEXT=0 DEMUX=0 UPSMP=0 CSC=0 DITHER = 0*/
-	sil9034_write(priv,SLAVE0,TX_VID_MODE_ADDR,0x0) ;
-	reg_value = sil9034_read(priv,SLAVE0,TX_VID_MODE_ADDR) ;
-	sil9034_dbg("Video mode register 0x%x = 0x%x\n",TX_VID_MODE_ADDR,reg_value) ;
+static int sil9034_writeAksvHdcpRx(davinci6446_sil9034 *priv)
+{ 
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
+	/* write 5 byte to ddc hdcp rx*/
+	sil9034_ddc_write(priv,&priv->an_ksv_data[0],DDC_AKSV_ADDR,5) ;
 
 	return 0 ;
 }
 
-int sil9034_dumpHdcpRiStatus(davinci6446_sil9034 *priv)
+static int sil9034_readAksvHdcpTx(davinci6446_sil9034 *priv)
+{ 
+	u8 count = 0 ;
+
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
+
+	for(count=0; count<5; count++)
+	{
+		priv->an_ksv_data[count] = sil9034_read(priv,SLAVE0,HDCP_AKSV1_ADDR+count) ;
+		sil9034_dbg("aksv data %d 0x%x\n",count,priv->an_ksv_data[count]) ;
+	}
+
+	return 0 ;
+}
+
+static int sil9034_readAnHdcpTx(davinci6446_sil9034 *priv)
+{ 
+	u8 count = 0 ;
+
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
+
+	for(count=0; count<8; count++)
+	{
+		priv->an_ksv_data[count] = sil9034_read(priv,SLAVE0,HDCP_AN1_ADDR+count) ;
+		sil9034_dbg("an data %d 0x%x\n",count,priv->an_ksv_data[count]) ;
+	}
+
+	return 0 ;
+}
+
+static int sil9034_generateAn(davinci6446_sil9034 *priv)
+{ 
+	u8 reg_value ;
+
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
+
+	reg_value = sil9034_read(priv,SLAVE0,HDCP_CTRL_ADDR) ;
+	sil9034_write(priv,SLAVE0,HDCP_CTRL_ADDR,reg_value&~TX_ANSTOP) ;
+	mdelay(10) ;
+	sil9034_write(priv,SLAVE0,HDCP_CTRL_ADDR,reg_value|TX_ANSTOP) ;
+
+	return 0 ;
+}
+static int sil9034_isRepeater(davinci6446_sil9034 *priv)
 {
 	u8 reg_value ;
 
 	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
-	reg_value = sil9034_read(priv,SLAVE0,HDCP_CTRL_ADDR) ;
-	printk(KERN_INFO "Hdcp register is %x,%s\n",reg_value,(reg_value&SET_ENC_EN)?"Enable":"Disable") ;
-	reg_value = sil9034_read(priv,SLAVE0,HDCP_RI1) ;
-	printk(KERN_INFO "Hdcp ri 1 status register 0x%x = 0x%x\n",HDCP_RI1,reg_value) ;
-	reg_value = sil9034_read(priv,SLAVE0,HDCP_RI2) ;
-	printk(KERN_INFO "Hdcp ri 2 status register 0x%x = 0x%x\n",HDCP_RI2,reg_value) ;
-	reg_value = sil9034_read(priv,SLAVE0,HDCP_RI128_COMP) ;
-	printk(KERN_INFO "Hdcp ri 128 status register 0x%x = 0x%x\n",HDCP_RI128_COMP,reg_value) ;
+	/* read 1 byte from ddc */
+	sil9034_ddc_read(priv,&reg_value,DDC_BCAPS_ADDR,1) ;
+	if(reg_value&DDC_BIT_REPEATER)
+		return TRUE ;
+
+	return FALSE ;
+}
+static int sil9034_compareR0(davinci6446_sil9034 *priv)
+{
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
+
+	/* read 2 byte from ddc */
+	sil9034_ddc_read(priv,&priv->r0rx[0],DDC_RI_ADDR,2) ;
+	priv->r0tx[0] = sil9034_read(priv,SLAVE0,HDCP_RI1) ;
+	priv->r0tx[1] = sil9034_read(priv,SLAVE0,HDCP_RI2) ;
+
+	if((priv->r0rx[0]==priv->r0tx[0])&&(priv->r0rx[1]==priv->r0tx[1]))
+	{
+		printk(KERN_INFO "HDCP handshake complete match.\n") ;
+		return TRUE ;
+	}
+
+	return FALSE ;
+}
+
+static int sil9034_autoRiCheck(davinci6446_sil9034 *priv,u8 enable)
+{
+	u8 reg_value ;
+
 	reg_value = sil9034_read(priv,SLAVE0,RI_CMD_ADDR) ;
-	printk(KERN_INFO "ri cmd status register 0x%x = 0x%x\n",RI_CMD_ADDR,reg_value) ;
-	reg_value = sil9034_read(priv,SLAVE0,DDC_MAN_ADDR) ;
-	printk(KERN_INFO "ddc man status register 0x%x = 0x%x\n",DDC_MAN_ADDR,reg_value) ;
-	reg_value = sil9034_read(priv,SLAVE0,RI_STAT_ADDR) ;
-	printk(KERN_INFO "ri start status register 0x%x = 0x%x\n",RI_STAT_ADDR,reg_value) ;
-	reg_value = sil9034_read(priv,SLAVE0,RI_RX_L_ADDR) ;
-	printk(KERN_INFO "ri rx low status register 0x%x = 0x%x\n",RI_RX_L_ADDR,reg_value) ;
-	reg_value = sil9034_read(priv,SLAVE0,RI_RX_H_ADDR) ;
-	printk(KERN_INFO "ri rx hight status register 0x%x = 0x%x\n",RI_RX_H_ADDR,reg_value) ;
-	reg_value = sil9034_read(priv,SLAVE0,DDC_ADDR) ;
-	printk(KERN_INFO "ddc status register 0x%x = 0x%x\n",DDC_ADDR,reg_value) ;
+	if(enable)
+		sil9034_write(priv,SLAVE0,RI_CMD_ADDR, reg_value|SET_RI_ENABLE);
+	else
+		sil9034_write(priv,SLAVE0,RI_CMD_ADDR, reg_value&~SET_RI_ENABLE);
 	return 0 ;
 }
 
@@ -969,55 +991,6 @@ int sil9034_dumpDataCtrlStatus(davinci6446_sil9034 *priv)
 	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
 	reg_value = sil9034_read(priv,SLAVE0,DCTL_ADDR) ;
 	printk(KERN_INFO "Data control register 0x%x = 0x%x\n",DCTL_ADDR,reg_value) ;
-	return 0 ;
-}
-
-int sil9034_unmaskInterruptStatus(davinci6446_sil9034 *priv)
-{
-	u8 reg_value = 0xFF ;
-
-	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
-	sil9034_write(priv,SLAVE0,HDMI_INT1_MASK,reg_value) ;
-	sil9034_write(priv,SLAVE0,HDMI_INT2_MASK,reg_value) ;
-	sil9034_write(priv,SLAVE0,HDMI_INT3_MASK,reg_value) ;
-
-	return 0 ;
-}
-
-int sil9034_clearInterruptStatus(davinci6446_sil9034 *priv)
-{
-
-	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
-	/*
-	u8 reg_value ;
-
-	reg_value = sil9034_read(priv,SLAVE0,INT_CNTRL_ADDR) ;
-	sil9034_write(priv,SLAVE0,INT_CNTRL_ADDR,reg_value) ;
-	reg_value = sil9034_read(priv,SLAVE0,INT_CNTRL_ADDR) ;
-	sil9034_dbg("Interrupt control register 0x%x = 0x%x\n",INT_CNTRL_ADDR,reg_value) ;
-	*/
-
-	sil9034_write(priv,SLAVE0,INT_SOURCE1_ADDR,0xFF) ;
-	sil9034_write(priv,SLAVE0,INT_SOURCE2_ADDR,0xFF) ;
-	sil9034_write(priv,SLAVE0,INT_SOURCE3_ADDR,0xFF) ;
-
-	return 0 ;
-}
-
-int sil9034_dumpInterruptSourceStatus(davinci6446_sil9034 *priv)
-{
-	u8 reg_value ;
-
-	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
-	reg_value = sil9034_read(priv,SLAVE0,INT_SOURCE1_ADDR) ;
-	printk(KERN_INFO "Interrupt source 1 register 0x%x = 0x%x\n",INT_SOURCE1_ADDR,reg_value) ;
-	reg_value = sil9034_read(priv,SLAVE0,INT_SOURCE2_ADDR) ;
-	printk(KERN_INFO "Interrupt source 2 register 0x%x = 0x%x\n",INT_SOURCE2_ADDR,reg_value) ;
-	reg_value = sil9034_read(priv,SLAVE0,INT_SOURCE3_ADDR) ;
-	printk(KERN_INFO "Interrupt source 3 register 0x%x = 0x%x\n",INT_SOURCE3_ADDR,reg_value) ;
-	/* Interrupt register will auto clean after read ?*/
-	sil9034_clearInterruptStatus(priv) ;
-
 	return 0 ;
 }
 
@@ -1079,7 +1052,41 @@ int sil9034_dumpVideoConfigureStatus(davinci6446_sil9034 *priv)
 
 	return 0 ;
 }
+int sil9034_clearInterruptStatus(davinci6446_sil9034 *priv)
+{
 
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
+	/*
+	u8 reg_value ;
+
+	reg_value = sil9034_read(priv,SLAVE0,INT_CNTRL_ADDR) ;
+	sil9034_write(priv,SLAVE0,INT_CNTRL_ADDR,reg_value) ;
+	reg_value = sil9034_read(priv,SLAVE0,INT_CNTRL_ADDR) ;
+	sil9034_dbg("Interrupt control register 0x%x = 0x%x\n",INT_CNTRL_ADDR,reg_value) ;
+	*/
+
+	sil9034_write(priv,SLAVE0,INT_SOURCE1_ADDR,0xFF) ;
+	sil9034_write(priv,SLAVE0,INT_SOURCE2_ADDR,0xFF) ;
+	sil9034_write(priv,SLAVE0,INT_SOURCE3_ADDR,0xFF) ;
+
+	return 0 ;
+}
+int sil9034_dumpInterruptSourceStatus(davinci6446_sil9034 *priv)
+{
+	u8 reg_value ;
+
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
+	reg_value = sil9034_read(priv,SLAVE0,INT_SOURCE1_ADDR) ;
+	printk(KERN_INFO "Interrupt source 1 register 0x%x = 0x%x\n",INT_SOURCE1_ADDR,reg_value) ;
+	reg_value = sil9034_read(priv,SLAVE0,INT_SOURCE2_ADDR) ;
+	printk(KERN_INFO "Interrupt source 2 register 0x%x = 0x%x\n",INT_SOURCE2_ADDR,reg_value) ;
+	reg_value = sil9034_read(priv,SLAVE0,INT_SOURCE3_ADDR) ;
+	printk(KERN_INFO "Interrupt source 3 register 0x%x = 0x%x\n",INT_SOURCE3_ADDR,reg_value) ;
+	/* Interrupt register will auto clean after read ?*/
+	sil9034_clearInterruptStatus(priv) ;
+
+	return 0 ;
+}
 int sil9034_dumpInterruptStateStatus(davinci6446_sil9034 *priv)
 {
 	u8 reg_value ;
@@ -1094,6 +1101,88 @@ int sil9034_dumpInterruptStateStatus(davinci6446_sil9034 *priv)
 	return 0 ;
 }
 
+int sil9034_dumpHdcpRiStatus(davinci6446_sil9034 *priv)
+{
+	u8 reg_value ;
+
+	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
+	reg_value = sil9034_read(priv,SLAVE0,HDCP_CTRL_ADDR) ;
+	printk(KERN_INFO "Hdcp register is %x,%s\n",reg_value,(reg_value&SET_ENC_EN)?"Enable":"Disable") ;
+	reg_value = sil9034_read(priv,SLAVE0,HDCP_RI1) ;
+	printk(KERN_INFO "Hdcp ri 1 status register 0x%x = 0x%x\n",HDCP_RI1,reg_value) ;
+	reg_value = sil9034_read(priv,SLAVE0,HDCP_RI2) ;
+	printk(KERN_INFO "Hdcp ri 2 status register 0x%x = 0x%x\n",HDCP_RI2,reg_value) ;
+	reg_value = sil9034_read(priv,SLAVE0,HDCP_RI128_COMP) ;
+	printk(KERN_INFO "Hdcp ri 128 status register 0x%x = 0x%x\n",HDCP_RI128_COMP,reg_value) ;
+	reg_value = sil9034_read(priv,SLAVE0,RI_CMD_ADDR) ;
+	printk(KERN_INFO "ri cmd status register 0x%x = 0x%x\n",RI_CMD_ADDR,reg_value) ;
+	reg_value = sil9034_read(priv,SLAVE0,DDC_MAN_ADDR) ;
+	printk(KERN_INFO "ddc man status register 0x%x = 0x%x\n",DDC_MAN_ADDR,reg_value) ;
+	reg_value = sil9034_read(priv,SLAVE0,RI_STAT_ADDR) ;
+	printk(KERN_INFO "ri start status register 0x%x = 0x%x\n",RI_STAT_ADDR,reg_value) ;
+	reg_value = sil9034_read(priv,SLAVE0,RI_RX_L_ADDR) ;
+	printk(KERN_INFO "ri rx low status register 0x%x = 0x%x\n",RI_RX_L_ADDR,reg_value) ;
+	reg_value = sil9034_read(priv,SLAVE0,RI_RX_H_ADDR) ;
+	printk(KERN_INFO "ri rx hight status register 0x%x = 0x%x\n",RI_RX_H_ADDR,reg_value) ;
+	reg_value = sil9034_read(priv,SLAVE0,DDC_ADDR) ;
+	printk(KERN_INFO "ddc status register 0x%x = 0x%x\n",DDC_ADDR,reg_value) ;
+
+	reg_value = sil9034_read(priv,SLAVE1,INF_CTRL2) ;
+	printk(KERN_INFO "InfoFrame ctrl2 register 0x%x = 0x%x\n",INF_CTRL2,reg_value) ;
+
+	reg_value = sil9034_read(priv,SLAVE1,INF_CTRL1) ;
+	printk(KERN_INFO "InfoFrame ctrl1 register 0x%x = 0x%x\n",INF_CTRL1,reg_value) ;
+	return 0 ;
+}
+
+int sil9034_hdcpAuthentication(davinci6446_sil9034 *priv)
+{
+	sil9034_autoRiCheck(priv,DISABLE) ;
+	if(sil9034_hotplugEvent(priv))
+	{
+
+		sil9034_sentCPPackage(priv,ENABLE) ;
+		if(sil9034_checkHdcpDevice(priv) == TRUE)
+		{
+			sil9034_dbg("got 20's 1\n") ;
+			/* Random key */
+			sil9034_toggleRepeatBit(priv) ;
+			sil9034_releaseCPReset(priv) ;
+			sil9034_StopRepeatBit(priv) ;
+			sil9034_generateAn(priv) ;
+			/* Handshake start */
+			sil9034_readAnHdcpTx(priv) ;
+			sil9034_writeAnHdcpRx(priv) ;
+			sil9034_readAksvHdcpTx(priv) ;
+			sil9034_writeAksvHdcpRx(priv) ;
+			sil9034_readBksvHdcpRx(priv) ;
+			sil9034_writeBksvHdcpTx(priv) ;
+			if(sil9034_isRepeater(priv)==TRUE)
+				printk(KERN_ERR "This is repeater,not support.\n") ;
+			/* Finally, compare key */
+			mdelay(100) ; //delay for R0 calculation
+			if(sil9034_compareR0(priv)==FALSE)
+			{
+				priv->auth_state = REAUTH_NEED ;
+			}
+			else
+			{
+				/* unmute */
+				sil9034_sentCPPackage(priv,DISABLE) ;
+				sil9034_autoRiCheck(priv,ENABLE) ;
+				priv->auth_state = AUTH_DONE ;
+			}
+		}
+		else // no 20 ones and zeros
+		{
+			/* mute */
+			sil9034_sentCPPackage(priv,ENABLE) ;
+			printk(KERN_ERR "TV not send 20's 1,retry!!\n") ;
+		}
+	}
+	return 0 ;
+}
+
 /* HDCP key exchange for hdmi */
 static void sil9034_timer(unsigned long data)
 {
@@ -1105,6 +1194,7 @@ static void sil9034_timer(unsigned long data)
 	if(priv)
 	{
 #if SIL9034_SCHED
+		priv->work_flag = EVENT_NOTIFY ;
 		status = schedule_work(&priv->work);
 		if(!status)
 			printk(KERN_ERR "scheduling work error\n") ;
@@ -1114,19 +1204,28 @@ static void sil9034_timer(unsigned long data)
 	}
 	return ;
 }
+
 #if SIL9034_SCHED
 static void sil9034_sched(void *data)
 {
 	/* This is important, get out of the interrupt context switch trouble */
 	davinci6446_sil9034 *priv = container_of(data, davinci6446_sil9034, work);
+	u8 intr1_isr ;
+	u8 intr3_isr ;
 	
 	switch(priv->work_flag)
 	{
 		case SWITCH_480P:
+			priv->sil9034_setting = sil9034_480p_setting ;
+			priv->work_flag = VIDEO_CHANGE ;
 			break ;
 		case SWITCH_720P:
+			priv->sil9034_setting = sil9034_720p_setting ;
+			priv->work_flag = VIDEO_CHANGE ;
 			break ;
 		case SWITCH_1080I:
+			priv->sil9034_setting = sil9034_1080i_setting ;
+			priv->work_flag = VIDEO_CHANGE ;
 			break ;
 		case HDCP_ENABLE:
 			sil9034_hdmiHdcpConfig(priv,ENABLE) ;
@@ -1143,8 +1242,35 @@ static void sil9034_sched(void *data)
 		case HDCP_RI_STATUS:
 			sil9034_dumpHdcpRiStatus(priv) ;
 			break ;
+		case EVENT_NOTIFY:
+			intr3_isr = sil9034_read(priv,SLAVE0,INT_SOURCE3_ADDR) ;
+			intr1_isr = sil9034_read(priv,SLAVE0,INT_SOURCE1_ADDR) ;
+			/* ri frame error occur */
+			if(intr3_isr & (INTR3_STAT7|INTR3_STAT5|INTR3_STAT4))
+			{
+				printk(KERN_INFO "Ri frame error 0x%x\n",intr3_isr) ;
+				priv->auth_state = REAUTH_NEED ;
+			}
+			/* line plug */
+			if(intr1_isr & (INTR1_HPD|INTR1_RSEN))
+			{
+				printk(KERN_INFO "line plug 0x%x\n",intr1_isr) ;
+				priv->auth_state = REAUTH_NEED ;
+			}
+
+			break ;
 		default:
 			break ;
+	}
+
+	/* Check if video setting change */
+	if((priv->work_flag==VIDEO_CHANGE))
+		sil9034_videoInputConfig(priv) ;
+
+	/* Check if hdcp authentication need */
+	if((priv->auth_state == AUTH_NEED) || (priv->auth_state == REAUTH_NEED))
+	{
+		sil9034_hdcpAuthentication(priv) ;
 	}
 
 	/* clean the work flag */
@@ -1153,11 +1279,11 @@ static void sil9034_sched(void *data)
 #if SIL9034_TIMER
 	mod_timer(&ds.timer, jiffies + TIMER_JIFFIES);
 #endif
+	sil9034_clearInterruptStatus(priv) ;
 	return ;
 
 }
 #endif
-
 static int __init sil9034_init(void)
 {
 	int status = 0 ;
@@ -1170,57 +1296,73 @@ static int __init sil9034_init(void)
 	    goto out;
 	} 
 
-	/* Initial */
-	ds.work_flag = DO_NOTHING ;
+	/* Initial default as 720p */
+	ds.sil9034_setting = sil9034_720p_setting ;
 	
 	/* read chip id & revision */
 	sil9034_chipInfo(&ds) ;
 
 	/* power down occilator */
 	sil9034_powerDown(&ds,ENABLE) ;
-	
-	/* Tune the video input table according to DM320 hardware spec */
-       	sil9034_720p_VideoInputConfig(&ds) ;
+
+	/* TMDS control register */
+	sil9034_hdmiTmdsConfig(&ds) ;
 
 	/* Tune the audio input table according to DM320 hardware spec */
+	sil9034_audioInputConfig(&ds) ;
+
+	/* read flag from env and tune the video input table 
+	 * according to DM320 hardware spec */
+	sil9034_videoInputConfig(&ds) ;
+
+	/* software reset */
+	sil9034_swReset(&ds) ;
+
+	/* Trigger ROM */
+	sil9034_triggerRom(&ds) ;
+
+	/* Audio Info Frame control setting */
+	sil9034_audioInfoFrameSetting(&ds) ;
        	sil9034_audioInputConfig(&ds) ;
 
 	/* software reset */
-       	sil9034_swReset(&ds) ;
-
-	/* power up occilator */
-       	sil9034_powerDown(&ds,DISABLE) ;
-
-	/* unmask the interrupt status */
-       	sil9034_unmaskInterruptStatus(&ds) ;
-
-	/* Hdmi output setting */
-       	sil9034_hdmiOutputConfig(&ds) ;
-
-	/* TMDS control register */
-       	sil9034_hdmiTmdsConfig(&ds) ;
-
-	/* ddc master config */
-       	sil9034_ddcSetting(&ds) ;
-
-	/* HDCP control handshaking */
-       	sil9034_hdmiHdcpConfig(&ds,DISABLE) ;
-
-	/* General control packet */
-	sil9034_generalControlPacket(&ds,DISABLE) ;
-
-	/* enable the avi repeat transmission */
-       	sil9034_cea861InfoFrameControl1(&ds,ENABLE) ;
-	//sil9034_cea861InfoFrameControl2(&ds,ENABLE) ;
+	sil9034_swReset(&ds) ;
 
 	/* CEA-861 Info Frame control setting */
-       	sil9034_cea861InfoFrameSetting(&ds) ;
+	sil9034_cea861InfoFrameSetting(&ds) ;
 
-	/* Audio Info Frame control setting */
-       	sil9034_audioInfoFrameSetting(&ds) ;
+	/* Wake up HDMI TX */
+	sil9034_wakeupHdmiTx(&ds) ;
+
+	/* Sent CP package */
+	sil9034_sentCPPackage(&ds,ENABLE) ;
+
+	/* unmask the interrupt status */
+	sil9034_unmaskInterruptStatus(&ds) ;
+
+	/* Hdmi output setting */
+	sil9034_hdmiOutputConfig(&ds) ;
+
+	/* ddc master config */
+	sil9034_ddcSetting(&ds) ;
+
+	/* General control packet */
+	sil9034_sentCPPackage(&ds,DISABLE) ;
+
+	sil9034_cea861InfoFrameControl2(&ds,ENABLE) ;
+
+	/* HDCP control handshaking */
+	sil9034_hdmiHdcpConfig(&ds,ENABLE) ;
+
+	/* Disable Auto RI check here, enable it until hdcp complete. */
+	sil9034_autoRiCheck(&ds,DISABLE) ;
+
+	sil9034_clearInterruptStatus(&ds) ;
 
 #if SIL9034_SCHED
 	INIT_WORK(&ds.work, sil9034_sched);
+	ds.work_flag = EVENT_NOTIFY ;
+	schedule_work(&ds.work);
 #endif
 
 #if SIL9034_TIMER
