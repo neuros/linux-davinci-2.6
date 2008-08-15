@@ -394,9 +394,8 @@ static void enable_digital_output(bool on)
 		/* Set PCR register for FULL clock */
 		dispc_reg_out(VPBE_PCR, 0);
 
-		/* Enable video clock output and inverse clock polarity */
-		dispc_reg_out(VENC_VIDCTL,
-			      (VENC_VIDCTL_VLCKE | VENC_VIDCTL_VLCKP));
+		/* Enable video clock output and non-inverse clock polarity */
+		dispc_reg_out(VENC_VIDCTL, VENC_VIDCTL_VLCKE);
 
 		/* Setting DRGB Matrix registers back to default values */
 		dispc_reg_out(VENC_DRGBX0, 0x00000400);
