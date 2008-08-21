@@ -43,6 +43,7 @@
 #define    VPFE_AMUX_COMPOSITE0 0
 #define    VPFE_AMUX_COMPOSITE1 1
 #define    VPFE_AMUX_COMPONENT  2
+#define    VPFE_AMUXES 3
 
 /* settings for commonly used video formats */
 #define VPFE_WIN_NTSC    {0,0,720,480}

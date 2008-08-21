@@ -95,10 +95,10 @@ static struct v4l2_rect hd_720p_bounds = VPFE_WIN_HD720P;
 static struct v4l2_rect hd_1080i_bounds = VPFE_WIN_HD1080I;
 static struct v4l2_fract sp_aspect = VPFE_PIXELASPECT_NTSC_SP;
 
-#define NTOSD_INPUTS	2
-static struct v4l2_input ntosd_inputs[NTOSD_INPUTS] = {
-	{ 0, "COMPOSITE", V4L2_INPUT_TYPE_CAMERA, 2, 0, V4L2_STD_ALL, 0},
-	{ 1, "COMPONENT", V4L2_INPUT_TYPE_CAMERA, 2, 0, V4L2_STD_ALL, 0},
+static struct v4l2_input ntosd_inputs[] = {
+	{ 0, "COMPOSITE-REAR", V4L2_INPUT_TYPE_CAMERA, 2, 0, V4L2_STD_ALL, 0},
+	{ 1, "COMPOSITE-FRONT", V4L2_INPUT_TYPE_CAMERA, 2, 0, V4L2_STD_ALL, 0},
+	{ 2, "COMPONENT", V4L2_INPUT_TYPE_CAMERA, 2, 0, V4L2_STD_ALL, 0},
 };
 
 static vpfe_obj vpfe_device = {	/* the default format is NTSC */
@@ -721,8 +721,8 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		{
 			struct v4l2_input *input = (struct v4l2_input *)arg;
 
-			if ( input->index < 0 || input->index >= NTOSD_INPUTS)
-				ret = -EINVAL;
+			if (input->index < 0 || input->index >= VPFE_AMUXES)
+				return -EINVAL;
 
 			memcpy(input, &ntosd_inputs[input->index], sizeof(struct v4l2_input));
 			break;
@@ -736,17 +736,17 @@ static int vpfe_doioctl(struct inode *inode, struct file *file,
 		}
 	case VIDIOC_S_INPUT:
 		{
-			int *index = (int *)arg;
-			if (*index == VPFE_AMUX_COMPOSITE0 || *index == VPFE_AMUX_COMPOSITE1)
+			int index = *(int *)arg;
+			if (index == VPFE_AMUX_COMPOSITE0 || index == VPFE_AMUX_COMPOSITE1)
 				vpfe_select_capture_device(VPFE_CAPTURE_ID_TVP5150);
-			else if (*index == VPFE_AMUX_COMPONENT)
+			else if (index == VPFE_AMUX_COMPONENT)
 				vpfe_select_capture_device(VPFE_CAPTURE_ID_TVP7000);
 			else
 				return -EINVAL;
 
-			vpfe->capture_params.amuxmode = *index;
+			vpfe->capture_params.amuxmode = index;
 
-			ret = DEVICE_CMD(ACTIVE_DEVICE(), VIDIOC_S_INPUT, index);
+			ret = DEVICE_CMD(ACTIVE_DEVICE(), VIDIOC_S_INPUT, &index);
 
 			break;
 		}
@@ -1116,7 +1116,6 @@ static int vpfe_open(struct inode *inode, struct file *filep)
 	/* default active the tvp5150 */
 	vpfe_select_capture_device(VPFE_CAPTURE_ID_TVP5150);
 	vpfe->capture_params.amuxmode = VPFE_AMUX_COMPOSITE0;
-
 	return 0;
 }
 
