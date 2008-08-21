@@ -796,6 +796,7 @@ static int tvp7000_device_cmd(u32 cmd, void *arg)
 			break;
 		}
 	default:
+		ret = -EINVAL;
 		break;
 	}
 	return ret;
