@@ -806,7 +806,7 @@ struct v4l2_input
 	v4l2_std_id  std;
 	__u32	     status;
 	__u32	     reserved[4];
-};
+} __attribute__((__packed__));
 
 /*  Values for the 'type' field */
 #define V4L2_INPUT_TYPE_TUNER		1
