@@ -480,7 +480,12 @@ struct zoom_params
 #define FBIO_SETZOOM		_IOW('F', 0x24, struct zoom_params)
 #define FBIO_GETSTD		_IOR('F', 0x25, u_int32_t)
 #define FBIO_ENABLE 		_IOW('F', 0x26, u_int32_t)
-#define FBIO_TRANSP 		_IOW('F', 0x27, u_int32_t)
+struct dmfb_transparency
+{
+	u_int32_t on;
+	u_int8_t level;
+};
+#define FBIO_TRANSP 		_IOW('F', 0x27, struct dmfb_transparency)
 #define FBIO_TRANSP_COLOR	_IOW('F', 0x28, u_int32_t)
 #define FBIO_CBTEST		_IOW('F', 0x29, u_int32_t)
 #endif /* _DAVINCIFB_H_ */
