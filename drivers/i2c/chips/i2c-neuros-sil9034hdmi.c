@@ -30,6 +30,7 @@
  * 5) fix hdcp auth. ------------------------------------ 2008-08-11 JChen
  * 6) support line auth. -------------------------------- 2008-08-11 JChen
  * 7) fix var mode into struct. ------------------------- 2008-08-12 JChen
+ * 8) hdmi audio support -------------------------------- 2008-08-20 Jchen
  *
  */
 
@@ -494,23 +495,35 @@ static int sil9034_audioInputConfig(davinci6446_sil9034 *priv)
 
 	sil9034_dbg("----------%s----------\n",__FUNCTION__) ;
 	/* Audio mode register */
-	sil9034_write(priv,SLAVE1,AUD_MODE_ADDR,SPDIF_ENABLE|AUD_ENABLE) ;
+	sil9034_write(priv,SLAVE1,AUD_MODE_ADDR,SD0_ENABLE|AUD_ENABLE) ;
 	reg_value = sil9034_read(priv,SLAVE1,AUD_MODE_ADDR) ;
 	sil9034_dbg("Audio in mode register 0x%x = 0x%x\n",AUD_MODE_ADDR,reg_value) ;
-
-	/* ACR N software value */
-	sil9034_write(priv,SLAVE1,N_SVAL1_ADDR,0) ;
-	sil9034_write(priv,SLAVE1,N_SVAL2_ADDR,0x18) ;
-	sil9034_write(priv,SLAVE1,N_SVAL3_ADDR,0) ;
 
 	/* ACR ctrl */
 	sil9034_write(priv,SLAVE1,ACR_CTRL_ADDR,NCTSPKT_ENABLE) ;
 
-	/* ACR audio frequency register: * MCLK=128 Fs */
-	sil9034_write(priv,SLAVE1,FREQ_SVAL_ADDR,0x4) ;
+	sil9034_write(priv,SLAVE1,I2S_CHST4_ADDR,0x2) ;
+	sil9034_write(priv,SLAVE1,I2S_CHST5_ADDR,0x2) ;
+
+	/* ACR audio frequency register: * MCLK=512 Fs */
+	sil9034_write(priv,SLAVE1,FREQ_SVAL_ADDR,0x3) ;
 	reg_value = sil9034_read(priv,SLAVE1,FREQ_SVAL_ADDR) ;
 	sil9034_dbg("Audio frequency register 0x%x = 0x%x\n",FREQ_SVAL_ADDR,reg_value) ;
-	
+
+	/* ACR N software value */
+	sil9034_write(priv,SLAVE1,N_SVAL1_ADDR,0x80) ;
+	sil9034_write(priv,SLAVE1,N_SVAL2_ADDR,0x2D) ;
+	sil9034_write(priv,SLAVE1,N_SVAL3_ADDR,0) ;
+
+	/* ACR CTS hardware value */
+	sil9034_write(priv,SLAVE1,N_SVAL1_ADDR,0x51) ;
+	sil9034_write(priv,SLAVE1,N_SVAL2_ADDR,0x25) ;
+	sil9034_write(priv,SLAVE1,N_SVAL3_ADDR,2) ;
+
+	/* I2S register */
+	reg_value = sil9034_read(priv,SLAVE1,I2S_IN_CTRL_ADDR) ;
+	sil9034_write(priv,SLAVE1,I2S_IN_CTRL_ADDR,reg_value|(HBRA_ON|VBIT_ON)) ;
+
 	return 0 ;
 }
 
@@ -590,22 +603,22 @@ static int sil9034_audioInfoFrameSetting(davinci6446_sil9034 *priv)
 	sil9034_write(priv,SLAVE1,aud_info_addr++,0x10) ;
 
 	/* Audio info frame chsum */
-	sil9034_write(priv,SLAVE1,aud_info_addr++,(0x04+0x01+0x10)) ;
+	sil9034_write(priv,SLAVE1,aud_info_addr++,0x100-(0x04+0x01+0x10)) ;
 
 	/* AUDIO INFO DATA BYTE , according to Sil FAE, 5 byte is enought.
 	 * page 56
 	 */
 	/* CT3 | CT2 | CT1 | CT0 | Rsvd | CC2 | CC1 | CC0| */
-	sil9034_write(priv,SLAVE1,aud_info_addr++,0x11) ;
+	sil9034_write(priv,SLAVE1,aud_info_addr++,0x01) ;
 
 	/* Reserved (shall be 0) | SF2 | SF1 | SF0 | SS1 | SS0 |*/
 	/* I should provide ioctl to re-sampling the frequence according
 	 * to audio header type in user space program.
 	 */
-	sil9034_write(priv,SLAVE1,aud_info_addr++,0x1D) ;
+	sil9034_write(priv,SLAVE1,aud_info_addr++,0xD) ;
 
 	/* format depend on data byte 1 */
-	sil9034_write(priv,SLAVE1,aud_info_addr++,0x11) ;
+	sil9034_write(priv,SLAVE1,aud_info_addr++,0x0) ;
 
 	/* CA7 | CA6 | CA5 | CA4 | CA3 | CA2 | CA1 | CA0 | */
 	sil9034_write(priv,SLAVE1,aud_info_addr++,0) ;

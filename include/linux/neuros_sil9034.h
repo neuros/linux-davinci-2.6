@@ -261,9 +261,26 @@
 #define N_SVAL2_ADDR						(0x04)
 #define N_SVAL3_ADDR						(0x05)
 
+/* ACR CTS software value register */
+#define CTS_SVAL1_ADDR						(0x06)
+#define CTS_SVAL2_ADDR						(0x07)
+#define CTS_SVAL3_ADDR						(0x08)
+
 
 /* Audio IN mode control register */
 #define AUD_MODE_ADDR						(0x14)
+
+/* I2s control register */
+#define I2S_IN_CTRL_ADDR					(0x1D)
+#define	I2S_CHST1_ADDR						(0x1E)
+#define	I2S_CHST2_ADDR						(0x1F)
+#define	I2S_CHST3_ADDR						(0x20)
+#define	I2S_CHST4_ADDR						(0x21)
+#define	I2S_CHST5_ADDR						(0x22)
+
+/* Audio Sampling rate conversion */
+#define ASRC_ADDR						(0x23)
+#define I2S_IN_LEN_ADDR						(0x24)
 
 /* Ri status register */
 #define RI_STAT_ADDR						(0x26)
@@ -483,5 +500,13 @@
 #define		DDC_BSTATUS_2_ADDR				(0x42)
 #define		DDC_BIT_HDMI_MODE 				(0x10)
 #define		DDC_KSV_FIFO_ADDR 				(0x43)
+#define		SCK_EDGE					(1<<6)
+#define		SRC_ENABLE					(1<<0)
+#define		I2S_WS						(1<<3)
+#define		I2S_JUST					(1<<2)
+#define		I2S_DIR						(1<<1)
+#define		I2S_SHIFT					(1<<0)
+#define		HBRA_ON						(1<<7)
+#define		VBIT_ON						(1<<4)
 
 #endif /* NEUROS_SIL9034__H */
