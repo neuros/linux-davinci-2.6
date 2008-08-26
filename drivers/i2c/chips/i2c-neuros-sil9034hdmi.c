@@ -1190,7 +1190,7 @@ int sil9034_hdcpAuthentication(davinci6446_sil9034 *priv)
 		{
 			/* mute */
 			sil9034_sentCPPackage(priv,ENABLE) ;
-			printk(KERN_ERR "TV not send 20's 1,retry!!\n") ;
+			sil9034_dbg("TV not send 20's 1,retry!!\n") ;
 		}
 	}
 	return 0 ;
