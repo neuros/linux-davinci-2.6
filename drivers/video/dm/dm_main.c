@@ -1377,7 +1377,8 @@ static int davincifb_check_var(struct fb_var_screeninfo *var,
 	}
 	else
 		v.xres_virtual = v.xres;
-	v.yres_virtual = (w->fb_size / v.bits_per_pixel * 8) / v.xres_virtual;
+	v.yres_virtual = (w->fb_size / v.bits_per_pixel * 8) /
+		(v.xres_virtual ? v.xres_virtual : 1);
 	if (v.yres_virtual < v.yres)
 		v.yres = v.yres_virtual;
 
