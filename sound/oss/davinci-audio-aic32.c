@@ -25,6 +25,7 @@
 #include <linux/soundcard.h>
 #include <linux/clk.h>
 #include <sound/davincisound.h>
+#include <asm/gpio.h>
 
 #include <linux/uaccess.h>
 #include <linux/io.h>
@@ -120,6 +121,8 @@
 #define LSB6BIT(x)  ((unsigned char)((x) << 2))
 
 #define CLK_OUT0_FUNCTION_BIT   16
+#define CLK_OUT1_FUNCTION_BIT   17
+#define TIMIN_FUNCTION_BIT 18
 #define ASP_FUNCTION_BIT                10
 
 #define SET_BIT(addr, bit)  outl(inl(addr) | (1U << bit), addr)
@@ -900,18 +903,18 @@ int davinci_set_samplerate(long sample_rate)
 		(reg_info[count].Fsref == 48000)) {
 		/* For MCLK = 27 MHz and to get Fsref = 48kHz
 		   Fsref = (MCLK * k * R)/(2048 * p);
-		   Select P = 1, R= 1, K = 7.2817,
-		   which results in J = 3, D = 6408 */
+		   Select P = 4, R= 1, K = 14.5635
+		   which results in J = 14, D = 5635 */
 
 		/*Enable the PLL | Q-value | P-value */
 		audio_aic32_write(PLL_A_REG,
-					PLL_ENABLE | 0x01);
+					PLL_ENABLE | 0x04);
 		audio_aic32_write(PLL_B_REG,
-					(3 << 2));	/* J-value */
+					(14 << 2));	/* J-value */
 		audio_aic32_write(PLL_C_REG,
-					MSB8BIT(6408));	/* D-value 8-MSB's */
+					MSB8BIT(5635));	/* D-value 8-MSB's */
 		audio_aic32_write(PLL_D_REG,
-					LSB6BIT(6408));	/* D-value 6-LSB's */
+					LSB6BIT(5635));	/* D-value 6-LSB's */
 
 	}
 
@@ -920,18 +923,18 @@ int davinci_set_samplerate(long sample_rate)
 
 		/* MCLK = 27 MHz and to get Fsref = 44.1kHz
 		   Fsref = (MCLK * k * R)/(2048 * p);
-		   Select P = 1, R =1, K = 3.3450,
-		   which results in J = 3, D = 3450 */
+		   Select P = 4, R =1, K = 13.3802
+		   which results in J = 13, D = 3802 */
 
 		/*Enable the PLL | Q-value | P-value */
 		audio_aic32_write(PLL_A_REG,
-					PLL_ENABLE | 0x01);
+					PLL_ENABLE | 0x04);
 		audio_aic32_write(PLL_B_REG,
-					(3 << 2));	/* J-value */
+					(13 << 2));	/* J-value */
 		audio_aic32_write(PLL_C_REG,
-					MSB8BIT(3450));	/* D-value 8-MSB's */
+					MSB8BIT(3802));	/* D-value 8-MSB's */
 		audio_aic32_write(PLL_D_REG,
-					LSB6BIT(3450));	/* D-value 6-LSB's */
+					LSB6BIT(3802));	/* D-value 6-LSB's */
 	}
 
 #else
@@ -1105,6 +1108,12 @@ static inline void aic32_configure()
 	audio_aic32_write(SERIAL_DATA_CTRL_REG,
 					  BIT_CLK_MASTER | WORD_CLK_MASTER);
 #endif
+	//PLLDIV_IN uses MCLK
+	audio_aic32_write(CLOCK_GENERATION_CTRL_REG, 0x02);
+
+	//CODEC_CLKIN = PLLDIV_OUT
+	audio_aic32_write(CODEC_CLKIN_CTRL_REG, 0x0);
+
 
 	aic32_update(SET_LINE, aic32_local.line);
 	aic32_update(SET_VOLUME, aic32_local.volume);
@@ -1262,6 +1271,8 @@ static int davinci_aic32_probe(void)
 			       NULL /* parent dir */ ,
 			       codec_stop, NULL/* client data */);
 #endif
+
+	aic32_configure();
 
 	/* Announcement Time */
 	DPRINTK(PLATFORM_NAME " " CODEC_NAME " audio support initialized\n");
