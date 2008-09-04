@@ -67,6 +67,9 @@
 #define LEFTLOP_LEVEL_CTRL_REG 86
 #define RIGHTLOP_LEVEL_CTRL_REG 93
 
+#define CODEC_CLKIN_CTRL_REG 101
+#define CLOCK_GENERATION_CTRL_REG 102
+
 /* aic32 control registers value */
 #define PAGE0   0x0
 
