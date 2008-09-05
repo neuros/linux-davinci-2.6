@@ -54,10 +54,11 @@
 #define VPFE_WIN_QCIF    {0,0,176,144}
 #define VPFE_WIN_QVGA    {0,0,320,240}
 #define VPFE_WIN_SIF     {0,0,352,240}
-#define VPFE_WIN_HD480P    {69,0,720,480}
-#define VPFE_WIN_HD576P    {72,0,720,576}
-#define VPFE_WIN_HD720P    {185,0,1280,720}
-#define VPFE_WIN_HD1080I    {140,0,1920,1080}
+/* the left member must be divide by 2 if it is odd must add by 1 then divide by 2*/
+#define VPFE_WIN_HD480P    {35,0,720,480}
+#define VPFE_WIN_HD576P    {36,0,720,576}
+#define VPFE_WIN_HD720P    {93,0,1280,720}
+#define VPFE_WIN_HD1080I    {70,0,1920,1080}
 
 #define VPFE_CAPTURE_ID_TVP5150		0
 #define VPFE_CAPTURE_ID_TVP7000		1

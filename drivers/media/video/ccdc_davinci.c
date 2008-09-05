@@ -55,7 +55,7 @@ void ccdc_setwin(ccdc_params_ycbcr * params)
     int vert_start, vert_nr_lines;
 
     /* configure horizonal and vertical starts and sizes */
-    horz_start = params->win.left;
+    horz_start = params->win.left << 1;
     horz_nr_pixels = (params->win.width <<1) - 1;
     regw((horz_start << 16) | horz_nr_pixels, HORZ_INFO);
 
