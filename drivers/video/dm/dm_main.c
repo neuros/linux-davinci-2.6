@@ -812,6 +812,26 @@ static inline void dm_win_position_get(const struct dm_win_info *w,
 	*yl = v->yres;
 }
 
+static void dm_win_clear(struct dm_win_info *w)
+{
+	struct fb_var_screeninfo *v = &(w->info.var);
+	int bg_color = 0x00;
+
+	switch (v->bits_per_pixel) {
+		case 16:
+		/* yuv422 */
+		if (is_win(w, DAVINCIFB_WIN_VID0) || is_win(w, DAVINCIFB_WIN_VID1))
+			bg_color = 0x88;
+		break;
+
+		/* attribute */
+		case 4:
+		if (is_win(w, DAVINCIFB_WIN_OSD1))
+			bg_color = 0x77;
+		break;
+	}
+	memset((void *)w->fb_base, bg_color, w->fb_size);
+}
 /**
  * Checks if the rectangle formed by the first four coordinates is inside the
  * rectangle formed by the second four coordinates
@@ -1153,7 +1173,6 @@ static int dm_wins_remove(struct dm_info *info)
 static int dm_win_probe(struct dm_win_info *w)
 {
 	int ret;
-	int bg_color = 0x00;
 	struct fb_info *info = &w->info;
 	struct device *dev  = w->dm->dev;
 	struct fb_var_screeninfo *vinfo = &info->var;
@@ -1177,20 +1196,7 @@ static int dm_win_probe(struct dm_win_info *w)
 		return -EINVAL;
 	}
 	/* clear the memory */
-	switch (info->var.bits_per_pixel) {
-		case 16:
-		/* yuv422 */
-		if (is_win(w, DAVINCIFB_WIN_VID0) || is_win(w, DAVINCIFB_WIN_VID1))
-			bg_color = 0x88;
-		break;
-
-		/* attribute */
-		case 4:
-		if (is_win(w, DAVINCIFB_WIN_OSD1))
-			bg_color = 0x77;
-		break;
-	}
-	memset((void *)w->fb_base, bg_color, w->fb_size);
+	dm_win_clear(w);
 	/* create the fb device */
 	if (register_framebuffer(info) < 0) {
 		dev_err(dev, "Unable to register %s framebuffer\n",
@@ -1371,7 +1377,8 @@ static int davincifb_check_var(struct fb_var_screeninfo *var,
 	}
 	else
 		v.xres_virtual = v.xres;
-	v.yres_virtual = (w->fb_size / v.bits_per_pixel * 8) / v.xres_virtual;
+	v.yres_virtual = (w->fb_size / v.bits_per_pixel * 8) /
+		(v.xres_virtual ? v.xres_virtual : 1);
 	if (v.yres_virtual < v.yres)
 		v.yres = v.yres_virtual;
 
@@ -1510,6 +1517,7 @@ static int davincifb_set_par(struct fb_info *info)
 	interlaced = v->vmode == FB_VMODE_INTERLACED ? 1 : 0;
 	set_win_position(w, w->x, w->y, v->xres, v->yres / (interlaced + 1));
 	set_win_mode(w);
+	dm_win_clear(w);
 
 	if (!is_win(w, DAVINCIFB_WIN_VID0))
 		return 0;
