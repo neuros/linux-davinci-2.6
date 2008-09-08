@@ -1101,6 +1101,12 @@ static inline void aic32_configure()
 	/* Page select register */
 	audio_aic32_write(PAGE_SELECT_REG, PAGE0);
 
+	/* Self clearing aic32 software reset */
+	audio_aic32_write(SOFT_RESET_REG, SELF_CLEAR_SOFT_RESET);
+
+	/* wait for reset to complete */
+	mdelay(100);
+
 	davinci_set_mono_stereo(aic32_local.nochan);
 
 #ifdef AIC32_MASTER
