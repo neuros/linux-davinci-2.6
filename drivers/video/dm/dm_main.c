@@ -48,6 +48,10 @@
  */
 
 #define DEBUG
+/* TODO we should replace this VID0FIX define with a way to get the chip
+ * revision
+ */
+#define VID0FIX
 
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -259,130 +263,26 @@ static const struct fb_videomode dmfb_modedb[] = {
 /*============================================================================*
  *                              VENC interface                                *
  *============================================================================*/
-/* Find the mode that matches exactly this var */
-static int dm_venc_find_mode(const struct fb_var_screeninfo *var)
+/* slow down the VCLK to 27MHZ from
+ * 74MHZ */
+static inline void slow_down_vclk(void)
 {
-	unsigned int i;
+	/* set DCLKPTN works as the clock enable for ENC
+	 * clock. */
+	outl(VENC_DCKCTL_DCKEC, VENC_DCLKCTL);
 
-        /* only check the mode that has the same displayable size */
-	for (i = 0; i < ARRAY_SIZE(dmfb_modedb); i++) {
-		if (var->xres == dmfb_modedb[i].xres &&
-			var->yres == dmfb_modedb[i].yres &&
-			var->vmode == dmfb_modedb[i].vmode)
-			return i;
-	}
-	return -EINVAL;
+	/* DCLK pattern. The specified bit pattern is output in
+	  * resolution of ENC clock units.*/
+	outl(0x01, VENC_DCLKPTN0);
+
+	/* select MXI mode. Use 27 MHz (from MXI27)
+	 * (DAC clock = 27 MHz).VPBE/Video encoder clock
+	 * is enabled*/
+	outl(VPSS_CLKCTL_ENABLE_VPBE_CLK, VPSS_CLKCTL);
 }
-
 /**
- * Checks if a mode is a HD mode
- * @return 0 if mode is SD, 1 if mode is HD
+ * Enables de digital output on venc
  */
-static int dm_venc_mode_is_hd(struct fb_videomode *mode)
-{
-	if (!strcmp(mode->name, "576i") || !strcmp(mode->name, "480i"))
-		return 0;
-	else
-		return 1;
-}
-
-/**
- * Set the timings from a mode
- */
-static void dm_venc_mode_set(struct dm_info *dm, const struct fb_videomode *mode,
-	const struct dm_extended_mode *extmode)
-{
-	dispc_reg_out(VENC_HSPLS, mode->hsync_len);
-	dispc_reg_out(VENC_VSPLS, mode->vsync_len);
-	dispc_reg_out(VENC_HINT, mode->xres + mode->left_margin +
-		      mode->right_margin);
-	dispc_reg_out(VENC_HSTART, mode->left_margin);
-	dispc_reg_out(VENC_HVALID, mode->xres);
-	dispc_reg_out(VENC_VINT, mode->yres + mode->upper_margin +
-		      mode->lower_margin);
-	dispc_reg_out(VENC_VSTART, mode->upper_margin);
-	dispc_reg_out(VENC_VVALID, mode->vmode == FB_VMODE_INTERLACED ? mode->yres / 2 : mode->yres);
-	/* TODO check vmode (interlaced / progressive)*/
-	/* set the window field / frame mode */
-	dispc_reg_out(VENC_YCCCTL, 0x0);
-	dispc_reg_out(VENC_VSTARTA, extmode->vstarta);
-	dispc_reg_out(OSD_BASEPX, extmode->basex);
-	dispc_reg_out(OSD_BASEPY, extmode->basey);
-}
-
-/* Select the output on the venc mode. This outputs are only
- * available on standard moed timings, both SD or HD.
- * DACSEL.DAnS CMPNT.MRGB DAC Output
- *      0           -        CVBS
- *      1           -      S-Video Y
- *      2           -      S-Video C
- *      3          0           Y
- *                 1           G
- *      4          0          Pb
- *                 1           B
- *      5          0           Pr
- *                 1           R
- */
-int dm_venc_set_state(struct output_device *od)
-{
-	struct dm_info *dm = (struct dm_info *)class_get_devdata(&od->class_dev);
-	unsigned long state = od->request_state;
-
-	/* TODO check that the output is in standard mode */
-	switch (state)
-	{
-	case DAVINCIFB_OUT_COMPOSITE:
-		dispc_reg_out(VENC_DACSEL, 0x0);
-		break;
-
-	case DAVINCIFB_OUT_COMPONENT:
-		/* Enable Component output; DAC A: Y, DAC B: Pb, DAC C: Pr  */
-		dispc_reg_out(VENC_DACSEL, 0x543);
-		break;
-
-	case DAVINCIFB_OUT_SVIDEO:
-		/* Enable S-Video Output; DAC B: S-Video Y, DAC C: S-Video C  */
-		dispc_reg_out(VENC_DACSEL, 0x210);
-		break;
-
-	case DAVINCIFB_OUT_RGB:
-		/* TODO handle rgb */
-		printk("rgb!\n");
-		break;
-
-	default:
-		return -EINVAL;
-
-	}
-	dm->output_sel = state;
-	return 0;
-}
-/* Returns the current output mode selcted */
-int dm_venc_get_status(struct output_device *od)
-{
-	struct dm_info *dm = (struct dm_info *)class_get_devdata(&od->class_dev);
-
-	return dm->output_sel;
-}
-
-struct output_properties dm_venc_props = {
-	.set_state = &dm_venc_set_state,
-	.get_status = &dm_venc_get_status,
-};
-#if 0
-static int dm_vout_probe(struct dm_info *info)
-{
-	int ret;
-
-	dm->output = video_output_register("venc", dm->dev, dm, &dm_venc_props);
-	if (!dm->output)
-		return -EINVAL;
-	return 0;
-}
-#endif
-/*============================================================================*
- *                             Mode definitions                               *
- *============================================================================*/
 static void enable_digital_output(bool on)
 {
 	if (on) {
@@ -497,23 +397,192 @@ static void enable_digital_output(bool on)
 	}
 }
 
-/* slow down the VCLK to 27MHZ from
-  * 74MHZ */
-static inline void slow_down_vclk(void)
+/* Find the mode that matches exactly this var */
+static int dm_venc_find_mode(const struct fb_var_screeninfo *var)
 {
-	/* set DCLKPTN works as the clock enable for ENC
-	 * clock. */
-	outl(VENC_DCKCTL_DCKEC, VENC_DCLKCTL);
+	unsigned int i;
 
-	/* DCLK pattern. The specified bit pattern is output in
-	  * resolution of ENC clock units.*/
-	outl(0x01, VENC_DCLKPTN0);
-
-	/* select MXI mode. Use 27 MHz (from MXI27)
-	 * (DAC clock = 27 MHz).VPBE/Video encoder clock
-	 * is enabled*/
-	outl(VPSS_CLKCTL_ENABLE_VPBE_CLK, VPSS_CLKCTL);
+        /* only check the mode that has the same displayable size */
+	for (i = 0; i < ARRAY_SIZE(dmfb_modedb); i++) {
+		if (var->xres == dmfb_modedb[i].xres &&
+			var->yres == dmfb_modedb[i].yres &&
+			var->vmode == dmfb_modedb[i].vmode)
+			return i;
+	}
+	return -EINVAL;
 }
+
+/**
+ * Checks if a mode is a HD mode
+ * @return 0 if mode is SD, 1 if mode is HD
+ */
+static int dm_venc_mode_is_hd(struct fb_videomode *mode)
+{
+	if (!strcmp(mode->name, "576i") || !strcmp(mode->name, "480i"))
+		return 0;
+	else
+		return 1;
+}
+/**
+ * Set the timmings of the VENC
+ */
+static void dm_venc_timmings_set(struct dm_info *dm, const struct fb_videomode *mode, const struct dm_extended_mode *extmode)
+{
+	dispc_reg_out(VENC_HSPLS, mode->hsync_len);
+	dispc_reg_out(VENC_VSPLS, mode->vsync_len);
+	dispc_reg_out(VENC_HINT, mode->xres + mode->left_margin +
+		      mode->right_margin);
+	dispc_reg_out(VENC_HSTART, mode->left_margin);
+	dispc_reg_out(VENC_HVALID, mode->xres);
+	dispc_reg_out(VENC_VINT, mode->yres + mode->upper_margin +
+		      mode->lower_margin);
+	dispc_reg_out(VENC_VSTART, mode->upper_margin);
+	dispc_reg_out(VENC_VVALID, mode->vmode == FB_VMODE_INTERLACED ? mode->yres / 2 : mode->yres);
+	/* TODO check vmode (interlaced / progressive)*/
+	/* set the window field / frame mode */
+	dispc_reg_out(VENC_YCCCTL, 0x0);
+	dispc_reg_out(VENC_VSTARTA, extmode->vstarta);
+	dispc_reg_out(OSD_BASEPX, extmode->basex);
+	dispc_reg_out(OSD_BASEPY, extmode->basey);
+}
+
+/**
+ * Set the venc mode
+ */
+static void dm_venc_mode_set(struct dm_info *dm, const struct fb_videomode *mode,
+	const struct dm_extended_mode *extmode)
+{
+	/* shutdown previous mode */
+	dispc_reg_out(VENC_VMOD, 0);
+	enable_digital_output(false);
+	/* set the timmings */
+	dm_venc_timmings_set(dm, mode, extmode);
+	/* for standard modes */
+	if (!strcmp(mode->name, "480i")) {
+		/* Enable all DACs  */
+		dispc_reg_out(VENC_DACTST, 0);
+		/* Set REC656 Mode */
+		dispc_reg_out(VENC_YCCCTL, 0x1);
+		/* Enable output mode and NTSC  */
+		dispc_reg_out(VENC_VMOD, 0x1003);
+	}
+	else if (!strcmp(mode->name, "576i")) {
+		/* Enable all DACs  */
+		dispc_reg_out(VENC_DACTST, 0);
+		/* Set REC656 Mode */
+		dispc_reg_out(VENC_YCCCTL, 0x1);
+		/* Enable output mode and PAL  */
+		dispc_reg_out(VENC_VMOD, 0x1043);
+	}
+	/* for non standard modes */
+	else {
+		printk("Setting mode %s\n", mode->name);
+		enable_digital_output(true);
+#ifdef CONFIG_THS8200
+		if (!strcmp(mode->name, "480p")) {
+			/* slow down the vclk as 27MHZ */
+			slow_down_vclk();
+			ths8200_set_480p_mode();
+			dispc_reg_merge(PINMUX0, 0, PINMUX0_LFLDEN);
+			/* Enable all VENC, non-standard timing mode,
+			 * master timing, HD, progressive */
+			dispc_reg_out(VENC_VMOD,
+				      (VENC_VMOD_VENC | VENC_VMOD_VMD | VENC_VMOD_HDMD));
+		}
+		else if (!strcmp(mode->name, "720p")) {
+			ths8200_set_720p_mode();
+			dispc_reg_merge(PINMUX0, 0, PINMUX0_LFLDEN);
+			/* Enable all VENC, non-standard timing mode,
+			 * master timing, HD, progressive */
+			dispc_reg_out(VENC_VMOD,
+				      (VENC_VMOD_VENC |	VENC_VMOD_VMD | VENC_VMOD_HDMD));
+		}
+		else if (!strcmp(mode->name, "1080i")) {
+			ths8200_set_1080i_mode();
+			dispc_reg_merge(PINMUX0, PINMUX0_LFLDEN, PINMUX0_LFLDEN);
+			/* Enable all VENC, non-standard timing mode,
+			 * master timing, HD, interlaced */
+			dispc_reg_out(VENC_VMOD,
+				      (VENC_VMOD_VENC |	VENC_VMOD_VMD |
+				       VENC_VMOD_HDMD |	VENC_VMOD_NSIT));
+		}
+#endif
+	}
+}
+
+/* Select the output on the venc mode. This outputs are only
+ * available on standard moed timings, both SD or HD.
+ * DACSEL.DAnS CMPNT.MRGB DAC Output
+ *      0           -        CVBS
+ *      1           -      S-Video Y
+ *      2           -      S-Video C
+ *      3          0           Y
+ *                 1           G
+ *      4          0          Pb
+ *                 1           B
+ *      5          0           Pr
+ *                 1           R
+ */
+int dm_venc_set_state(struct output_device *od)
+{
+	struct dm_info *dm = (struct dm_info *)class_get_devdata(&od->class_dev);
+	unsigned long state = od->request_state;
+
+	/* TODO check that the output is in standard mode */
+	switch (state)
+	{
+	case DAVINCIFB_OUT_COMPOSITE:
+		dispc_reg_out(VENC_DACSEL, 0x0);
+		break;
+
+	case DAVINCIFB_OUT_COMPONENT:
+		/* Enable Component output; DAC A: Y, DAC B: Pb, DAC C: Pr  */
+		dispc_reg_out(VENC_DACSEL, 0x543);
+		break;
+
+	case DAVINCIFB_OUT_SVIDEO:
+		/* Enable S-Video Output; DAC B: S-Video Y, DAC C: S-Video C  */
+		dispc_reg_out(VENC_DACSEL, 0x210);
+		break;
+
+	case DAVINCIFB_OUT_RGB:
+		/* TODO handle rgb */
+		printk("rgb!\n");
+		break;
+
+	default:
+		return -EINVAL;
+
+	}
+	dm->output_sel = state;
+	return 0;
+}
+/* Returns the current output mode selcted */
+int dm_venc_get_status(struct output_device *od)
+{
+	struct dm_info *dm = (struct dm_info *)class_get_devdata(&od->class_dev);
+
+	return dm->output_sel;
+}
+
+struct output_properties dm_venc_props = {
+	.set_state = &dm_venc_set_state,
+	.get_status = &dm_venc_get_status,
+};
+#if 0
+static int dm_vout_probe(struct dm_info *info)
+{
+	int ret;
+
+	dm->output = video_output_register("venc", dm->dev, dm, &dm_venc_props);
+	if (!dm->output)
+		return -EINVAL;
+	return 0;
+}
+#endif
+/*============================================================================*
+ *                             Mode definitions                               *
+ *============================================================================*/
 #if 0
 static void davincifb_480p_component_config(int on)
 {
@@ -694,8 +763,11 @@ static int davincifb_set_attr_blend(struct dm_win_info *w,
 /* Interlaced = Frame mode, Non-interlaced = Field mode */
 static void set_interlaced(struct dm_win_info *w, unsigned int on)
 {
-	/* TODO remove DAVINCIFB_WIN_VID0, DAVINCIFB_WIN_OSD0, etc */
+	struct device *dev = w->dm->dev;
+
 	on = (on == 0) ? 0 : ~0;
+
+	dev_dbg(dev, "Setting window interlaced %s %c\n", dm_win_names[w->win], on ? 'I' : 'P');
 
 	if (is_win(w, DAVINCIFB_WIN_VID0))
 		dispc_reg_merge(OSD_VIDWINMD, on, OSD_VIDWINMD_VFF0);
@@ -771,8 +843,26 @@ static void set_sdram_params(const struct dm_win_info *w, u32 addr, u32 line_len
 	line_length = line_length / 32;
 
 	if (is_win(w, DAVINCIFB_WIN_VID0)) {
+#ifndef VID0FIX
 		dispc_reg_out(OSD_VIDWIN0ADR, addr);
-		dispc_reg_out(OSD_VIDWIN0OFST, line_length);
+        	dispc_reg_out(OSD_VIDWIN0OFST, line_length);
+#else
+		struct dm_info *dm = w->dm;
+		/* BUG */
+		if (dmfb_modedb[w->dm->curr_mode].vmode == FB_VMODE_INTERLACED) {
+			u32 length = line_length * 32;
+			dispc_reg_out(OSD_VIDWIN0ADR, addr - length);
+			dispc_reg_out(OSD_VIDWIN0OFST, line_length);
+			dispc_reg_out(OSD_PPVWIN0AD, addr + length);
+			dispc_reg_merge(OSD_VIDWINMD, OSD_VIDWINMD_VFF0, OSD_VIDWINMD_VFF0);
+			dispc_reg_merge(OSD_MISCCT, OSD_MISCCT_PPRV, OSD_MISCCT_PPRV);
+		}
+		else {
+			dispc_reg_out(OSD_VIDWIN0ADR, addr);
+			dispc_reg_out(OSD_VIDWIN0OFST, line_length);
+			dispc_reg_merge(OSD_MISCCT, 0, OSD_MISCCT_PPRV);
+		}
+#endif
 	} else if (is_win(w, DAVINCIFB_WIN_VID1)) {
 		dispc_reg_out(OSD_VIDWIN1ADR, addr);
 		dispc_reg_out(OSD_VIDWIN1OFST, line_length);
@@ -1012,7 +1102,7 @@ static void set_win_position(const struct dm_win_info *w, u32 xp, u32 yp, u32 xl
 	int i = 0;
 	struct device *dev = w->dm->dev;
 
-	dev_dbg(dev, "Setting window position %u %u %u %u\n", xp, yp, xl, yl);
+	dev_dbg(dev, "Setting window position %s %u %u %u %u\n", dm_win_names[w->win], xp, yp, xl, yl);
 	if (is_win(w, DAVINCIFB_WIN_VID0)) {
 		i = 0;
 	} else if (is_win(w, DAVINCIFB_WIN_VID1)) {
@@ -1070,6 +1160,28 @@ static int dm_win_transp_enable(struct dm_win_info *w,
 		dispc_reg_merge(OSD_OSDWIN1MD, transp->level << OSD_OSDWIN1MD_BLND1_SHIFT, OSD_OSDWIN1MD_BLND1);
 	}
 	return 0;
+}
+
+/**
+ * Sets a window mode
+ *
+ */
+static void dm_win_mode_set(struct dm_win_info *w, struct fb_var_screeninfo *v)
+{
+	u32 start = 0, offset = 0;
+	int interlaced = v->vmode == FB_VMODE_INTERLACED ? 1 : 0;
+
+	/* Memory offsets */
+	w->info.fix.line_length = v->xres_virtual * v->bits_per_pixel / 8;
+	offset = v->yoffset * w->info.fix.line_length + v->xoffset * v->bits_per_pixel / 8;
+	start = (u32) w->fb_base_phys + offset;
+	set_sdram_params(w, start, w->info.fix.line_length);
+	/* set interlaced mode */
+	set_interlaced(w, interlaced);
+	/* set window position and size */
+	set_win_position(w, w->x, w->y, v->xres, v->yres / (interlaced + 1));
+	set_win_mode(w);
+	dm_win_clear(w);
 }
 
 /* Initialize the fb_info structure with common values and values that wont
@@ -1347,10 +1459,15 @@ static int davincifb_check_var(struct fb_var_screeninfo *var,
 		printk("%s mode = %s\n", dm_win_names[w->win], dmfb_modedb[mode].name);
 	}
 	else {
-		printk("%s invalid mode\n", dm_win_names[w->win]);
+		printk("%s Setting a specific mode\n", dm_win_names[w->win]);
 	}
 	dev_dbg(dev, "Trying to set <%d>%dx%d<%d>@%dbpp\n", v.xres_virtual, v.xres, v.yres,
 		v.yres_virtual, v.bits_per_pixel);
+
+	/* always force VENC interlaced mode */
+	if (w->dm->curr_mode >= 0 && (!is_win(w, DAVINCIFB_WIN_VID0))) {
+		v.vmode = dmfb_modedb[w->dm->curr_mode].vmode;
+	}
 	/* virtual size < display size */
 	if (v.xres_virtual < v.xres || v.yres_virtual < v.yres) {
 		dev_dbg(dev, "Virtual size > displayed size\n");
@@ -1384,8 +1501,8 @@ static int davincifb_check_var(struct fb_var_screeninfo *var,
 
 	line_length = v.xres_virtual * v.bits_per_pixel / 8;
 
-	dev_dbg(dev, "<%d>%dx%d<%d>@%dbpp\n", v.xres_virtual, v.xres, v.yres,
-		v.yres_virtual, v.bits_per_pixel);
+	dev_dbg(dev, "<%d>%dx%d<%d>@%dbpp-%c\n", v.xres_virtual, v.xres, v.yres,
+		v.yres_virtual, v.bits_per_pixel, v.vmode == FB_VMODE_INTERLACED ? 'I' : 'P');
 
 	/* Rules 4, 5 */
 	if (line_length % 32) {
@@ -1502,26 +1619,13 @@ static int davincifb_set_par(struct fb_info *info)
 {
 	struct dm_win_info *w = (struct dm_win_info *)info->par;
 	struct fb_var_screeninfo *v = &info->var;
-	u32 start = 0, offset = 0;
 	int mode;
-	int interlaced;
 	int i;
 
-	/* Memory offsets */
-	info->fix.line_length = v->xres_virtual * v->bits_per_pixel / 8;
-
-	offset = v->yoffset * info->fix.line_length + v->xoffset * v->bits_per_pixel / 8;
-	start = (u32) w->fb_base_phys + offset;
-	set_sdram_params(w, start, info->fix.line_length);
-
-	interlaced = v->vmode == FB_VMODE_INTERLACED ? 1 : 0;
-	set_win_position(w, w->x, w->y, v->xres, v->yres / (interlaced + 1));
-	set_win_mode(w);
-	dm_win_clear(w);
-
-	if (!is_win(w, DAVINCIFB_WIN_VID0))
+	if (!is_win(w, DAVINCIFB_WIN_VID0)) {
+		dm_win_mode_set(w, v);
 		return 0;
-
+	}
 	/* we are going to change the mode */
 	mode = dm_venc_find_mode(v);
 	if (mode == w->dm->curr_mode) {
@@ -1533,75 +1637,18 @@ static int davincifb_set_par(struct fb_info *info)
 		printk("errorrrr\n");
 		return 0;
 	}
-	/* shutdown previous mode */
-	dispc_reg_out(VENC_VMOD, 0);
-	enable_digital_output(false);
-	/* for standard modes */
-	if (!strcmp(dmfb_modedb[mode].name, "480i")) {
-		/* Enable all DACs  */
-		dispc_reg_out(VENC_DACTST, 0);
-		/* Set REC656 Mode */
-		dispc_reg_out(VENC_YCCCTL, 0x1);
-		/* Enable output mode and NTSC  */
-		dispc_reg_out(VENC_VMOD, 0x1003);
-	}
-	else if (!strcmp(dmfb_modedb[mode].name, "576i")) {
-		/* Enable all DACs  */
-		dispc_reg_out(VENC_DACTST, 0);
-		/* Set REC656 Mode */
-		dispc_reg_out(VENC_YCCCTL, 0x1);
-		/* Enable output mode and PAL  */
-		dispc_reg_out(VENC_VMOD, 0x1043);
-	}
-	/* for non standard modes */
-	else {
-		printk("Setting mode %s\n", dmfb_modedb[mode].name);
-		enable_digital_output(true);
-#ifdef CONFIG_THS8200
-		if (!strcmp(dmfb_modedb[mode].name, "480p")) {
-			/* slow down the vclk as 27MHZ */
-			slow_down_vclk();
-			ths8200_set_480p_mode();
-			dispc_reg_merge(PINMUX0, 0, PINMUX0_LFLDEN);
-			/* Enable all VENC, non-standard timing mode,
-			 * master timing, HD, progressive */
-			dispc_reg_out(VENC_VMOD,
-				      (VENC_VMOD_VENC | VENC_VMOD_VMD | VENC_VMOD_HDMD));
-		}
-		else if (!strcmp(dmfb_modedb[mode].name, "720p")) {
-			ths8200_set_720p_mode();
-			dispc_reg_merge(PINMUX0, 0, PINMUX0_LFLDEN);
-			/* Enable all VENC, non-standard timing mode,
-			 * master timing, HD, progressive */
-			dispc_reg_out(VENC_VMOD,
-				      (VENC_VMOD_VENC |	VENC_VMOD_VMD | VENC_VMOD_HDMD));
-		}
-		else if (!strcmp(dmfb_modedb[mode].name, "1080i")) {
-			ths8200_set_1080i_mode();
-			dispc_reg_merge(PINMUX0, PINMUX0_LFLDEN, PINMUX0_LFLDEN);
-			/* Enable all VENC, non-standard timing mode,
-			 * master timing, HD, interlaced */
-			dispc_reg_out(VENC_VMOD,
-				      (VENC_VMOD_VENC |	VENC_VMOD_VMD |
-				       VENC_VMOD_HDMD |	VENC_VMOD_NSIT));
-		}
-		else
-			return -EINVAL;
-#endif
-	}
+	dm_venc_mode_set(w->dm, &dmfb_modedb[mode], &dm_extended_modedb[mode]);
 	w->dm->curr_mode = mode;
-	interlaced = dmfb_modedb[mode].vmode == FB_VMODE_INTERLACED ? 1 : 0;
+	dm_win_mode_set(w, v);
+	/* different interlaced mode, update all other planes */
 	for (i = 0; i < DAVINCIFB_WINDOWS; i++) {
 		struct dm_win_info *w_tmp = w->dm->windows[i];
 
-		if (!w_tmp)
+		if (!w_tmp || w_tmp == w)
 			continue;
-		/* set interlaced mode on all windows */
-		set_interlaced(w_tmp, interlaced);
-		/* set window position and size */
-		set_win_position(w_tmp, w_tmp->x, w_tmp->y, w_tmp->info.var.xres, w_tmp->info.var.yres / (interlaced + 1));
+		w_tmp->info.var.vmode = dmfb_modedb[mode].vmode;
+		dm_win_mode_set(w_tmp, &w_tmp->info.var);
 	}
-	dm_venc_mode_set(w->dm, &dmfb_modedb[mode], &dm_extended_modedb[mode]);
 	return 0;
 }
 
@@ -1615,7 +1662,6 @@ static int davincifb_ioctl(struct fb_info *info, unsigned int cmd,
 	void __user *argp = (void __user *)arg;
 	struct fb_fillrect rect;
 	struct zoom_params zoom;
-	long std = 0;
 	unsigned int enable = 0;
 	unsigned int pos = 0;
 	unsigned int color = 0;
@@ -1886,6 +1932,18 @@ static irqreturn_t davincifb_isr(int irq, void *arg)
 	struct dm_info *dm = (struct dm_info *)arg;
 	int win;
 
+#ifdef VID0FIX
+	win = dm->windows[DAVINCIFB_WIN_VID0];
+	if ((win) && (dmfb_modedb[dm->curr_mode].vmode == FB_VMODE_INTERLACED)) {
+		int fld;
+		int curr_fld;
+
+		curr_fld = (dispc_reg_in(OSD_MISCCT) & OSD_MISCCT_PPSW) >> 2;
+ 		fld = ((dispc_reg_in(VENC_VSTAT) & 0x00000010) >> 4);
+		if (fld != curr_fld)
+			dispc_reg_merge(OSD_MISCCT, fld << 2, OSD_MISCCT_PPSW);
+	}
+#else
 	if ((dispc_reg_in(VENC_VSTAT) & 0x00000010) == 0x10) {
 		for (win = 0; win < DAVINCIFB_WINDOWS; win++)
 		{
@@ -1903,7 +1961,9 @@ static irqreturn_t davincifb_isr(int irq, void *arg)
 			}
 		}
 		return IRQ_HANDLED;
-	} else {
+	}
+#endif
+	 else {
 		++dm->vsync_cnt;
 		wake_up_interruptible(&dm->vsync_wait);
 		return IRQ_HANDLED;
