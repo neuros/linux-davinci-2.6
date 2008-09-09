@@ -1037,7 +1037,12 @@ static int audio_open(struct inode *inode, struct file *file)
 		return -ESTALE;
 	}
 
-	down(&state->sem);
+	if (file->f_flags & O_NONBLOCK) {
+		if(down_trylock(&state->sem))
+			return -EAGAIN;
+	}
+	else
+		down(&state->sem);
 
 	/* access control */
 	err = -ENODEV;
