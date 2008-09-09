@@ -52,6 +52,7 @@
 #define STD(x)  \
     ((x) < TOTAL_STANDARD ? video_std + (x) : NULL)
 #define TVP7000_I2C_RETRY 3
+#define INIT_DEFAULT 0
 
 /* I2C Addresses to scan */
 static unsigned short normal_i2c[] = {
@@ -136,7 +137,7 @@ static const struct i2c_reg_value tvp7000_init_component[] = {
 		TVP7000_OUTPUT_FORMATTER, 0x02
 	},
 	{ /* 0x16 */
-		TVP7000_TEST_REG, 0x25
+		TVP7000_TEST_REG, 0xe5
 	},
 	{ /* 0x19 */
 		TVP7000_INPUT_MUX_1, 0x00
@@ -194,6 +195,7 @@ static const struct i2c_reg_value tvp7000_init_component[] = {
 	},
 };
 
+#if INIT_DEFAULT
 static const struct i2c_reg_value tvp7000_init_default[] = {
 	{ /* 0x01 */
 		TVP7000_PLL_DIVIDE_MSB, 0x69
@@ -313,6 +315,7 @@ static const struct i2c_reg_value tvp7000_init_default[] = {
 		TVP7000_ALC_PLACEMENT, 0x00
 	},
 };
+#endif
 
 struct tvp7000_video_std
 {
@@ -810,8 +813,10 @@ static int tvp7000_device_init(struct vpfe_capture_params *params)
 	ver = tvp7000_read_reg(TVP7000_CHIP_REVISION);
 	DPRINTK("TVP7000 detect! Revision: %d\n", ver);
 
+#if INIT_DEFAULT
 	/* initialize TVP7000 as its default values */
 	tvp7000_write_inittab(tvp7000_init_default, NUM_OF_REGS(tvp7000_init_default));
+#endif
 	tvp7000_write_inittab(tvp7000_init_component, NUM_OF_REGS(tvp7000_init_component));
 	if (tvp7000_selmux())
 		return -1;
