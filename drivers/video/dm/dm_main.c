@@ -51,7 +51,7 @@
 /* TODO we should replace this VID0FIX define with a way to get the chip
  * revision
  */
-#define VID0FIX
+//#define VID0FIX
 
 #include <linux/module.h>
 #include <linux/kernel.h>
