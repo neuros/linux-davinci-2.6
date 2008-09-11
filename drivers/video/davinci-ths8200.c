@@ -365,7 +365,7 @@ int ths8200_set_720p_mode(void)
 	ths8200_write_value(DTG1_SPEC_D_LSB_REG, 0x2C);
 
 	/* set LSBs of sync to active video */
-	ths8200_write_value(DTG1_SPEC_E_LSB_REG, 0x2C);
+	ths8200_write_value(DTG1_SPEC_E_LSB_REG, 0x1c);
 
 	/* set MSB bit of sync to active video width[6]/sync to broad pulse [7] */
 	ths8200_write_value(DTG1_SPEC_DEH_MSB_REG, 0xC0);
