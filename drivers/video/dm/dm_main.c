@@ -51,7 +51,7 @@
 /* TODO we should replace this VID0FIX define with a way to get the chip
  * revision
  */
-//#define VID0FIX
+#define VID0FIX
 
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -1942,7 +1942,12 @@ static irqreturn_t davincifb_isr(int irq, void *arg)
  		fld = ((dispc_reg_in(VENC_VSTAT) & 0x00000010) >> 4);
 		if (fld != curr_fld)
 			dispc_reg_merge(OSD_MISCCT, fld << 2, OSD_MISCCT_PPSW);
-	}
+		/* FIXME when should we trigger the vsync on interlaced
+		 * and progressive outputs? on field id change?
+		 */
+        }
+	++dm->vsync_cnt;
+	wake_up_interruptible(&dm->vsync_wait);
 #else
 	if ((dispc_reg_in(VENC_VSTAT) & 0x00000010) == 0x10) {
 		for (win = 0; win < DAVINCIFB_WINDOWS; win++)
@@ -1962,12 +1967,12 @@ static irqreturn_t davincifb_isr(int irq, void *arg)
 		}
 		return IRQ_HANDLED;
 	}
-#endif
-	 else {
+	else {
 		++dm->vsync_cnt;
 		wake_up_interruptible(&dm->vsync_wait);
 		return IRQ_HANDLED;
   	}
+#endif
 
 	return IRQ_HANDLED;
 }
