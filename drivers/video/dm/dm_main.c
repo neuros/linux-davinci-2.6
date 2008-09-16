@@ -148,6 +148,8 @@ struct dm_extended_mode {
 	unsigned int basex;
 	unsigned int basey;
 	unsigned int vstarta;
+	unsigned int sh;
+	unsigned int sv;
 };
 
 struct dm_info {
@@ -238,11 +240,11 @@ static inline int is_win(const struct dm_win_info *w, unsigned int win)
 #define LCD_PANEL_CLOCK	180000
 
 static const struct dm_extended_mode dm_extended_modedb[] = {
-	{ "480i", 0x80, 0x12, 0 },
-	{ "576i", 0x80, 0x18, 0 },
-	{ "480p", 0x50, 0x5, 0 },
-	{ "720p", 300, 30, 0 },
-	{ "1080i", 243, 20, 13 },
+	{ "480i", 0x80, 0x12, 0, 1, 0 },
+	{ "576i", 0x80, 0x18, 0, 1, 1 },
+	{ "480p", 0x50, 0x5, 0, 0, 0 },
+	{ "720p", 300, 30, 0, 0, 0 },
+	{ "1080i", 243, 20, 13, 0, 0 },
 };
 
 static const struct fb_videomode dmfb_modedb[] = {
@@ -251,8 +253,8 @@ static const struct fb_videomode dmfb_modedb[] = {
 	 *  vmode, flag
 	 */
 	/* Standard Modes */
-	{ "480i", 50, 720, 480, LCD_PANEL_CLOCK, 0, 0, 0, 0, 127, 5, FB_SYNC_BROADCAST,	FB_VMODE_INTERLACED, 0},
-	{ "576i", 50, 720, 576, LCD_PANEL_CLOCK, 0, 0, 0, 0, 127, 6, FB_SYNC_BROADCAST,	FB_VMODE_INTERLACED, 0},
+	{ "480i", 60, 640, 480, 0, 0, 0, 0, 0, 127, 5, FB_SYNC_BROADCAST,	FB_VMODE_INTERLACED, 0},
+	{ "576i", 50, 640, 480, LCD_PANEL_CLOCK, 0, 0, 0, 0, 127, 6, FB_SYNC_BROADCAST,	FB_VMODE_INTERLACED, 0},
 	/* Modes provided by THS8200 */
 	{ "480p", 30, 720, 480, LCD_PANEL_CLOCK, 122, 15, 36, 8, 0x50, 0x5, FB_SYNC_BROADCAST, FB_VMODE_NONINTERLACED, 0},
 	//{ "720p", 30, 1280, 720, LCD_PANEL_CLOCK, 300, 69, 26, 3, 0x50, 0x5, FB_SYNC_BROADCAST, FB_VMODE_NONINTERLACED, 0},
@@ -406,7 +408,8 @@ static int dm_venc_find_mode(const struct fb_var_screeninfo *var)
 	for (i = 0; i < ARRAY_SIZE(dmfb_modedb); i++) {
 		if (var->xres == dmfb_modedb[i].xres &&
 			var->yres == dmfb_modedb[i].yres &&
-			var->vmode == dmfb_modedb[i].vmode)
+			var->vmode == dmfb_modedb[i].vmode &&
+			var->pixclock == dmfb_modedb[i].pixclock)
 			return i;
 	}
 	return -EINVAL;
@@ -444,6 +447,11 @@ static void dm_venc_timmings_set(struct dm_info *dm, const struct fb_videomode *
 	dispc_reg_out(VENC_VSTARTA, extmode->vstarta);
 	dispc_reg_out(OSD_BASEPX, extmode->basex);
 	dispc_reg_out(OSD_BASEPY, extmode->basey);
+	/* stretch on horizontal and vertical */
+	//dispc_reg_merge(OSD_MODE, extmode->sh << 13, OSD_MODE_OHRSZ);
+	dispc_reg_merge(OSD_MODE, extmode->sh << 10, OSD_MODE_VHRSZ);
+	//dispc_reg_merge(OSD_MODE, extmode->sv << 14, OSD_MODE_OVRSZ);
+	dispc_reg_merge(OSD_MODE, extmode->sv << 11, OSD_MODE_VVRSZ);
 }
 
 /**
@@ -895,11 +903,27 @@ static inline void dm_win_position_get(const struct dm_win_info *w,
 				    u32 * xp, u32 * yp, u32 * xl, u32 * yl)
 {
 	struct fb_var_screeninfo *v = &(w->info.var);
+	struct dm_extended_mode *emode = &dm_extended_modedb[w->dm->curr_mode];
 
+	/* Update the width and height based on the extended mode */
+	if (is_win(w, DAVINCIFB_WIN_VID0) || is_win(w, DAVINCIFB_WIN_VID1)) {
+		if (emode->sh) {
+			*xl = v->xres / 8 * 9;
+		}
+		else
+			*xl = v->xres;
+		if (emode->sv) {
+			*yl = v->yres / 5 * 6;
+		}
+		else
+			*yl = v->yres;
+	} else {
+		*xl = v->xres;
+		*yl = v->yres;
+	}
 	*xp = w->x;
 	*yp = w->y;
-	*xl = v->xres;
-	*yl = v->yres;
+	//printk("Win position get %s %d %d %d %d\n", dm_win_names[w->win], *xp, *yp, *xl, *yl);
 }
 
 static void dm_win_clear(struct dm_win_info *w)
@@ -1101,7 +1125,17 @@ static void set_win_position(const struct dm_win_info *w, u32 xp, u32 yp, u32 xl
 {
 	int i = 0;
 	struct device *dev = w->dm->dev;
+	struct dm_extended_mode *emode = &dm_extended_modedb[w->dm->curr_mode];
 
+	/* Update the width and height based on the extended mode */
+	if (is_win(w, DAVINCIFB_WIN_VID0) || is_win(w, DAVINCIFB_WIN_VID1)) {
+		if (emode->sh) {
+			xl = xl / 8 * 9;
+		}
+		if (emode->sv) {
+			yl = yl / 5 * 6;
+		}
+	}
 	dev_dbg(dev, "Setting window position %s %u %u %u %u\n", dm_win_names[w->win], xp, yp, xl, yl);
 	if (is_win(w, DAVINCIFB_WIN_VID0)) {
 		i = 0;
