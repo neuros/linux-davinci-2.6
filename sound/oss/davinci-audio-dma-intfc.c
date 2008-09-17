@@ -973,6 +973,7 @@ static void audio_dma_callback(int lch, u16 ch_status, void *data)
 
 		if (!s->mapped) {
 			complete(&s->wfc);
+			s->done_flag = 1;
 		} else
 			s->pending_frags++;
 

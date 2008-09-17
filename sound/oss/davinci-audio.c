@@ -615,7 +615,7 @@ audio_read(struct file *file, char *buffer, size_t count, loff_t * ppos)
 		/* Wait for a buffer to become full */
 		if (file->f_flags & O_NONBLOCK) {
 			ret = -EAGAIN;
-			if (!s->wfc.done)
+			if(!s->done_flag)
 				break;
 		} else {
 			ret = -ERESTARTSYS;
@@ -652,6 +652,7 @@ audio_read(struct file *file, char *buffer, size_t count, loff_t * ppos)
 		DPRINTK(KERN_INFO
 			"calling audio_process_dma from audio_read\n");
 		audio_process_dma(s);
+		s->done_flag = 0;
 	}
 
 	if ((buffer - buffer0))
@@ -1105,6 +1106,7 @@ static int audio_open(struct inode *inode, struct file *file)
 		is->fragsize = AUDIO_FRAGSIZE_DEFAULT;
 		is->nbfrags = AUDIO_NBFRAGS_DEFAULT;
 		is->mapped = 0;
+		is->done_flag = 0;
 		init_waitqueue_head(&is->wq);
 	}
 

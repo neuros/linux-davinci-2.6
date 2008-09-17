@@ -69,6 +69,7 @@ typedef struct {
 	int stopped:1;		/* might be active but stopped */
 	int spin_idle:1;	/* have DMA spin on zeros when idle */
 	int dma_started;	/* to store if DMA was started or not */
+	int done_flag;
 } audio_stream_t;
 
 /*
