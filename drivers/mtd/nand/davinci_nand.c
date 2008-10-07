@@ -49,6 +49,7 @@
 #include <asm/arch/hardware.h>
 #include <asm/arch/nand.h>
 #include <asm/arch/mux.h>
+#include <asm/arch/gpio.h>
 
 #include <asm/mach/flash.h>
 
@@ -149,9 +150,20 @@ static void nand_davinci_hwcontrol(struct mtd_info *mtd, int cmd,
 		writeb(cmd, chip->IO_ADDR_W);
 }
 
+/* Set WP on deselect, write enable on select */
 static void nand_davinci_select_chip(struct mtd_info *mtd, int chip)
 {
-	/* do nothing */
+#ifdef CONFIG_MACH_NTOSD_644XA
+
+#define GPIO_NAND_WP	41
+
+	gpio_direction_output(GPIO(GPIO_NAND_WP), 0); /* set output */
+	if (chip < 0){
+	     gpio_set_value(GPIO(GPIO_NAND_WP), 0);
+	} else {
+	     gpio_set_value(GPIO(GPIO_NAND_WP), 1);
+	}
+#endif
 }
 
 #ifdef CONFIG_NAND_FLASH_HW_ECC
