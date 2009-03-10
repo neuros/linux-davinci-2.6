@@ -488,4 +488,5 @@ struct dmfb_transparency
 #define FBIO_TRANSP 		_IOW('F', 0x27, struct dmfb_transparency)
 #define FBIO_TRANSP_COLOR	_IOW('F', 0x28, u_int32_t)
 #define FBIO_CBTEST		_IOW('F', 0x29, u_int32_t)
+#define FBIO_GET_PHYS_ADDRESS _IOWR('F', 0x2A, unsigned long)
 #endif /* _DAVINCIFB_H_ */

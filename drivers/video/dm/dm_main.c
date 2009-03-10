@@ -1807,6 +1807,13 @@ static int davincifb_ioctl(struct fb_info *info, unsigned int cmd,
 		dm_cbtest_enable(w->dm, enable);
 		return 0;
 		break;
+
+	case FBIO_GET_PHYS_ADDRESS:
+		if (copy_to_user(argp, &w->fb_base_phys, sizeof(unsigned long)))
+		{
+			return -EFAULT;
+		}
+		return 0;
 	}
 
 	return -EINVAL;
