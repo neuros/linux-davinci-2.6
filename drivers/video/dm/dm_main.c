@@ -52,6 +52,7 @@
  * revision
  */
 #define VID0FIX
+//#define ENABLE_VGA_EXPANSION
 
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -253,7 +254,11 @@ static const struct fb_videomode dmfb_modedb[] = {
 	 *  vmode, flag
 	 */
 	/* Standard Modes */
+#ifdef ENABLE_VGA_EXPANSION
 	{ "480i", 60, 640, 480, 0, 0, 0, 0, 0, 127, 5, FB_SYNC_BROADCAST,	FB_VMODE_INTERLACED, 0},
+#else
+	{ "480i", 60, 720, 480, 0, 0, 0, 0, 0, 127, 5, FB_SYNC_BROADCAST,	FB_VMODE_INTERLACED, 0},
+#endif
 	{ "576i", 50, 640, 480, LCD_PANEL_CLOCK, 0, 0, 0, 0, 127, 6, FB_SYNC_BROADCAST,	FB_VMODE_INTERLACED, 0},
 	/* Modes provided by THS8200 */
 	{ "480p", 30, 720, 480, LCD_PANEL_CLOCK, 122, 15, 36, 8, 0x50, 0x5, FB_SYNC_BROADCAST, FB_VMODE_NONINTERLACED, 0},
@@ -447,11 +452,13 @@ static void dm_venc_timmings_set(struct dm_info *dm, const struct fb_videomode *
 	dispc_reg_out(VENC_VSTARTA, extmode->vstarta);
 	dispc_reg_out(OSD_BASEPX, extmode->basex);
 	dispc_reg_out(OSD_BASEPY, extmode->basey);
+#ifdef ENABLE_VGA_EXPANSION
 	/* stretch on horizontal and vertical */
 	//dispc_reg_merge(OSD_MODE, extmode->sh << 13, OSD_MODE_OHRSZ);
 	dispc_reg_merge(OSD_MODE, extmode->sh << 10, OSD_MODE_VHRSZ);
 	//dispc_reg_merge(OSD_MODE, extmode->sv << 14, OSD_MODE_OVRSZ);
 	dispc_reg_merge(OSD_MODE, extmode->sv << 11, OSD_MODE_VVRSZ);
+#endif
 }
 
 /**
